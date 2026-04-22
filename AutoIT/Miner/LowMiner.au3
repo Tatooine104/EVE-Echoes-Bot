@@ -5,7 +5,7 @@
 ; Description   : A bot that fully automates ore mining in Low
 ;
 ; Contents:  
-; - _CW - функция корректного отображения русского в консоли
+; - _CW - функция корректного отображения русского в консоли (для дебага)
 ; - 
 ; - 
 ; - 
@@ -29,14 +29,14 @@ If _CheckAndActivateClient("(Client W.01)") Then
     Local $absY2 = $aPos[1] + 300
 
     Local $x, $y
-    If _ImageSearchArea("UnDock.bmp", 1, $absX1, $absY1, $absX2, $absY2, $x, $y, 100) = 1 Then
+    If _ImageSearchArea("imgUnDock.bmp", 1, $absX1, $absY1, $absX2, $absY2, $x, $y, 100) = 1 Then
         ;MouseClick("left", $x - $aPos[0], $y - $aPos[1], 1, 0)
 		_CW("Всё отлично!" & @CRLF)
     Else
-        _CW("Кнопка не найдена" & @CRLF)
+        _Log("Кнопка не найдена" & @CRLF)
     EndIf
 Else
-    MsgBox(16, "Внимание", "Эмулятор не готов к работе!")
+    _Log("Эмулятор не нейден!")
 EndIf
 
 ; 
@@ -61,23 +61,19 @@ EndFunc
 
 Func _Log($sText)
     Local $sLogFile = @ScriptDir & "\bot_log.txt"
-    Local $sTimeStamp = @YEAR & "-" & @MON & "-" & @MDAY & " " & @HOUR & ":" & @MIN & ":" & @SEC
-    Local $sNewLine = $sTimeStamp & " : " & $sText
     
-    ; 1. Вывод в консоль
+    ; 1. Вывод в консоль (твой рабочий способ для русского языка)
     ConsoleWrite(BinaryToString(StringToBinary($sText & @CRLF, 4), 1))
     
-    ; 2. Читаем текущее содержимое файла (если он есть)
-    Local $sCurrentContent = ""
-    If FileExists($sLogFile) Then
-        $sCurrentContent = FileRead($sLogFile)
-    EndIf
+    ; 2. Запись в файл
+    ; Режим 1 = Открыть для записи с добавлением в конец файла
+    ; Режим 128 = Принудительное использование кодировки UTF-8 (чтобы русский читался)
+    Local $hFile = FileOpen($sLogFile, 1 + 128)
     
-    ; 3. Перезаписываем файл: Новая строка + старое содержимое
-    ; Режим 2 + 128 (2 - перезапись, 128 - UTF-8)
-    Local $hFile = FileOpen($sLogFile, 2 + 128)
     If $hFile <> -1 Then
-        FileWrite($hFile, $sNewLine & @CRLF & $sCurrentContent)
+        ; Формируем строку: Дата Время : Текст
+        Local $sTimeStamp = @YEAR & "-" & @MON & "-" & @MDAY & " " & @HOUR & ":" & @MIN & ":" & @SEC
+        FileWriteLine($hFile, $sTimeStamp & " : " & $sText)
         FileClose($hFile)
     EndIf
 EndFunc
