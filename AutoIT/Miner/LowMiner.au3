@@ -4,42 +4,105 @@
 ; Language      : Russia
 ; Description   : A bot that fully automates ore mining in Low
 ;
-; Contents:  
-; - _CW - функция корректного отображения русского в консоли (для дебага)
-; - 
-; - 
-; - 
+; ----------------------------------------------------------------------------------------------------
+;
+; EVE Echoes Fuctions:  
+; - _Undock - выход из дока
+; - _IsCargoFull - 
+; - _TakeNewShip
+; - _IsCapsule
+; - _MoveCargo
+; - _OpenEyeMenu
+; - _OpenBeltList
+; - _GoToRandomBelt
+; - _Mining
+; - _IsSave
+; - _AliChatMessage
+; - _GoToStation
+; - _SelectOre
+; - _
+; ----------------------------------------------------------------------------------------------------
+;
+; Special functions: 
+; - _CW - корректное отображения русского в консоли (для дебага)
+; - _Log - логирование действий в txt файл
+; - _CheckAndActivateClient - проверка что клиент игры активен
+; - _HumanSleep - задержка перед выполнением действий, имитирующее действие человека
 ; - 
 ; - 
 ; - 
 ; ----------------------------------------------------------------------------------------------------
+;
+; Additional Functions:
+; - _ImageSearch - 
+; - _ImageSearchClientArea - 
+; - _ImageSearchArea - 
+; - _WaitForImageSearch - 
+; - _WaitForImagesSearch - 
+; - _WinGetClientPos - 
+; ----------------------------------------------------------------------------------------------------
 
 Opt("MouseCoordMode", 2) ; Опция для позиционирования курсора относительно указанного окна
 Opt("PixelCoordMode", 2) ; Опция для работы с координатами относительно указанного окна
+Opt("SendKeyDownDelay", 50) ; Удерживать клавишу 50мс (стандарт 5мс)
 
 Global $Client = 0 ; Глобальная переменная для хранения ссылки на окно
 
-If _CheckAndActivateClient("(Client W.01)") Then
-    ; Если функция вернула True, работаем дальше
-    Local $aPos = WinGetPos($Client)
+; - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
-    Local $absX1 = $aPos[0] + 1060
-    Local $absY1 = $aPos[1] + 230
-    Local $absX2 = $aPos[0] + 1280
-    Local $absY2 = $aPos[1] + 300
+Func _Undock()
+
+    ; 1. Проверяем и активируем окно
+    If Not _CheckAndActivateClient("(Client W.01)") Then
+        _Log("Ошибка: Клиент не найден или не активен")
+        Return False
+    EndIf
+
+    ; 2. Получаем точные экранные координаты игровой области (X, Y, Width, Height)
+    Local $aCPos = _WinGetClientPos($Client)
+    If @error Then 
+        _Log("Ошибка получения координат области")
+        Return False
+    EndIf
+
+    ; 3. Вычисляем область поиска (относительно клиентской части)
+    ; $aCPos[0] — это экранный X левого верхнего угла игры
+    ; $aCPos[1] — это экранный Y левого верхнего угла игры
+    Local $iX1 = $aCPos[0] + 1060 
+    Local $iY1 = $aCPos[1] + 230  
+    Local $iX2 = $aCPos[0] + 1280
+    Local $iY2 = $aCPos[1] + 300
 
     Local $x, $y
-    If _ImageSearchArea("imgUnDock.bmp", 1, $absX1, $absY1, $absX2, $absY2, $x, $y, 100) = 1 Then
-        ;MouseClick("left", $x - $aPos[0], $y - $aPos[1], 1, 0)
-		_CW("Всё отлично!" & @CRLF)
-    Else
-        _Log("Кнопка не найдена" & @CRLF)
+    ; 4. Поиск изображения
+    If _ImageSearchArea("imgUnDock.bmp", 1, $iX1, $iY1, $iX2, $iY2, $x, $y, 100) = 1 Then
+        _HumanSleep()      ; Короткая пауза перед нажатием
+		_Log("Кнопка 'Undock' найдена. Выходим из дока...")
+        Send("{SC016}") ; Нажимаем клавишу (U)
+        Return True
     EndIf
-Else
-    _Log("Эмулятор не нейден!")
-EndIf
 
-; 
+    _Log("Кнопка 'Undock' не найдена в заданной области")
+    Return False
+
+EndFunc
+
+
+; - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
+Func _HumanSleep($iMin = 100, $iMax = 800)
+    ; Если при вызове параметры не указаны, используются 100 и 800
+    Local $iWait = Random($iMin, $iMax, 1)
+    
+    ; Логируем только значительные паузы
+    If $iWait > 1000 Then 
+        _Log("Пауза: " & StringFormat("%.2f", $iWait / 1000) & " сек.")
+    EndIf
+    
+    Sleep($iWait)
+EndFunc
+
+
 Func _CheckAndActivateClient($title)
     $Client = WinGetHandle($title) ; Записываем в глобальную переменную
 
@@ -51,6 +114,7 @@ Func _CheckAndActivateClient($title)
     If WinWaitActive($Client, "", 1) Then
         Return True ; Все ок
     Else
+		_Log("Не смог отобразить окно клиента :(")
         Return False ; Окно есть, но не смогло стать активным
     EndIf
 EndFunc
@@ -77,6 +141,8 @@ Func _Log($sText)
         FileClose($hFile)
     EndIf
 EndFunc
+
+; - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 ;===============================================================================
 ;
@@ -217,29 +283,29 @@ Func _WaitForImagesSearch($findImage, $waitSecs, $resultPosition, ByRef $x, ByRe
 EndFunc   ;==>_WaitForImagesSearch
 
 Func _WinGetClientPos($hwnd)
-	Local $Size = WinGetClientSize($hwnd)
+    Local $Size = WinGetClientSize($hwnd)
+    If Not IsArray($Size) Then Return SetError(1, 0, 0)
 
-	If Not IsArray($Size) Then
-		Return SetError(1, 0, 0)
-	EndIf
+    ; Описываем структуру напрямую
+    Local $tPoint = DllStructCreate("long X;long Y")
+    
+    ; Устанавливаем начальную точку (0,0) — это левый верхний угол клиентской области
+    DllStructSetData($tPoint, "X", 0)
+    DllStructSetData($tPoint, "Y", 0)
 
-	Local $tPOINT = DllStructCreate($tagPOINT)
+    ; Вызываем системную функцию напрямую через DllCall
+    Local $aRet = DllCall("user32.dll", "bool", "ClientToScreen", "hwnd", $hwnd, "ptr", DllStructGetPtr($tPoint))
+    
+    If @error Or Not $aRet[0] Then
+        Return SetError(1, 0, 0)
+    EndIf
 
-	For $i = 1 To 2
-		DllStructSetData($tPOINT, $i, 0)
-	Next
-	_WinAPI_ClientToScreen($hwnd, $tPOINT)
-	If @error Then
-		Return SetError(1, 0, 0)
-	EndIf
+    ; Формируем массив: [0]=X, [1]=Y, [2]=Ширина, [3]=Высота
+    Local $Pos[4]
+    $Pos[0] = DllStructGetData($tPoint, "X") ; Экранный X начала клиентской области
+    $Pos[1] = DllStructGetData($tPoint, "Y") ; Экранный Y начала клиентской области
+    $Pos[2] = $Size[0]                       ; Ширина области
+    $Pos[3] = $Size[1]                       ; Высота области
 
-	Local $Pos[4]
-
-	For $i = 0 To 1
-		$Pos[$i] = DllStructGetData($tPOINT, $i + 1)
-	Next
-	For $i = 2 To 3
-		$Pos[$i] = $Size[$i - 2]
-	Next
-	Return $Pos
+    Return $Pos
 EndFunc
