@@ -65,7 +65,7 @@ Func _Undock()
     ; 2. Получаем координаты клиентской области
     Local $aCPos = _WinGetClientPos($ClientName)
     If @error Then 
-        _Log("_Undock: Ошибка - Не удалось получить координаты")
+        _Log("_Undock: Ошибка - Не удалось получить координаты клиента")
         Return False
     EndIf
 
@@ -102,7 +102,7 @@ Func IsCargoFull()
     ; 2. Получаем координаты клиентской области
     Local $aCPos = _WinGetClientPos($ClientName)
     If @error Then 
-        _Log("IsCargoFull: Ошибка - Не удалось получить координаты")
+        _Log("IsCargoFull: Ошибка - Не удалось получить координаты клиента")
         Return False
     EndIf
 
@@ -139,7 +139,7 @@ Func _MoveCargo()
     ; Шаг 2: Получаем координаты клиентской области
     Local $aCPos = _WinGetClientPos($ClientName)
     If @error Then 
-        _Log("_MoveCargo: Ошибка - Не удалось получить координаты")
+        _Log("_MoveCargo: Ошибка - Не удалось получить координаты клиента")
         Return False
     EndIf
 
@@ -217,7 +217,7 @@ Func _OpenMenuIfNeed()
     ; Шаг 2: Получаем координаты клиентской области
     Local $aCPos = _WinGetClientPos($ClientName)
     If @error Then 
-        _Log("_OpenMenuIfNeed: Ошибка - Не удалось получить координаты")
+        _Log("_OpenMenuIfNeed: Ошибка - Не удалось получить координаты клиента")
         Return False
     EndIf
 
@@ -268,7 +268,7 @@ Func _OpenBeltsList($bNeedToGo)
     ; Шаг 2: Получаем координаты клиентской области
     Local $aCPos = _WinGetClientPos($ClientName)
     If @error Then 
-        _Log("_OpenBeltsList: Ошибка - Не удалось получить координаты")
+        _Log("_OpenBeltsList: Ошибка - Не удалось получить координаты клиента")
         Return False
     EndIf
 
@@ -314,6 +314,8 @@ EndFunc
 
 ; - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
+; !!! Продолжить тут !!!
+
 Func _WarpTo($sTargetName)
     ; Шаг 1: Проверяем и активируем окно
     If Not _CheckAndActivateClient($ClientName) Then
@@ -324,7 +326,7 @@ Func _WarpTo($sTargetName)
     ; Шаг 2: Получаем координаты клиентской области
     Local $aCPos = _WinGetClientPos($ClientName)
     If @error Then 
-        _Log("_WarpTo: Ошибка - Не удалось получить координаты")
+        _Log("_WarpTo: Ошибка - Не удалось получить координаты клиента")
         Return False
     EndIf
 
