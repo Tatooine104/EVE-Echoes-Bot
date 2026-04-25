@@ -46,48 +46,89 @@ Opt("MouseCoordMode", 2) ; Опция для позиционирования к
 Opt("PixelCoordMode", 2) ; Опция для работы с координатами относительно указанного окна
 Opt("SendKeyDownDelay", 50) ; Удерживать клавишу 50мс (стандарт 5мс)
 
-Global $Client = 0 ; Глобальная переменная для хранения ссылки на окно
-Global $InSpace = false ;
-Global $IsSave = false ;
+Global $Client = 0                   ; Глобальная переменная для хранения ссылки на окно
+Global $InSpace = false              ; 
+Global $IsSave = false               ; 
+Global $ClientName = "(Client W.01)" ;
+Global $DeliveredCount = 0           ;
 
-; - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+; - + - + - + - + - | Функция выхода из дока | - + - + - + - + - + - + - + - + - + - + - + - + - + - + - 
 
 Func _Undock()
 
     ; 1. Проверяем и активируем окно
-    If Not _CheckAndActivateClient("(Client W.01)") Then
-        _Log("Ошибка: Клиент не найден или не активен")
+    If Not _CheckAndActivateClient($ClientName) Then
+        _Log("_Undock: Ошибка - Клиент не найден или не активен")
         Return False
     EndIf
 
-    ; 2. Получаем точные экранные координаты игровой области (X, Y, Width, Height)
-    Local $aCPos = _WinGetClientPos($Client)
+    ; 2. Получаем координаты клиентской области
+    Local $aCPos = WinGetClientPos($ClientName)
     If @error Then 
-        _Log("Ошибка получения координат области")
+        _Log("_Undock: Ошибка - Не удалось получить координаты")
         Return False
     EndIf
 
-    ; 3. Вычисляем область поиска (относительно клиентской части)
-    ; $aCPos[0] — это экранный X левого верхнего угла игры
-    ; $aCPos[1] — это экранный Y левого верхнего угла игры
+    ; 3. Вычисляем область поиска (Координаты из вашего примера)
     Local $iX1 = $aCPos[0] + 1060 
     Local $iY1 = $aCPos[1] + 230  
     Local $iX2 = $aCPos[0] + 1280
     Local $iY2 = $aCPos[1] + 300
 
     Local $x, $y
-    ; 4. Поиск изображения
+    ; 4. Поиск изображения кнопки Undock
     If _ImageSearchArea("imgUnDock.bmp", 1, $iX1, $iY1, $iX2, $iY2, $x, $y, 100) = 1 Then
-        _HumanSleep()      ; Короткая пауза перед нажатием
-		_Log("Кнопка 'Undock' найдена. Выходим из дока...")
-        Send("{SC016}") ; Нажимаем клавишу (U)
+        _Log("_Undock: Кнопка 'Undock' найдена. Выходим в космос")
+        _HumanSleep()      
+        Send("{SC016}")    ; Нажимаем на клавиатуре клавишу U, настроенную на кнопке "Undock"
         Return True
     EndIf
 
-    _Log("Кнопка 'Undock' не найдена в заданной области")
+    _Log("_Undock: Ошибка - Кнопка не найдена")
     Return False
 
 EndFunc
+
+; - + - + - + - + - | Функция проверки карго | - + - + - + - + - + - + - + - + - + - + - + - + - + - + - 
+
+Func IsCargoFull()
+
+    ; 1. Проверяем и активируем окно
+    If Not _CheckAndActivateClient($ClientName) Then
+        _Log("IsCargoFull: Ошибка - Клиент не найден")
+        Return False
+    EndIf
+
+    ; 2. Получаем координаты клиентской области
+    Local $aCPos = WinGetClientPos($ClientName)
+    If @error Then 
+        _Log("IsCargoFull: Ошибка - Не удалось получить координаты")
+        Return False
+    EndIf
+
+    ; 3. Вычисляем область поиска (Смещение: 0, 70, 122, 55)
+    Local $iX1 = $aCPos[0] + 0
+    Local $iY1 = $aCPos[1] + 80
+    Local $iX2 = $aCPos[0] + 60
+    Local $iY2 = $aCPos[1] + 170
+
+    _Log("IsCargoFull: Проверяем грузовой отсек...")
+
+    Local $x, $y
+    ; 4. Поиск изображения 100% карго
+    If _ImageSearchArea("imgCargoFull.png", 1, $iX1, $iY1, $iX2, $iY2, $x, $y, 100) = 1 Then
+        _Log("IsCargoFull: Грузовой отсек полон")
+        Return True
+    EndIf
+
+    _Log("IsCargoFull: Грузовой отсек еще не полон")
+    Return False
+
+EndFunc
+
+; - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
+
 
 ; - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
