@@ -235,7 +235,7 @@ Func _OpenMenuIfNeed()
     ; Шаг 4: Цикл попыток открытия меню
     For $i = 1 To $iMaxRetries
         ; Проверяем, видна ли иконка "глаза" (значит меню закрыто)
-        If _ImageSearchArea("EyeIcon.png", 1, $iX1, $iY1, $iX2, $iY2, $x, $y, 100) = 0 Then
+        If _ImageSearchArea("imgEyeIcon.bmp", 1, $iX1, $iY1, $iX2, $iY2, $x, $y, 100) = 0 Then
             _Log("_OpenMenuIfNeed: Меню открыто (иконка глаза не найдена)")
             Return True
         EndIf
@@ -253,12 +253,83 @@ Func _OpenMenuIfNeed()
     ; Шаг 7: Финальный вердикт после всех попыток
     _Log("_OpenMenuIfNeed: Ошибка - Не удалось открыть меню за " & $iMaxRetries & " попыток")
     Return False
-    
+
 EndFunc
 
 
 ; - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
+Func _OpenBeltsList($bNeedToGo)
+    ; Шаг 1: Проверяем и активируем окно
+    If Not _CheckAndActivateClient($ClientName) Then
+        _Log("_OpenBeltsList: Ошибка - Клиент не найден")
+        Return False
+    EndIf
+
+    ; Шаг 2: Получаем координаты клиентской области
+    Local $aCPos = WinGetClientPos($ClientName)
+    If @error Then 
+        _Log("_OpenBeltsList: Ошибка - Не удалось получить координаты")
+        Return False
+    EndIf
+
+    _Log("_OpenBeltsList: Проверяем наличие списка астероидов...")
+
+    ; Шаг 3: Проверяем, не открыт ли список уже
+    Local $x, $y
+    Local $bMiningCurrent = _ImageSearchArea("imgMiningCurrent.bmp", 1, $aCPos[0] + 970, $aCPos[1] + 1, $aCPos[0] + 1100, $aCPos[1] + 50, $x, $y, 100)
+    Local $bSelectOre = _ImageSearchArea("imgSelectOreToMine.bmp", 1, $aCPos[0] + 970, $aCPos[1] + 55, $aCPos[0] + 1000, $aCPos[1] + 720, $x, $y, 100)
+
+    If $bMiningCurrent = 1 And $bSelectOre = 1 Then
+        _Log("_OpenBeltsList: Список добычи уже открыт")
+        If $bNeedToGo Then Return _GoToRandomBelt() ; Добавлен Return для проброса результата
+        Return True
+    EndIf
+
+    ; Шаг 4: Открываем выпадающее меню
+    _Log("_OpenBeltsList: Список не найден, открываем меню...")
+    If _FindAndClick("imgShowDropdownMy.bmp", $aCPos[0] + 970, $aCPos[1] + 1, $aCPos[0] + 1010, $aCPos[1] + 40) Then
+        _HumanSleep()
+
+        ; Шаг 5: Выбираем пункт добычи
+        If _FindAndClick("imgMinigScreen.bmp", $aCPos[0] + 970, $aCPos[1] + 50, $aCPos[0] + 1220, $aCPos[1] + 720) Then
+            _Log("_OpenBeltsList: Грид добычи выбран")
+            _HumanSleep()
+
+            ; Шаг 6: Дополнительное действие (клик по области управления списком)
+            _FindAndClick("imgMinigScreen.bmp", $aCPos[0] + 1220, $aCPos[1] + 60, $aCPos[0] + 1270, $aCPos[1] + 530)
+            _HumanSleep()
+
+            ; Шаг 7: Если нужно лететь — вызываем функцию полета
+            If $bNeedToGo Then Return _GoToRandomBelt()
+            Return True
+        Else
+            _Log("_OpenBeltsList: Ошибка - Не удалось нажать на 'imgMinigScreen.bmp'")
+            Return False
+        EndIf
+    Else
+        _Log("_OpenBeltsList: Ошибка - Не удалось нажать на 'imgShowDropdownMy.bmp'")
+        Return False
+    EndIf
+EndFunc
+
+
+; - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
+; Вспомогательная функция: ищет картинку в области и, если нашла, кликает по ней
+Func _FindAndClick($sImg, $iX1, $iY1, $iX2, $iY2)
+    Local $x, $y
+    ; Ищем изображение с допуском (100)
+    If _ImageSearchArea($sImg, 1, $iX1, $iY1, $iX2, $iY2, $x, $y, 100) = 1 Then
+        _Log("_FindAndClick: Найдено '" & $sImg & "', кликаем.")
+        _HumanSleep(100, 300)      ; Небольшая пауза перед кликом
+        MouseClick("left", $x, $y, 1, 1) ; Кликаем левой кнопкой мыши
+        Return True
+    EndIf
+    
+    _Log("_FindAndClick: Изображение '" & $sImg & "' не найдено.")
+    Return False
+EndFunc
 
 
 ; - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
