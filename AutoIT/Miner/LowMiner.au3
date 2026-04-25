@@ -1,56 +1,103 @@
-﻿; ----------------------------------------------------------------------------------------------------
-;
-; AutoIT Version: 5.5.6
-; Language      : Russia
-; Description   : A bot that fully automates ore mining in Low
-;
-; ----------------------------------------------------------------------------------------------------
-;
-; EVE Echoes Fuctions:  
-; - _Undock - выход из дока
-; - _IsCargoFull - 
-; - _TakeNewShip
-; - _IsCapsule
-; - _MoveCargo
-; - _OpenEyeMenu
-; - _OpenBeltList
-; - _GoToRandomBelt
-; - _Mining
-; - _IsSave
-; - _AliChatMessage
-; - _GoToStation
-; - _SelectOre
-; - _
-; ----------------------------------------------------------------------------------------------------
-;
-; Special functions: 
-; - _CW - корректное отображения русского в консоли (для дебага)
-; - _Log - логирование действий в txt файл
-; - _CheckAndActivateClient - проверка что клиент игры активен
-; - _HumanSleep - задержка перед выполнением действий, имитирующее действие человека
-; - 
-; - 
-; - 
-; ----------------------------------------------------------------------------------------------------
-;
-; Additional Functions:
-; - _ImageSearch - 
-; - _ImageSearchClientArea - 
-; - _ImageSearchArea - 
-; - _WaitForImageSearch - 
-; - _WaitForImagesSearch - 
-; - _WinGetClientPos - 
-; ----------------------------------------------------------------------------------------------------
+﻿; ###############################################################################################################################
+; #                                                                                                                             #
+; # PROJECT........: NullSec Auto Mininer                                                                                       #
+; # VERSION........: 1.0.0 Build 2026.04.25                                                                                     #
+; # AUTHOR.........: Tatooine104 / primalevil@gmail.com                                                                         #
+; # DESCRIPTION....: Автоматизированный комплекс управления добычей руды.                                                       #
+; #                  - Поддержка многопоточности графического интерфейса (OnEventMode)                                          #
+; #                  - Интеллектуальное распознавание образов (ImageSearch)                                                     #
+; #                  - Сохранение прогресса в INI-конфигурацию                                                                  #
+; #                                                                                                                             #
+; ###############################################################################################################################
+; #                                                                                                                             #
+; # ТРЕБОВАНИЯ:                                                                                                                 #
+; # - Разрешение игры : 1280 x 720                                                                                              #
+; # - Android Эмулятор: Memu                                                                                                    #
+; # -                 :                                                                                                         #
+; #                                                                                                                             #
+; ###############################################################################################################################
 
-Opt("MouseCoordMode", 2) ; Опция для позиционирования курсора относительно указанного окна
-Opt("PixelCoordMode", 2) ; Опция для работы с координатами относительно указанного окна
-Opt("SendKeyDownDelay", 50) ; Удерживать клавишу 50мс (стандарт 5мс)
+#include <GUIConstantsEx.au3>    ; Содержит $GUI_EVENT_CLOSE
+#include <WindowsConstants.au3>  ; Содержит $WS_EX_TOPMOST
+#include <StaticConstants.au3>   ; Содержит константы для стилей текста (Label)
 
-Global $Client = 0                   ; Глобальная переменная для хранения ссылки на окно
-Global $InSpace = false              ; 
-Global $IsSave = false               ; 
-Global $ClientName = "(Client W.01)" ;
-Global $DeliveredCount = 0           ;
+; ===============================================================================================================================
+; 1. РЕСУРСЫ И ИНИЦИАЛИЗАЦИЯ ПАПОК
+; ===============================================================================================================================
+
+; Создаем временную папку для ресурсов во временном каталоге системы
+Global $sResourceDir = @TempDir & "\MyBotResources\"
+DirCreate($sResourceDir)
+
+; Вшиваем необходимые файлы внутрь EXE (распаковываются при запуске)
+FileInstall("JetBrainsMono-Bold.ttf", $sResourceDir & "JetBrainsMono-Bold.ttf", 1)
+FileInstall("ImageSearchDLL.dll", @SystemDir & "\ImageSearchDLL.dll", 1) 
+FileInstall("imgUnDock.bmp", $sResourceDir & "imgUnDock.bmp", 1)
+FileInstall("100PCargo.png", $sResourceDir & "100PCargo.png", 1)
+FileInstall("EyeIcon.png", $sResourceDir & "EyeIcon.png", 1)
+
+; !!! Сюда добавьте остальные FileInstall для всех ваших BMP/PNG файлов !!!
+
+; Регистрация шрифта JetBrains Mono в системе на время работы скрипта
+Global $hFontRes = DllCall("gdi32.dll", "int", "AddFontResourceEx", "str", $sResourceDir & "JetBrainsMono-Bold.ttf", "dword", 0x10, "int", 0)
+
+; ===============================================================================================================================
+; 2. НАСТРОЙКИ СКРИПТА (OPTIONS)
+; ===============================================================================================================================
+
+Opt("MouseCoordMode", 2)       ; Координаты мыши относительно клиентской области окна
+Opt("PixelCoordMode", 2)       ; Координаты пикселей относительно клиентской области окна
+Opt("SendKeyDownDelay", 50)    ; Задержка удержания клавиш (мс) для защиты от "проглатывания" игрой
+Opt("GUIOnEventMode", 1)       ; Включение режима событий для работы интерфейса
+
+; ===============================================================================================================================
+; 3. ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
+; ===============================================================================================================================
+
+; --- Пути и файлы ---
+Global $sIniPath = @ScriptDir & "\settings.ini" ; Файл настроек рядом с исполняемым файлом
+
+; --- Данные окна ---
+Global $ClientName = "(Client W.01)"            ; Заголовок окна игры
+Global $Client     = 0                          ; Хэндл окна (будет заполнен позже)
+
+; --- Игровые параметры ---
+Global $InSpace    = False                      ; Статус: в космосе или нет
+Global $IsSave     = False                      ; Статус: безопасность (враги/щит)
+
+; --- Статистика ---
+; Загружаем сохраненный счетчик из INI (по умолчанию "0" если файл не найден)
+Global $DeliveredCount = Int(IniRead($sIniPath, "Statistics", "OreCount", "0"))
+
+; --- Оформление ---
+Global $sFontFace = "JetBrains Mono"            ; Основной шрифт интерфейса
+
+; ===============================================================================================================================
+; 4. ИНТЕРФЕЙС УПРАВЛЕНИЯ (GUI)
+; ===============================================================================================================================
+
+Global $hStatusGUI = GUICreate("Mining Control", 320, 160, 20, 20, -1, $WS_EX_TOPMOST)
+GUISetOnEvent($GUI_EVENT_CLOSE, "_Terminate")
+
+; Текстовое поле статуса
+Global $hStatusLabel = GUICtrlCreateLabel("Бот готов", 10, 15, 300, 45)
+GUICtrlSetFont(-1, 9, 400, 0, $sFontFace)
+
+; Текстовое поле счетчика руды
+Global $hCountLabel = GUICtrlCreateLabel("Выгружено: " & $DeliveredCount, 10, 65, 300, 30)
+GUICtrlSetFont(-1, 11, 800, 0, $sFontFace)
+GUICtrlSetColor(-1, 0x008800) ; Зеленый цвет для прогресса
+
+; Кнопка принудительной остановки
+Global $btnStop = GUICtrlCreateButton("STOP BOT", 60, 105, 200, 40)
+GUICtrlSetFont(-1, 10, 800, 0, $sFontFace)
+GUICtrlSetBkColor(-1, 0xFFCCCC) ; Светло-красный фон кнопки
+GUICtrlSetOnEvent($btnStop, "_Terminate")
+
+; Показываем окно, не делая его активным (чтобы не мешать игре)
+GUISetState(@SW_SHOWNOACTIVATE, $hStatusGUI)
+
+; - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 ; - + - + - + - + - | Функция выхода из дока | - + - + - + - + - + - + - + - + - + - + - + - + - + - + - 
 
@@ -74,10 +121,10 @@ Func _Undock()
     Local $iY1 = $aCPos[1] + 230  
     Local $iX2 = $aCPos[0] + 1280
     Local $iY2 = $aCPos[1] + 300
-
     Local $x, $y
+
     ; 4. Поиск изображения кнопки Undock
-    If _ImageSearchArea("imgUnDock.bmp", 1, $iX1, $iY1, $iX2, $iY2, $x, $y, 100) = 1 Then
+    If _MyImageSearch("imgUnDock.bmp", $iX1, $iY1, $iX2, $iY2, $x, $y, 100) = 1 Then
         _Log("_Undock: Кнопка 'Undock' найдена. Выходим в космос")
         _HumanSleep()      
         Send("{SC016}")    ; Нажимаем на клавиатуре клавишу "U", настроенную на кнопке "Undock"
@@ -116,7 +163,7 @@ Func IsCargoFull()
 
     Local $x, $y
     ; 4. Поиск изображения 100% карго
-    If _ImageSearchArea("imgCargoFull.bmp", 1, $iX1, $iY1, $iX2, $iY2, $x, $y, 100) = 1 Then
+    If _MyImageSearch("imgCargoFull.bmp", $iX1, $iY1, $iX2, $iY2, $x, $y, 100) = 1 Then
         _Log("IsCargoFull: Грузовой отсек полон")
         Return True
     EndIf
@@ -187,7 +234,7 @@ Func _MoveCargo()
     Local $iMaxRetries = 3 ; Количество дополнительных проверок
 
     For $i = 1 To $iMaxRetries
-        If _ImageSearchArea("imgCargoEmpty.bmp", 1, $iX1, $iY1, $iX2, $iY2, $x, $y, 100) = 1 Then
+        If _MyImageSearch("imgCargoEmpty.bmp", $iX1, $iY1, $iX2, $iY2, $x, $y, 100) = 1 Then
             $DeliveredCount += 1
             _Log("_MoveCargo: Успешно. Выгрузка #" & $DeliveredCount)
             Return True
@@ -235,7 +282,7 @@ Func _OpenMenuIfNeed()
     ; Шаг 4: Цикл попыток открытия меню
     For $i = 1 To $iMaxRetries
         ; Проверяем, видна ли иконка "глаза" (значит меню закрыто)
-        If _ImageSearchArea("imgEyeIcon.bmp", 1, $iX1, $iY1, $iX2, $iY2, $x, $y, 100) = 0 Then
+        If _MyImageSearch("imgEyeIcon.bmp", $iX1, $iY1, $iX2, $iY2, $x, $y, 100) = 0 Then
             _Log("_OpenMenuIfNeed: Меню открыто (иконка глаза не найдена)")
             Return True
         EndIf
@@ -276,8 +323,8 @@ Func _OpenBeltsList($bNeedToGo)
 
     ; Шаг 3: Проверяем, не открыт ли список уже
     Local $x, $y
-    Local $bMiningCurrent = _ImageSearchArea("imgMiningCurrent.bmp", 1, $aCPos[0] + 970, $aCPos[1] + 1, $aCPos[0] + 1100, $aCPos[1] + 50, $x, $y, 100)
-    Local $bSelectOre = _ImageSearchArea("imgSelectOreToMine.bmp", 1, $aCPos[0] + 970, $aCPos[1] + 55, $aCPos[0] + 1000, $aCPos[1] + 720, $x, $y, 100)
+    Local $bMiningCurrent = _MyImageSearch("imgMiningCurrent.bmp", $aCPos[0] + 970, $aCPos[1] + 1, $aCPos[0] + 1100, $aCPos[1] + 50, $x, $y, 100)
+    Local $bSelectOre = _MyImageSearch("imgSelectOreToMine.bmp", $aCPos[0] + 970, $aCPos[1] + 55, $aCPos[0] + 1000, $aCPos[1] + 720, $x, $y, 100)
 
     If $bMiningCurrent = 1 And $bSelectOre = 1 Then
         _Log("_OpenBeltsList: Список добычи уже открыт")
@@ -350,9 +397,10 @@ Func _WarpTo($sTargetName)
         
         Return True
     Else
-        _Log("_WarpTo: Ошибка - Не удалось найти кнопку варпа для: " & $sTargetName)
+        _Log("_WarpTo: Ошибка - Не удалось найти кнопку варпа")
         Return False
     EndIf
+    
 EndFunc
 
 
@@ -410,23 +458,20 @@ Func _CW($sText)
 EndFunc
 
 Func _Log($sText)
-    Local $sLogFile = @ScriptDir & "\bot_log.txt"
+
+    ; 1. Пишем в консоль (для отладки)
+    ; ConsoleWrite($sText & @CRLF)
     
-    ; 1. Вывод в консоль (твой рабочий способ для русского языка)
-    ConsoleWrite(BinaryToString(StringToBinary($sText & @CRLF, 4), 1))
+    ; 2. Обновляем текст в нашем окошке
+    GUICtrlSetData($hStatusLabel, $sText)
     
-    ; 2. Запись в файл
-    ; Режим 1 = Открыть для записи с добавлением в конец файла
-    ; Режим 128 = Принудительное использование кодировки UTF-8 (чтобы русский читался)
-    Local $hFile = FileOpen($sLogFile, 1 + 128)
-    
-    If $hFile <> -1 Then
-        ; Формируем строку: Дата Время : Текст
-        Local $sTimeStamp = @YEAR & "-" & @MON & "-" & @MDAY & " " & @HOUR & ":" & @MIN & ":" & @SEC
-        FileWriteLine($hFile, $sTimeStamp & " : " & $sText)
-        FileClose($hFile)
-    EndIf
+    ; 3. Можно также писать в текстовый файл, если нужно
+    Local $hFile = FileOpen("bot_log.txt", 1)
+    FileWriteLine($hFile, @MDAY & "." & @MON & " " & @HOUR & ":" & @MIN & ":" & @SEC & " -> " & $sText)
+    FileClose($hFile)
+
 EndFunc
+
 
 ; - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
@@ -451,7 +496,7 @@ EndFunc
 ;===============================================================================
 Func _ImageSearch($findImage, $resultPosition, ByRef $x, ByRef $y, $tolerance, $hwnd = 0)
 	Return _ImageSearchArea($findImage, $resultPosition, 0, 0, @DesktopWidth, @DesktopHeight, $x, $y, $tolerance, $hwnd)
-EndFunc   ;==>_ImageSearch
+EndFunc   
 
 Func _ImageSearchClientArea($findImage, $resultPosition, ByRef $x, ByRef $y, $tolerance, $hwnd)
 
@@ -497,7 +542,7 @@ Func _ImageSearchArea($findImage, $resultPosition, $x1, $y1, $right, $bottom, By
 	EndIf
 
 	Return 1
-EndFunc   ;==>_ImageSearchArea
+EndFunc   
 
 ;===============================================================================
 ;
@@ -595,3 +640,45 @@ Func _WinGetClientPos($hwnd)
 
     Return $Pos
 EndFunc
+
+Func _Terminate()
+    _Log("!!! Скрипт остановлен пользователем !!!")
+    
+    ; Если мы использовали временную папку для картинок, удаляем её
+    If IsDeclared("sResourceDir") Then DirRemove($sResourceDir, 1)
+    
+    Exit ; Полный выход из программы
+EndFunc
+
+Func _SaveToIni($sSection, $sKey, $vValue)
+    IniWrite($sIniPath, $sSection, $sKey, $vValue)
+EndFunc
+
+; #FUNCTION# ====================================================================================================================
+; Name...........: _MyImageSearch
+; Description....: Ищет изображение в заданной области с автоматической подстановкой пути к папке ресурсов.
+; Syntax.........: _MyImageSearch($sImgName, $iX1, $iY1, $iX2, $iY2, ByRef $x, ByRef $y, $iTolerance)
+; Parameters ....: $sImgName   - Имя файла изображения (например, "button.png").
+;                  $iX1        - Координата X левого верхнего угла области поиска.
+;                  $iY1        - Координата Y левого верхнего угла области поиска.
+;                  $iX2        - Координата X правого нижнего угла области поиска.
+;                  $iY2        - Координата Y правого нижнего угла области поиска.
+;                  $x          - [ByRef] Переменная для записи найденной координаты X (центр изображения).
+;                  $y          - [ByRef] Переменная для записи найденной координаты Y (центр изображения).
+;                  $iTolerance - Допуск поиска (0-255). Чем выше, тем больше цветовых отличий допускается.
+; Return values .: 1 - Изображение успешно найдено
+;                  0 - Изображение не найдено
+; Date ..........: 2024-05-15
+; Version .......: v1.1
+; Author ........: [Ваше Имя / Ник]
+; Remarks .......: Автоматически склеивает имя файла с глобальным путем $sResourceDir.
+; ===============================================================================================================================
+Func _MyImageSearch($sImgName, $iX1, $iY1, $iX2, $iY2, ByRef $x, ByRef $y, $iTolerance)
+    ; Формируем полный путь: временная папка ресурсов + имя файла
+    Local $sFullPath = $sResourceDir & $sImgName
+    
+    ; Вызываем базовую функцию ImageSearchArea (флаг 1 — возврат центра объекта)
+    Local $iResult = _ImageSearchArea($sFullPath, 1, $iX1, $iY1, $iX2, $iY2, $x, $y, $iTolerance)
+    
+    Return $iResult
+EndFunc   ;==>_MyImageSearch
