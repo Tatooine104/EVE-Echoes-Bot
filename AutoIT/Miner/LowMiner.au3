@@ -80,7 +80,7 @@ Func _Undock()
     If _ImageSearchArea("imgUnDock.bmp", 1, $iX1, $iY1, $iX2, $iY2, $x, $y, 100) = 1 Then
         _Log("_Undock: Кнопка 'Undock' найдена. Выходим в космос")
         _HumanSleep()      
-        Send("{SC016}")    ; Нажимаем на клавиатуре клавишу U, настроенную на кнопке "Undock"
+        Send("{SC016}")    ; Нажимаем на клавиатуре клавишу "U", настроенную на кнопке "Undock"
         Return True
     EndIf
 
@@ -116,7 +116,7 @@ Func IsCargoFull()
 
     Local $x, $y
     ; 4. Поиск изображения 100% карго
-    If _ImageSearchArea("imgCargoFull.png", 1, $iX1, $iY1, $iX2, $iY2, $x, $y, 100) = 1 Then
+    If _ImageSearchArea("imgCargoFull.bmp", 1, $iX1, $iY1, $iX2, $iY2, $x, $y, 100) = 1 Then
         _Log("IsCargoFull: Грузовой отсек полон")
         Return True
     EndIf
@@ -126,8 +126,125 @@ Func IsCargoFull()
 
 EndFunc
 
+; - + - + - + - + - | Функция перемещения добытой руды на станцию | - + - + - + - + - + - + - + - + - + - 
+
+Func _MoveCargo()
+
+    ; Шаг 1: Проверяем и активируем окно
+    If Not _CheckAndActivateClient($ClientName) Then
+        _Log("_MoveCargo: Ошибка - Клиент не найден")
+        Return False
+    EndIf
+
+    ; Шаг 2: Получаем координаты клиентской области
+    Local $aCPos = WinGetClientPos($ClientName)
+    If @error Then 
+        _Log("_MoveCargo: Ошибка - Не удалось получить координаты")
+        Return False
+    EndIf
+
+    ; Шаг 3: Вычисляем область поиска (Смещение: 0, 80, 60, 170)
+    Local $iX1 = $aCPos[0] + 0
+    Local $iY1 = $aCPos[1] + 80
+    Local $iX2 = $aCPos[0] + 60
+    Local $iY2 = $aCPos[1] + 170
+
+    _Log("_MoveCargo: Перемещаем из грузового отсека...")
+
+    ; Шаг 4: Нажимаем "1", чтобы открыть инвентарь
+    _HumanSleep()
+    Send("{SC002}") 
+
+    ; Шаг 5: Нажимаем "1" ещё раз, чтобы свернуть раздел "Станция"
+    _HumanSleep()
+    Send("{SC002}") 
+
+    ; Шаг 6: Нажимаем "0", чтобы выбрать трюм для руды
+    _HumanSleep()
+    Send("{SC00B}") 
+
+    ; Шаг 7: Нажимаем "D", чтобы выделить всю руду
+    _HumanSleep()
+    Send("{SC020}") 
+
+    ; Шаг 8: Нажимаем "5", чтобы начать перемещение руды
+    _HumanSleep()
+    Send("{SC006}") 
+
+    ; Шаг 9: Нажимаем "7", чтобы подтвердить цель перемещения
+    _HumanSleep()
+    Send("{SC007}") 
+
+    ; Шаг 10: Ожидаем завершения анимации перемещения всей руды
+    _HumanSleep(500, 999) 
+
+    ; Шаг 11: Нажимаем "Esc", чтобы закрыть окно инвентаря
+    _HumanSleep()
+    Send("{SC001}") 
+
+    ; Шаг 12: Финальная проверка пустого трюма с повторными попытками
+    Local $x, $y
+    Local $iMaxRetries = 3 ; Количество дополнительных проверок
+
+    For $i = 1 To $iMaxRetries
+        If _ImageSearchArea("imgCargoEmpty.bmp", 1, $iX1, $iY1, $iX2, $iY2, $x, $y, 100) = 1 Then
+            $DeliveredCount += 1
+            _Log("_MoveCargo: Успешно. Выгрузка #" & $DeliveredCount)
+            Return True
+        EndIf
+        
+        ; Если не нашли, ждем немного и пробуем снова (постепенно увеличивая ожидание)
+        _Log("_MoveCargo: Карго пока не пустое, ожидание... (Попытка " & $i & " из " & $iMaxRetries & ")")
+        _HumanSleep(500, 999) 
+    Next
+
+    ; Если после всех попыток пустое карго не найдено
+    _Log("_MoveCargo: ВНИМАНИЕ - После ожидания карго всё еще полное. Ошибка выгрузки.")
+    Return False
+
+EndFunc
+
 ; - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
+Func _OpenMenuIfNeed()
+    
+    ; Шаг 1: Проверяем и активируем окно
+    If Not _CheckAndActivateClient($ClientName) Then
+        _Log("_OpenMenuIfNeed: Ошибка - Клиент не найден")
+        Return False
+    EndIf
+
+    ; Шаг 2: Получаем координаты клиентской области
+    Local $aCPos = WinGetClientPos($ClientName)
+    If @error Then 
+        _Log("_OpenMenuIfNeed: Ошибка - Не удалось получить координаты")
+        Return False
+    EndIf
+
+    ; Шаг 3: Вычисляем область поиска иконки "глаза" (Смещение: 1207, 378, 60, 53)
+    Local $iX1 = $aCPos[0] + 1190
+    Local $iY1 = $aCPos[1] + 370
+    Local $iX2 = $aCPos[0] + 1260 ; 1207 + 60
+    Local $iY2 = $aCPos[1] + 430 ; 378 + 53
+
+    _Log("_OpenMenuIfNeed: Проверяем, открыто ли меню...")
+
+    ; Шаг 4: Проверяем наличие иконки закрытого меню (EyeIcon.png)
+    Local $x, $y
+    If _ImageSearchArea("EyeIcon.png", 1, $iX1, $iY1, $iX2, $iY2, $x, $y, 100) = 1 Then
+        _Log("_OpenMenuIfNeed: Меню закрыто, открываем...")
+        
+        ; Шаг 5: Нажимаем на клавиатуре кнопку "5" для открытия меню 
+        _HumanSleep()
+        Send("{SC032}") 
+
+    Else
+        _Log("_OpenMenuIfNeed: Меню уже открыто (иконка не найдена)")
+    EndIf
+
+    Return True
+
+EndFunc
 
 
 ; - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
