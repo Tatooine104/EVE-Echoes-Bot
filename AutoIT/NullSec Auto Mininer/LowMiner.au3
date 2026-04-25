@@ -648,14 +648,38 @@ Func _WinGetClientPos($hwnd)
     Return $Pos
 EndFunc
 
+; #FUNCTION# ====================================================================================================================
+; Name...........: _Terminate
+; Description....: Корректно завершает работу скрипта, очищая временные ресурсы и удаляя следы в системе.
+; Syntax.........: _Terminate()
+; Parameters ....: Нет
+; Return values .: Нет (завершает процесс Exit)
+; Date ..........: 2026.04.25
+; Version .......: 1.0
+; Author ........: [Ваше Имя / Ник]
+; Remarks .......: Удаляет папку $sResourceDir и выгружает временный шрифт JetBrains Mono.
+; ===============================================================================================================================
 Func _Terminate()
+    
     _Log("!!! Скрипт остановлен пользователем !!!")
     
-    ; Если мы использовали временную папку для картинок, удаляем её
-    If IsDeclared("sResourceDir") Then DirRemove($sResourceDir, 1)
+    ; 1. Выгружаем временный шрифт из памяти системы
+    If IsDeclared("sResourceDir") Then
+        DllCall("gdi32.dll", "int", "RemoveFontResourceEx", "str", $sResourceDir & "JetBrainsMono-Bold.ttf", "dword", 0x10, "int", 0)
+    EndIf
+
+    ; 2. Если была создана временная папка для картинок — удаляем её со всем содержимым
+    If IsDeclared("sResourceDir") Then 
+        DirRemove($sResourceDir, 1)
+    EndIf
+    
+    ; Даем небольшую паузу для записи последнего лога
+    _HumanSleep(300, 500)
     
     Exit ; Полный выход из программы
-EndFunc
+
+EndFunc   ;==>_Terminate
+
 
 ; #FUNCTION# ====================================================================================================================
 ; Name...........: _SaveToIni
@@ -700,7 +724,7 @@ EndFunc   ;==>_SaveToIni
 ; Remarks .......: Автоматически склеивает имя файла с глобальным путем $sResourceDir.
 ; ===============================================================================================================================
 Func _MyImageSearch($sImgName, $iX1, $iY1, $iX2, $iY2, ByRef $x, ByRef $y, $iTolerance)
-    
+
     ; Формируем полный путь: временная папка ресурсов + имя файла
     Local $sFullPath = $sResourceDir & $sImgName
     
