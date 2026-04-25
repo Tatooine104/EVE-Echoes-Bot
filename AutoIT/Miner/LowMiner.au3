@@ -204,10 +204,10 @@ Func _MoveCargo()
 
 EndFunc
 
-; - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+; - + - + - + - + - | Функция открытия меню грида | - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
 Func _OpenMenuIfNeed()
-    
+
     ; Шаг 1: Проверяем и активируем окно
     If Not _CheckAndActivateClient($ClientName) Then
         _Log("_OpenMenuIfNeed: Ошибка - Клиент не найден")
@@ -221,30 +221,44 @@ Func _OpenMenuIfNeed()
         Return False
     EndIf
 
-    ; Шаг 3: Вычисляем область поиска иконки "глаза" (Смещение: 1207, 378, 60, 53)
+    ; Шаг 3: Вычисляем область поиска
     Local $iX1 = $aCPos[0] + 1190
     Local $iY1 = $aCPos[1] + 370
-    Local $iX2 = $aCPos[0] + 1260 ; 1207 + 60
-    Local $iY2 = $aCPos[1] + 430 ; 378 + 53
+    Local $iX2 = $aCPos[0] + 1260
+    Local $iY2 = $aCPos[1] + 430
 
-    _Log("_OpenMenuIfNeed: Проверяем, открыто ли меню...")
+    _Log("_OpenMenuIfNeed: Проверяем состояние меню...")
 
-    ; Шаг 4: Проверяем наличие иконки закрытого меню (EyeIcon.png)
     Local $x, $y
-    If _ImageSearchArea("EyeIcon.png", 1, $iX1, $iY1, $iX2, $iY2, $x, $y, 100) = 1 Then
-        _Log("_OpenMenuIfNeed: Меню закрыто, открываем...")
+    Local $iMaxRetries = 3
+
+    ; Шаг 4: Цикл попыток открытия меню
+    For $i = 1 To $iMaxRetries
+        ; Проверяем, видна ли иконка "глаза" (значит меню закрыто)
+        If _ImageSearchArea("EyeIcon.png", 1, $iX1, $iY1, $iX2, $iY2, $x, $y, 100) = 0 Then
+            _Log("_OpenMenuIfNeed: Меню открыто (иконка глаза не найдена)")
+            Return True
+        EndIf
+
+        _Log("_OpenMenuIfNeed: Меню закрыто. Попытка открытия " & $i & " из " & $iMaxRetries)
         
-        ; Шаг 5: Нажимаем на клавиатуре кнопку "5" для открытия меню 
+        ; Шаг 5: Нажимаем клавишу открытия (SC032)
         _HumanSleep()
         Send("{SC032}") 
 
-    Else
-        _Log("_OpenMenuIfNeed: Меню уже открыто (иконка не найдена)")
-    EndIf
+        ; Шаг 6: Ожидание анимации появления меню перед следующей проверкой
+        _HumanSleep(800, 1200) 
+    Next
 
-    Return True
-
+    ; Шаг 7: Финальный вердикт после всех попыток
+    _Log("_OpenMenuIfNeed: Ошибка - Не удалось открыть меню за " & $iMaxRetries & " попыток")
+    Return False
+    
 EndFunc
+
+
+; - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
 
 
 ; - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
