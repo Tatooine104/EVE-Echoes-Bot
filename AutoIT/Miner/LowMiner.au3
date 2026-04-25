@@ -63,7 +63,7 @@ Func _Undock()
     EndIf
 
     ; 2. Получаем координаты клиентской области
-    Local $aCPos = WinGetClientPos($ClientName)
+    Local $aCPos = _WinGetClientPos($ClientName)
     If @error Then 
         _Log("_Undock: Ошибка - Не удалось получить координаты")
         Return False
@@ -100,7 +100,7 @@ Func IsCargoFull()
     EndIf
 
     ; 2. Получаем координаты клиентской области
-    Local $aCPos = WinGetClientPos($ClientName)
+    Local $aCPos = _WinGetClientPos($ClientName)
     If @error Then 
         _Log("IsCargoFull: Ошибка - Не удалось получить координаты")
         Return False
@@ -137,7 +137,7 @@ Func _MoveCargo()
     EndIf
 
     ; Шаг 2: Получаем координаты клиентской области
-    Local $aCPos = WinGetClientPos($ClientName)
+    Local $aCPos = _WinGetClientPos($ClientName)
     If @error Then 
         _Log("_MoveCargo: Ошибка - Не удалось получить координаты")
         Return False
@@ -215,7 +215,7 @@ Func _OpenMenuIfNeed()
     EndIf
 
     ; Шаг 2: Получаем координаты клиентской области
-    Local $aCPos = WinGetClientPos($ClientName)
+    Local $aCPos = _WinGetClientPos($ClientName)
     If @error Then 
         _Log("_OpenMenuIfNeed: Ошибка - Не удалось получить координаты")
         Return False
@@ -256,8 +256,7 @@ Func _OpenMenuIfNeed()
 
 EndFunc
 
-
-; - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+; - + - + - + - + - | Функция открытия списка добычи | - + - + - + - + - + - + - + - + - + - + - + - + - 
 
 Func _OpenBeltsList($bNeedToGo)
     ; Шаг 1: Проверяем и активируем окно
@@ -267,7 +266,7 @@ Func _OpenBeltsList($bNeedToGo)
     EndIf
 
     ; Шаг 2: Получаем координаты клиентской области
-    Local $aCPos = WinGetClientPos($ClientName)
+    Local $aCPos = _WinGetClientPos($ClientName)
     If @error Then 
         _Log("_OpenBeltsList: Ошибка - Не удалось получить координаты")
         Return False
@@ -309,6 +308,47 @@ Func _OpenBeltsList($bNeedToGo)
         EndIf
     Else
         _Log("_OpenBeltsList: Ошибка - Не удалось нажать на 'imgShowDropdownMy.bmp'")
+        Return False
+    EndIf
+EndFunc
+
+; - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
+Func _WarpTo($sTargetName)
+    ; Шаг 1: Проверяем и активируем окно
+    If Not _CheckAndActivateClient($ClientName) Then
+        _Log("_WarpTo: Ошибка - Клиент не найден")
+        Return False
+    EndIf
+
+    ; Шаг 2: Получаем координаты клиентской области
+    Local $aCPos = _WinGetClientPos($ClientName)
+    If @error Then 
+        _Log("_WarpTo: Ошибка - Не удалось получить координаты")
+        Return False
+    EndIf
+
+    ; Шаг 3: Вычисляем область поиска кнопки варпа (Смещение: 704, 40, 268, 522)
+    Local $iX1 = $aCPos[0] + 704
+    Local $iY1 = $aCPos[1] + 40
+    Local $iX2 = $aCPos[0] + 972 ; 704 + 268
+    Local $iY2 = $aCPos[1] + 562 ; 40 + 522
+
+    _Log("_WarpTo: Попытка варпа к объекту: " & $sTargetName)
+
+    ; Шаг 4: Поиск и клик по кнопке варпа (warp.png)
+    If _FindAndClick("warp.png", $iX1, $iY1, $iX2, $iY2) Then
+        _Log("_WarpTo: Кнопка найдена. Начинаем разгон к " & $sTargetName)
+        
+        ; Шаг 5: Имитируем человеческую паузу после клика
+        _HumanSleep()
+        
+        ; Шаг 6: Ожидание 10 секунд (базовое время на вход в варп)
+        ; Sleep(10000) 
+        
+        Return True
+    Else
+        _Log("_WarpTo: Ошибка - Не удалось найти кнопку варпа для: " & $sTargetName)
         Return False
     EndIf
 EndFunc
