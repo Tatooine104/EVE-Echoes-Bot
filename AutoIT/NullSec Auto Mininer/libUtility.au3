@@ -12,12 +12,47 @@
 ; #                  _HumanSleep            - Рандомизированная пауза для имитации действий человека.                           #
 ; #                  _Log                   - Запись событий в файл, консоль и расширенный GUI лог.                             #
 ; #                  _SaveToIni             - Сохранение параметров в конфигурационный файл.                                    #
+; #                  _SwitchToNextClient    - Переключение между несколькими окнами.                                            #
 ; #                                                                                                                             #
 ; ###############################################################################################################################
 
 #include-once ; Добавить в первую строку файла библиотеки
 
 #include <libGUI.au3> 
+
+; #FUNCTION# ====================================================================================================================
+; Name...........: _SwitchToNextClient
+; Description....: Переключает контекст на следующее окно из переданного массива.
+; Syntax.........: _SwitchToNextClient(ByRef $aWindowList, ByRef $iCurrentIdx)
+; Parameters ....: $aWindowList - Массив с заголовками окон.
+;                  $iCurrentIdx  - [ByRef] Переменная-индекс текущего активного окна.
+; Return values .: True - Окно успешно активировано, False - Ошибка активации.
+; Updated .......: 2026.04.26
+; Version .......: 1.10
+; Remarks .......: Автоматически зацикливает индекс при достижении конца массива.
+; ===============================================================================================================================
+Func _SwitchToNextClient(ByRef $aWindowList, ByRef $iCurrentIdx)
+    
+    If Not IsArray($aWindowList) Then Return False
+
+    ; 1. Увеличиваем индекс и зацикливаем его
+    $iCurrentIdx += 1
+    If $iCurrentIdx >= UBound($aWindowList) Then $iCurrentIdx = 0
+    
+    Local $sTargetTitle = $aWindowList[$iCurrentIdx]
+    _Log(">>> Смена фокуса: " & $sTargetTitle)
+    
+    ; 2. Активируем выбранное окно
+    If _CheckAndActivateClient($sTargetTitle) Then
+        ; Обновляем информацию в GUI, если переменная ClientName используется для отображения
+        If IsDeclared("ClientName") Then Assign("ClientName", $sTargetTitle, 2)
+        Return True
+    EndIf
+    
+    Return False
+
+EndFunc   ;==>_SwitchToNextClient
+
 
 ; #FUNCTION# ====================================================================================================================
 ; Name...........: _CheckAndActivateClient
@@ -145,7 +180,6 @@ Func _Log($sText, $bDebug = Default, $hControlID = Default)
     Return 1
 
 EndFunc   ;==>_Log
-
 
 
 
