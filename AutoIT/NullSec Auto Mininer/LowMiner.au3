@@ -1,8 +1,10 @@
 ﻿; ###############################################################################################################################
 ; #                                                                                                                             #
 ; # PROJECT........: NullSec Auto Mininer                                                                                       #
-; # VERSION........: 1.0.0 Build ____.__.__                                                                                     #
-; # GITHUB.........: https://github.com/Tatooine104/EVE-Echoes-Bot.git                                                                         #
+; # VERSION........: 1.0.0                                                                                                      #
+; # BUILD..........: 2026.04.25                                                                                                 #
+; # FILENAME.......: libImageSearch.au3                                                                                         #
+; # GITHUB.........: https://github.com/Tatooine104/EVE-Echoes-Bot.git                                                          #
 ; # DESCRIPTION....: Автоматизированный комплекс управления добычей руды.                                                       #
 ; #                  - Поддержка многопоточности графического интерфейса (OnEventMode)                                          #
 ; #                  - Интеллектуальное распознавание образов (ImageSearch)                                                     #
@@ -28,6 +30,7 @@
 #include <WindowsConstants.au3>  ; Содержит $WS_EX_TOPMOST
 #include <StaticConstants.au3>   ; Содержит константы для стилей текста (Label)
 #include <libImageSearch.au3>    ; Содержит функции поиска изображений на экране
+#include <libUtility.au3>        ; Содержит общий и служебные функции 
 
 ; ===============================================================================================================================
 ; 1. РЕСУРСЫ И ИНИЦИАЛИЗАЦИЯ ПАПОК
@@ -496,45 +499,6 @@ Func _CW($sText)
     ConsoleWrite(BinaryToString(StringToBinary($sText & @CRLF, 4), 1))
 EndFunc
 
-; #FUNCTION# ====================================================================================================================
-; Name...........: _Log
-; Description....: Выводит текст в статус-бар GUI, в консоль (если $Debug = True) и записывает в файл лога.
-; Syntax.........: _Log($sText)
-; Parameters ....: $sText - Текст сообщения для записи в лог.
-; Return values .: 1 - Успешно
-;                  0 - Ошибка при записи в файл
-; Date ..........: 2026.04.25
-; Version .......: 1.03
-; Remarks .......: Формат даты: [ГГГГ.ММ.ДД ЧЧ:ММ:СС]. Зависит от глобальной переменной $Debug.
-; ===============================================================================================================================
-Func _Log($sText)
-    ; 1. Подготовка путей
-    Local $sLogDir = @ScriptDir & "\Logs"
-    If Not FileExists($sLogDir) Then DirCreate($sLogDir)
-
-    ; Имя лога соответствует имени скрипта
-    Local $sLogFileName = StringTrimRight(@ScriptName, 4) & ".log"
-    Local $sFullPath = $sLogDir & "\" & $sLogFileName
-
-    ; 2. Формирование строки записи
-    Local $sLogEntry = "[" & @YEAR & "." & @MON & "." & @MDAY & " " & @HOUR & ":" & @MIN & ":" & @SEC & "] -> " & $sText
-
-    ; 3. Вывод в консоль (только если включен режим отладки)
-    If $Debug Then ConsoleWrite($sLogEntry & @CRLF)
-
-    ; 4. Обновление GUI
-    If IsDeclared("hStatusLabel") Then GUICtrlSetData($hStatusLabel, $sText)
-
-    ; 5. Запись в файл
-    Local $hFile = FileOpen($sFullPath, 1 + 8) 
-    If $hFile = -1 Then Return 0
-    
-    FileWriteLine($hFile, $sLogEntry)
-    FileClose($hFile)
-
-    Return 1
-EndFunc   ;==>_Log
-
 
 
 ; - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
@@ -571,29 +535,5 @@ Func _Terminate()
     Exit ; Полный выход из программы
 
 EndFunc   ;==>_Terminate
-
-
-; #FUNCTION# ====================================================================================================================
-; Name...........: _SaveToIni
-; Description....: Записывает значение в файл конфигурации (INI) для сохранения данных между запусками.
-; Syntax.........: _SaveToIni($sSection, $sKey, $vValue)
-; Parameters ....: $sSection   - Название раздела в файле (например, "Statistics").
-;                  $sKey       - Имя параметра внутри раздела (например, "OreCount").
-;                  $vValue     - Значение, которое необходимо сохранить (число или текст).
-; Return values .: 1 - Успешная запись
-;                  0 - Ошибка записи
-; Date ..........: 2026.04.25
-; Version .......: 1.0
-; Author ........: [Ваше Имя / Ник]
-; Remarks .......: Использует глобальную переменную $sIniPath для определения пути к файлу настроек.
-; ===============================================================================================================================
-Func _SaveToIni($sSection, $sKey, $vValue)
-    ; IniWrite возвращает 1 при успехе и 0 при ошибке
-    Local $iResult = IniWrite($sIniPath, $sSection, $sKey, $vValue)
-    
-    Return $iResult
-EndFunc   ;==>_SaveToIni
-
-
 
 
