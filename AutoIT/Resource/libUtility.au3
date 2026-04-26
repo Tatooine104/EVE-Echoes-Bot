@@ -18,7 +18,70 @@
 
 #include-once ; Добавить в первую строку файла библиотеки
 
-#include <libGUI.au3> 
+#include-once
+#include <WinAPIProc.au3>
+#include <WinAPIFiles.au3>
+#include <WinAPISys.au3>
+#include "..\Resource\libGUI.au3"
+
+; #FUNCTION# ====================================================================================================================
+; Name...........: _Util_PrepareClient
+; Description....: Находит окно по имени процесса и принудительно устанавливает размер клиентской области.
+; Syntax.........: _Util_PrepareClient($sProcessName, $iWidth = 1280, $iHeight = 720)
+; Parameters ....: $sProcessName - Имя процесса (например, "MEmu.exe").
+;                  $iWidth       - Нужная ширина клиентской части.
+;                  $iHeight      - Нужная высота клиентской части.
+; Return values .: Handle окна (HWND) при успехе, 0 при ошибке.
+; Updated .......: 2026.04.26
+; Version .......: 1.00
+; Remarks .......: Автоматически корректирует внешние размеры окна, чтобы внутренняя часть соответствовала стандарту.
+; ===============================================================================================================================
+Func _Util_PrepareClient($sProcessName, $iWidth = 1280, $iHeight = 720)
+    Local $hTarget = 0
+    Local $aWinList = WinList()
+    
+    _Log(StringFormat("Поиск игрового окна процесса %s...", $sProcessName))
+
+    For $i = 1 To $aWinList[0][0]
+        If Not BitAND(WinGetState($aWinList[$i][1]), 2) Then ContinueLoop ; Пропускаем невидимые
+        
+        Local $iPid
+        _WinAPI_GetWindowThreadProcessId($aWinList[$i][1], $iPid)
+        
+        If _Util_ProcessGetName($iPid) = $sProcessName Then
+            Local $aSize = WinGetClientSize($aWinList[$i][1])
+            If IsArray($aSize) And $aSize[0] > 600 Then ; Фильтр по минимальному размеру
+                $hTarget = $aWinList[$i][1]
+                
+                _Log("Окно найдено: " & $aWinList[$i][0])
+                
+                ; Подгонка размера
+                Local $aWinPos = WinGetPos($hTarget)
+                Local $iDiffW = $aWinPos[2] - $aSize[0]
+                Local $iDiffH = $aWinPos[3] - $aSize[1]
+                
+                WinMove($hTarget, "", $aWinPos[0], $aWinPos[1], $iWidth + $iDiffW, $iHeight + $iDiffH)
+                Sleep(500)
+                
+                Local $aFinalSize = WinGetClientSize($hTarget)
+                _Log(StringFormat("Размер скорректирован: %dx%d", $aFinalSize[0], $aFinalSize[1]))
+                Return $hTarget
+            EndIf
+        EndIf
+    Next
+
+    _Log("ОШИБКА: Подходящее окно процесса " & $sProcessName & " не найдено.")
+    Return 0
+EndFunc   ;==>_Util_PrepareClient
+
+; Вспомогательная внутренняя функция
+Func _Util_ProcessGetName($iPid)
+    Local $aProc = ProcessList()
+    For $i = 1 To $aProc[0][0]
+        If $aProc[$i][1] = $iPid Then Return $aProc[$i][0]
+    Next
+    Return ""
+EndFunc   ;==>_Util_ProcessGetName
 
 ; #FUNCTION# ====================================================================================================================
 ; Name...........: _SwitchToNextClient
@@ -155,7 +218,7 @@ Func _Log($sText, $bDebug = Default, $hControlID = Default)
     Local $sLogEntry = StringFormat("[%s.%s.%s %s:%s:%s] -> %s", @YEAR, @MON, @MDAY, @HOUR, @MIN, @SEC, $sText)
 
     ; 4. Вывод в консоль Scite
-    If $bDebug Then ConsoleWrite($sLogEntry & @CRLF)
+    If $bDebug Then _CW($sLogEntry)
 
     ; 5. Обновление GUI
     ; Обновляем основной статус (одна строка)

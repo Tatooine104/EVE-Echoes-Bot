@@ -176,27 +176,16 @@ EndFunc   ;==>_GUI_AddLog
 ; Remarks .......: Удаляет папку ресурсов и выгружает временный шрифт. Безопасно работает через Eval.
 ; ===============================================================================================================================
 Func _Terminate()
-    
     _Log("!!! Скрипт остановлен пользователем !!!")
     
-    ; 1. Получаем путь к ресурсам через Eval, чтобы избежать ошибки "undefined variable"
-    Local $sResPath = ""
-    If IsDeclared("sResourceDir") Then 
-        $sResPath = Eval("sResourceDir")
+    ; ВЫГРУЖАЕМ ШРИФТ (если есть)
+    If IsDeclared("sResourceDir") Then
+        Local $sRes = Eval("sResourceDir")
+        DllCall("gdi32.dll", "int", "RemoveFontResourceEx", "str", $sRes & "JetBrainsMono-Bold.ttf", "dword", 0x10, "int", 0)
     EndIf
 
-    ; 2. Выгружаем временный шрифт из памяти системы
-    If $sResPath <> "" Then
-        DllCall("gdi32.dll", "int", "RemoveFontResourceEx", "str", $sResPath & "JetBrainsMono-Bold.ttf", "dword", 0x10, "int", 0)
-    EndIf
+    ; УДАЛИЛИ СТРОКУ DirRemove($sResourceDir, 1) <--- ЭТО ВАЖНО!
 
-    ; 3. Если была создана временная папка — удаляем её со всем содержимым
-    If $sResPath <> "" Then 
-        DirRemove($sResPath, 1)
-    EndIf
-    
-    ; Даем небольшую паузу для записи последнего лога перед закрытием
     Sleep(500)
-    
-    Exit ; Полный выход из программы
-EndFunc   ;==>_Terminate
+    Exit 
+EndFunc

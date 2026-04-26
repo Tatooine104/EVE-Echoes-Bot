@@ -209,7 +209,7 @@ EndFunc   ;==>_ImageSearchClientArea
 ; Name...........: _ImageSearchArea
 ; Description....: Базовая функция поиска изображения в заданных координатах через ImageSearchDLL.dll.
 ; Syntax.........: _ImageSearchArea($findImage, $resultPosition, $x1, $y1, $right, $bottom, ByRef $x, ByRef $y, $tolerance, $hwnd = 0)
-; Parameters ....: $findImage      - Путь к файлу изображения.
+; Parameters ....: $findImage      - Полный путь к файлу изображения.
 ;                  $resultPosition - Где установить координаты: 0 - левый верхний угол, 1 - центр найденного объекта.
 ;                  $x1             - Координата X левого верхнего угла области.
 ;                  $y1             - Координата Y левого верхнего угла области.
@@ -219,56 +219,62 @@ EndFunc   ;==>_ImageSearchClientArea
 ;                  $y              - [ByRef] Переменная для записи найденной координаты Y.
 ;                  $tolerance      - Допуск несовпадения цветов (0-255).
 ;                  $hwnd           - [Optional] Дескриптор окна для коррекции координат (по умолчанию 0).
-; Return values .: 1 - Изображение успешно найдено
-;                  0 - Изображение не найдено или ошибка DLL
+; Return values .: 1 - Изображение успешно найдено.
+;                  0 - Изображение не найдено или ошибка вызова DLL.
 ; Updated .......: 2026.04.26
-; Version .......: 1.16
-; Remarks .......: Динамически загружает DLL из папки расположения текущего файла библиотеки.
+; Version .......: 1.18
+; Remarks .......: Динамически определяет путь к DLL, используя Global $sResourceDir или папку скрипта.
 ; ===============================================================================================================================
 Func _ImageSearchArea($findImage, $resultPosition, $x1, $y1, $right, $bottom, ByRef $x, ByRef $y, $tolerance, $hwnd = 0)
 
-    ; 1. Определяем путь к DLL (папка, где лежит этот файл .au3)
-    Local $sDllPath = @ScriptDir & "\ImageSearchDLL.dll"
+    ; 1. Пытаемся получить путь к папке ресурсов из глобальной переменной основного скрипта
+    Local $sResPath = IsDeclared("sResourceDir") ? Eval("sResourceDir") : @ScriptDir & "\"
+    Local $sDllPath = $sResPath & "ImageSearchDLL.dll"
     
-    ; 2. Проверка наличия DLL
+    ; 2. Проверка наличия DLL по указанному пути
     If Not FileExists($sDllPath) Then
-        _Log("КРИТИЧЕСКАЯ ОШИБКА: DLL не найдена в папке библиотеки: " & $sDllPath)
+        _Log("КРИТИЧЕСКАЯ ОШИБКА: DLL не найдена по пути: " & $sDllPath)
         Return 0
     EndIf
 
+    ; Подготовка строки поиска с допуском
     If $tolerance > 0 Then $findImage = "*" & $tolerance & " " & $findImage
     
-    ; 3. Вызов DLL по полному пути
+    ; 3. Вызов внешней DLL
     Local $result = DllCall($sDllPath, "str", "ImageSearch", "int", $x1, "int", $y1, "int", $right, "int", $bottom, "str", $findImage)
 
-    ; Проверка на ошибки вызова
+    ; Проверка на ошибки системного вызова
     If @error Or Not IsArray($result) Then Return 0
+    
+    ; Если DLL вернула "0" (строка), значит изображение не найдено
     If $result[0] = "0" Then Return 0
 
-    ; 4. Разбор результата (формат: результат|x|y|ширина|высота)
+    ; 4. Разбор результата (формат строки: результат|x|y|ширина|высота)
     Local $array = StringSplit($result[0], "|")
     If $array[0] < 3 Then Return 0
 
+    ; Получаем координаты (индексы 2 и 3 в массиве StringSplit)
     $x = Int(Number($array[2]))
     $y = Int(Number($array[3]))
     
-    ; Если нужен центр объекта, прибавляем половину ширины и высоты
+    ; Если запрошен центр (resultPosition = 1), прибавляем половину размеров объекта
     If $resultPosition = 1 Then
         $x = $x + Int(Number($array[4]) / 2)
         $y = $y + Int(Number($array[5]) / 2)
     EndIf
     
-    ; Корректировка координат относительно клиентской области окна
+    ; Если передан дескриптор окна, пересчитываем экранные координаты в клиентские
     If $hwnd <> 0 Then
-        Local $wpos = _WinGetClientPos($hwnd)
-        If IsArray($wpos) Then
-            $x = $x - $wpos[0]
-            $y = $y - $wpos[1]
+        Local $aWPos = _WinGetClientPos($hwnd)
+        If IsArray($aWPos) Then
+            $x = $x - $aWPos[0]
+            $y = $y - $aWPos[1]
         EndIf
     EndIf
 
     Return 1
 EndFunc   ;==>_ImageSearchArea
+
 
 
 
