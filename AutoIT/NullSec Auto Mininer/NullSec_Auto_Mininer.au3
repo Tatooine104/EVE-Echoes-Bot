@@ -542,69 +542,6 @@ Func _GoToRandomBelt($sCurrentClient)
 EndFunc   ;==>_GoToRandomBelt
 
 
-
-; #FUNCTION# ====================================================================================================================
-; Name...........: _IsSafe
-; Description....: Проверяет локальный чат конкретного окна и записывает статус в массив безопасности.
-; Syntax.........: _IsSafe($sCurrentClient, $iClientIdx)
-; Parameters ....: $sCurrentClient - Заголовок текущего окна клиента.
-;                  $iClientIdx      - Индекс текущего клиента в массиве статусов.
-; Return values .: True         - Безопасно.
-;                  False        - Обнаружена угроза.
-; Updated .......: 2026.04.26
-; Version .......: 1.20
-; Remarks .......: Результат записывается в Global $aIsSave[$iClientIdx].
-; ===============================================================================================================================
-Func _IsSafe($sCurrentClient, $iClientIdx)
-    Local $aCPos = _WinGetClientPos($sCurrentClient)
-    If @error Then Return False
-
-    ; 1. Область локального чата
-    Local $aArea[4]
-    $aArea[0] = $aCPos[0] + 0
-    $aArea[1] = $aCPos[1] + 330
-    $aArea[2] = $aCPos[0] + 400
-    $aArea[3] = $aCPos[1] + 720
-
-    ; Ищем плохие стендинги: Криминал, Минус, Нейтрал
-    Local $aMarkers[3] = ["imgLocalStatCriminal.bmp", "imgLocalStatMinus.bmp", "imgLocalStatNeitral.bmp"]
-    Local $x, $y, $outX, $outY
-    Local $iTolerance = 100
-    Local $bStatus = True ; По умолчанию считаем, что безопасно
-
-    _Log("_IsSafe [" & $sCurrentClient & "]: Проверка локала...")
-
-    ; 2. Проверка маркеров угроз
-    For $i = 0 To 2
-        If _MyImageSearch($aMarkers[$i], $sResourceDir, $aArea, $x, $y, $iTolerance) Then
-            
-            ; 3. Проверка: есть ли рядом иконка "своего" (синий/зеленый плюс), перекрывающая угрозу
-            ; (Например, если нейтарл на самом деле в твоем флоте)
-            Local $aStatusArea[4]
-            $aStatusArea[0] = $x + 10 
-            $aStatusArea[1] = $y - 20 
-            $aStatusArea[2] = $x + 60 
-            $aStatusArea[3] = $y + 20 
-            
-            ; Если иконка подтверждения безопасности (imgLocalStatNull.bmp) НЕ найдена рядом с угрозой
-            If Not _MyImageSearch("imgLocalStatNull.bmp", $sResourceDir, $aStatusArea, $outX, $outY, $iTolerance) Then
-                _Log("_IsSafe [" & $sCurrentClient & "]: !!! ОБНАРУЖЕН ВРАГ !!!")
-                $bStatus = False
-                ExitLoop 
-            EndIf
-        EndIf
-    Next
-
-    ; 4. Записываем результат в массив статусов конкретного окна
-    If IsDeclared("aIsSave") Then
-        ; Используем Execute для записи в массив по индексу, так как Assign плохо работает с индексами массивов напрямую
-        Execute('$aIsSave[' & $iClientIdx & '] = ' & ($bStatus ? 'True' : 'False'))
-    EndIf
-
-    Return $bStatus
-EndFunc   ;==>_IsSafe
-
-
 ; #FUNCTION# ====================================================================================================================
 ; Name...........: _GoToStation
 ; Description....: Выполняет перелет и стыковку со станцией с проверкой результата по кнопке Undock.
@@ -696,6 +633,69 @@ Func _GoToStation($sCurrentClient)
     _Log("_GoToStation [" & $sCurrentClient & "]: ОШИБКА - Не удалось подтвердить док.")
     Return False
 EndFunc   ;==>_GoToStation
+
+
+
+; #FUNCTION# ====================================================================================================================
+; Name...........: _IsSafe
+; Description....: Проверяет локальный чат конкретного окна и записывает статус в массив безопасности.
+; Syntax.........: _IsSafe($sCurrentClient, $iClientIdx)
+; Parameters ....: $sCurrentClient - Заголовок текущего окна клиента.
+;                  $iClientIdx      - Индекс текущего клиента в массиве статусов.
+; Return values .: True         - Безопасно.
+;                  False        - Обнаружена угроза.
+; Updated .......: 2026.04.26
+; Version .......: 1.20
+; Remarks .......: Результат записывается в Global $aIsSave[$iClientIdx].
+; ===============================================================================================================================
+Func _IsSafe($sCurrentClient, $iClientIdx)
+    Local $aCPos = _WinGetClientPos($sCurrentClient)
+    If @error Then Return False
+
+    ; 1. Область локального чата
+    Local $aArea[4]
+    $aArea[0] = $aCPos[0] + 0
+    $aArea[1] = $aCPos[1] + 330
+    $aArea[2] = $aCPos[0] + 400
+    $aArea[3] = $aCPos[1] + 720
+
+    ; Ищем плохие стендинги: Криминал, Минус, Нейтрал
+    Local $aMarkers[3] = ["imgLocalStatCriminal.bmp", "imgLocalStatMinus.bmp", "imgLocalStatNeitral.bmp"]
+    Local $x, $y, $outX, $outY
+    Local $iTolerance = 100
+    Local $bStatus = True ; По умолчанию считаем, что безопасно
+
+    _Log("_IsSafe [" & $sCurrentClient & "]: Проверка локала...")
+
+    ; 2. Проверка маркеров угроз
+    For $i = 0 To 2
+        If _MyImageSearch($aMarkers[$i], $sResourceDir, $aArea, $x, $y, $iTolerance) Then
+            
+            ; 3. Проверка: есть ли рядом иконка "своего" (синий/зеленый плюс), перекрывающая угрозу
+            ; (Например, если нейтарл на самом деле в твоем флоте)
+            Local $aStatusArea[4]
+            $aStatusArea[0] = $x + 10 
+            $aStatusArea[1] = $y - 20 
+            $aStatusArea[2] = $x + 60 
+            $aStatusArea[3] = $y + 20 
+            
+            ; Если иконка подтверждения безопасности (imgLocalStatNull.bmp) НЕ найдена рядом с угрозой
+            If Not _MyImageSearch("imgLocalStatNull.bmp", $sResourceDir, $aStatusArea, $outX, $outY, $iTolerance) Then
+                _Log("_IsSafe [" & $sCurrentClient & "]: !!! ОБНАРУЖЕН ВРАГ !!!")
+                $bStatus = False
+                ExitLoop 
+            EndIf
+        EndIf
+    Next
+
+    ; 4. Записываем результат в массив статусов конкретного окна
+    If IsDeclared("aIsSave") Then
+        ; Используем Execute для записи в массив по индексу, так как Assign плохо работает с индексами массивов напрямую
+        Execute('$aIsSave[' & $iClientIdx & '] = ' & ($bStatus ? 'True' : 'False'))
+    EndIf
+
+    Return $bStatus
+EndFunc   ;==>_IsSafe
 
 
 ; #FUNCTION# ====================================================================================================================

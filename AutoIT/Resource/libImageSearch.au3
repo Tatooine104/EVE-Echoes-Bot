@@ -228,7 +228,7 @@ EndFunc   ;==>_ImageSearchClientArea
 Func _ImageSearchArea($findImage, $resultPosition, $x1, $y1, $right, $bottom, ByRef $x, ByRef $y, $tolerance, $hwnd = 0)
 
     ; 1. Определяем путь к DLL (папка, где лежит этот файл .au3)
-    Local $sDllPath = @AutoItIncludeStarDir & "\ImageSearchDLL.dll"
+    Local $sDllPath = @ScriptDir & "\ImageSearchDLL.dll"
     
     ; 2. Проверка наличия DLL
     If Not FileExists($sDllPath) Then
