@@ -330,6 +330,17 @@ EndFunc
 
 ; - + - + - + - + - | Функция открытия списка добычи | - + - + - + - + - + - + - + - + - + - + - + - + - 
 
+; #FUNCTION# ====================================================================================================================
+; Name...........: _OpenBeltsList
+; Description....: Проверяет наличие открытого списка астероидных поясов и открывает его при необходимости.
+; Syntax.........: _OpenBeltsList($bNeedToGo)
+; Parameters ....: $bNeedToGo   - Булево значение: если True, после открытия списка вызывает переход на случайный пояс.
+; Return values .: True         - Список успешно открыт (или уже был открыт).
+;                  False        - Ошибка на любом из этапов открытия.
+; Updated .......: 2026.04.25
+; Version .......: 1.02
+; Remarks .......: Использует _CheckAndActivateClient, _MyImageSearch и _FindAndClick.
+; ===============================================================================================================================
 Func _OpenBeltsList($bNeedToGo)
     ; Шаг 1: Проверяем и активируем окно
     If Not _CheckAndActivateClient($ClientName) Then
@@ -348,47 +359,56 @@ Func _OpenBeltsList($bNeedToGo)
 
     ; Шаг 3: Проверяем, не открыт ли список уже
     Local $x, $y
-    Local $aArea[4] ; Объявляем массив для области
+    Local $aArea[4]
 
-    ; --- Поиск текущей добычи (Mining Current) ---
-    $aArea[0] = $aCPos[0] + 970  ; X1
-    $aArea[1] = $aCPos[1] + 1    ; Y1
-    $aArea[2] = $aCPos[0] + 1100 ; X2
-    $aArea[3] = $aCPos[1] + 50   ; Y2
-
+    ; --- Область: Mining Current ---
+    $aArea[0] = $aCPos[0] + 970
+    $aArea[1] = $aCPos[1] + 1
+    $aArea[2] = $aCPos[0] + 1100
+    $aArea[3] = $aCPos[1] + 50
     Local $bMiningCurrent = _MyImageSearch("imgMiningCurrent.bmp", $sResourceDir, $aArea, $x, $y, 100)
 
-
-    ; --- Поиск выбора руды (Select Ore) ---
-    $aArea[0] = $aCPos[0] + 970  ; X1
-    $aArea[1] = $aCPos[1] + 55   ; Y1
-    $aArea[2] = $aCPos[0] + 1000 ; X2
-    $aArea[3] = $aCPos[1] + 720  ; Y2
-
+    ; --- Область: Select Ore ---
+    $aArea[0] = $aCPos[0] + 970
+    $aArea[1] = $aCPos[1] + 55
+    $aArea[2] = $aCPos[0] + 1000
+    $aArea[3] = $aCPos[1] + 720
     Local $bSelectOre = _MyImageSearch("imgSelectOreToMine.bmp", $sResourceDir, $aArea, $x, $y, 100)
-
 
     If $bMiningCurrent = 1 And $bSelectOre = 1 Then
         _Log("_OpenBeltsList: Список добычи уже открыт")
-        If $bNeedToGo Then Return _GoToRandomBelt() ; Добавлен Return для проброса результата
+        If $bNeedToGo Then Return _GoToRandomBelt()
         Return True
     EndIf
 
     ; Шаг 4: Открываем выпадающее меню
     _Log("_OpenBeltsList: Список не найден, открываем меню...")
-    If _FindAndClick("imgShowDropdownMy.bmp", $aCPos[0] + 970, $aCPos[1] + 1, $aCPos[0] + 1010, $aCPos[1] + 40) Then
+    $aArea[0] = $aCPos[0] + 970
+    $aArea[1] = $aCPos[1] + 1
+    $aArea[2] = $aCPos[0] + 1010
+    $aArea[3] = $aCPos[1] + 40
+    
+    If _FindAndClick("imgShowDropdownMy.bmp", $sResourceDir, $aArea) Then
         _HumanSleep()
 
         ; Шаг 5: Выбираем пункт добычи
-        If _FindAndClick("imgMinigScreen.bmp", $aCPos[0] + 970, $aCPos[1] + 50, $aCPos[0] + 1220, $aCPos[1] + 720) Then
+        $aArea[0] = $aCPos[0] + 970
+        $aArea[1] = $aCPos[1] + 50
+        $aArea[2] = $aCPos[0] + 1220
+        $aArea[3] = $aCPos[1] + 720
+        
+        If _FindAndClick("imgMinigScreen.bmp", $sResourceDir, $aArea) Then
             _Log("_OpenBeltsList: Грид добычи выбран")
             _HumanSleep()
 
             ; Шаг 6: Дополнительное действие (клик по области управления списком)
-            _FindAndClick("imgMinigScreen.bmp", $aCPos[0] + 1220, $aCPos[1] + 60, $aCPos[0] + 1270, $aCPos[1] + 530)
+            $aArea[0] = $aCPos[0] + 1220
+            $aArea[1] = $aCPos[1] + 60
+            $aArea[2] = $aCPos[0] + 1270
+            $aArea[3] = $aCPos[1] + 530
+            _FindAndClick("imgMinigScreen.bmp", $sResourceDir, $aArea)
             _HumanSleep()
 
-            ; Шаг 7: Если нужно лететь — вызываем функцию полета
             If $bNeedToGo Then Return _GoToRandomBelt()
             Return True
         Else
@@ -399,7 +419,8 @@ Func _OpenBeltsList($bNeedToGo)
         _Log("_OpenBeltsList: Ошибка - Не удалось нажать на 'imgShowDropdownMy.bmp'")
         Return False
     EndIf
-EndFunc
+EndFunc   ;==>_OpenBeltsList
+
 
 ; - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
@@ -448,38 +469,8 @@ EndFunc
 
 ; - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
-; Вспомогательная функция: ищет картинку в области и, если нашла, кликает по ней
-Func _FindAndClick($sImg, $iX1, $iY1, $iX2, $iY2)
-    Local $x, $y
-    ; Ищем изображение с допуском (100)
-    If _ImageSearchArea($sImg, 1, $iX1, $iY1, $iX2, $iY2, $x, $y, 100) = 1 Then
-        _Log("_FindAndClick: Найдено '" & $sImg & "', кликаем.")
-        _HumanSleep(100, 300)      ; Небольшая пауза перед кликом
-        MouseClick("left", $x, $y, 1, 1) ; Кликаем левой кнопкой мыши
-        Return True
-    EndIf
-    
-    _Log("_FindAndClick: Изображение '" & $sImg & "' не найдено.")
-    Return False
-EndFunc
-
-
-; - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
-
-Func _HumanSleep($iMin = 100, $iMax = 800)
-    ; Если при вызове параметры не указаны, используются 100 и 800
-    Local $iWait = Random($iMin, $iMax, 1)
-    
-    ; Логируем только значительные паузы
-    If $iWait > 1000 Then 
-        _Log("Пауза: " & StringFormat("%.2f", $iWait / 1000) & " сек.")
-    EndIf
-    
-    Sleep($iWait)
-EndFunc
-
-
 Func _CheckAndActivateClient($title)
+
     $Client = WinGetHandle($title) ; Записываем в глобальную переменную
 
     If @error Then Return False ; Окно не существует
@@ -492,11 +483,8 @@ Func _CheckAndActivateClient($title)
     Else
 		_Log("Не смог отобразить окно клиента :(")
         Return False ; Окно есть, но не смогло стать активным
-    EndIf
-EndFunc
-
-Func _CW($sText)
-    ConsoleWrite(BinaryToString(StringToBinary($sText & @CRLF, 4), 1))
+    endif
+    
 EndFunc
 
 
