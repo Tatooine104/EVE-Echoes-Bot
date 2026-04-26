@@ -388,38 +388,42 @@ EndFunc   ;==>_OpenBeltsList
 
 ; #FUNCTION# ====================================================================================================================
 ; Name...........: _WarpTo
-; Description....: Выполняет варп к объекту, подтверждает вход в варп и ожидает прибытия.
-; Syntax.........: _WarpTo($sCurrentClient, $sTargetName)
-; Parameters ....: $sCurrentClient - Заголовок текущего окна клиента.
-;                  $sTargetName    - Название объекта (для лога).
-; Return values .: True         - Корабль успешно долетел до цели.
-;                  False        - Ошибка на любом из этапов или тайм-аут прибытия.
+; Description....: Выполняет клик по цели и последующий варп с ожиданием прибытия.
+; Syntax.........: _WarpTo($sCurrentClient, $sTargetName, $aTargetArea)
+; Parameters ....: $sCurrentClient - Заголовок окна клиента.
+;                  $sTargetName    - Название объекта для лога.
+;                  $aTargetArea    - Массив [X1, Y1, X2, Y2] области/объекта, по которому нужно кликнуть для выбора.
+; Return values .: True - Прибытие подтверждено, False - Ошибка на любом этапе.
 ; Updated .......: 2026.04.26
-; Version .......: 1.15
-; Remarks .......: Содержит два этапа ожидания: вход в варп и выход из него.
+; Version .......: 1.16
+; Remarks .......: Сначала выбирает цель по $aTargetArea, затем ищет кнопку варпа.
 ; ===============================================================================================================================
-Func _WarpTo($sCurrentClient, $sTargetName)
-    ; 1. Получаем координаты клиентской области
+Func _WarpTo($sCurrentClient, $sTargetName, $aTargetArea)
+    ; 1. Получаем базовые координаты клиента
     Local $aCPos = _WinGetClientPos($sCurrentClient)
-    If @error Then 
-        _Log("_WarpTo: Ошибка - Не удалось получить координаты '" & $sCurrentClient & "'")
-        Return False
-    EndIf
+    If @error Then Return False
 
-    ; 2. Область для поиска кнопки "Warp"
-    Local $aArea[4]
-    $aArea[0] = $aCPos[0] + 704
-    $aArea[1] = $aCPos[1] + 40
-    $aArea[2] = $aCPos[0] + 972
-    $aArea[3] = $aCPos[1] + 562
+    _Log("_WarpTo [" & $sCurrentClient & "]: Выбираем цель: " & $sTargetName)
 
-    _Log("_WarpTo [" & $sCurrentClient & "]: Попытка варпа к: " & $sTargetName)
+    ; 2. Кликаем по самой цели (например, по строке в списке астероидов)
+    ; Кликаем в центр переданной области $aTargetArea
+    Local $iTargetX = $aTargetArea[0] + ($aTargetArea[2] - $aTargetArea[0]) / 2
+    Local $iTargetY = $aTargetArea[1] + ($aTargetArea[3] - $aTargetArea[1]) / 2
+    MouseClick("left", $iTargetX, $iTargetY, 1, 1)
+    _HumanSleep(500, 800)
 
-    ; 3. Находим и кликаем кнопку варпа
-    If _FindAndClick("warp.png", $sResourceDir, $aArea) Then
-        _Log("_WarpTo [" & $sCurrentClient & "]: Кнопка нажата. Ожидаем индикатор...")
+    ; 3. Область для поиска кнопки "Warp" (появляется после клика по цели)
+    Local $aWarpBtnArea[4]
+    $aWarpBtnArea[0] = $aCPos[0] + 700
+    $aWarpBtnArea[1] = $aCPos[1] + 40
+    $aWarpBtnArea[2] = $aCPos[0] + 1000
+    $aWarpBtnArea[3] = $aCPos[1] + 700
+
+    ; 4. Находим и кликаем кнопку варпа
+    If _FindAndClick("warp.png", $sResourceDir, $aWarpBtnArea) Then
+        _Log("_WarpTo [" & $sCurrentClient & "]: Кнопка нажата. Ожидаем разгон...")
         
-        ; 4. Область для индикатора варпа (х: 404-808, у: 515-555)
+        ; 5. Зона индикатора варпа
         Local $aWarpZone[4]
         $aWarpZone[0] = $aCPos[0] + 404
         $aWarpZone[1] = $aCPos[1] + 515
@@ -428,21 +432,20 @@ Func _WarpTo($sCurrentClient, $sTargetName)
         
         Local $outX, $outY
         
-        ; 5. Ожидаем появление индикатора входа в варп (30 сек)
+        ; 6. Ждем индикатор начала варпа
         If _MyWaitForImageSearch("imgWarpTo.bmp", $sResourceDir, $aWarpZone, 30, $outX, $outY, 100) Then
-            _Log("_WarpTo [" & $sCurrentClient & "]: Варп подтвержден. В полете...")
+            _Log("_WarpTo [" & $sCurrentClient & "]: В варпе. Ожидаем остановку...")
             
-            ; 6. Ожидаем прибытие (появление картинки завершения варпа, например, 120 сек)
-            ; Можно использовать ту же область или другую, если индикатор прибытия в ином месте
+            ; 7. Ждем индикатор выхода из варпа (остановка корабля)
             If _MyWaitForImageSearch("imgShipStopping.bmp", $sResourceDir, $aWarpZone, 1200, $outX, $outY, 100) Then
-                _Log("_WarpTo [" & $sCurrentClient & "]: Прибыли к объекту " & $sTargetName)
+                _Log("_WarpTo [" & $sCurrentClient & "]: Прибыли к " & $sTargetName)
                 Return True
             Else
-                _Log("_WarpTo [" & $sCurrentClient & "]: Ошибка - Превышено время ожидания завершения полета.")
+                _Log("_WarpTo [" & $sCurrentClient & "]: Ошибка - Тайм-аут завершения полета.")
                 Return False
             EndIf
         Else
-            _Log("_WarpTo [" & $sCurrentClient & "]: ПРЕДУПРЕЖДЕНИЕ - Индикатор варпа не найден.")
+            _Log("_WarpTo [" & $sCurrentClient & "]: ПРЕДУПРЕЖДЕНИЕ - Варп не начался.")
             Return False
         EndIf
     Else
@@ -450,6 +453,7 @@ Func _WarpTo($sCurrentClient, $sTargetName)
         Return False
     EndIf
 EndFunc   ;==>_WarpTo
+
 
 
 ; #FUNCTION# ====================================================================================================================
@@ -460,8 +464,8 @@ EndFunc   ;==>_WarpTo
 ; Return values .: True         - Успешный варп к поясу.
 ;                  False        - Пояса не найдены или ошибка варпа.
 ; Updated .......: 2026.04.26
-; Version .......: 1.30
-; Remarks .......: Приоритеты и области: Тип 1 (Large) -> Тип 2 (Medium) -> Тип 3 (Small).
+; Version .......: 1.31
+; Remarks .......: Передает область найденного пояса в обновленную функцию _WarpTo.
 ; ===============================================================================================================================
 Func _GoToRandomBelt($sCurrentClient)
     Local $aCPos = _WinGetClientPos($sCurrentClient)
@@ -470,45 +474,46 @@ Func _GoToRandomBelt($sCurrentClient)
     ; 1. Определяем типы поясов (имена файлов)
     Local $aBeltFiles[3] = ["imgBeltLarge.bmp", "imgBeltMedium.bmp", "imgBeltSmall.bmp"]
 
-; === !!! === !!! Тут надо доделать !!! === !!! ====
-
     ; 2. Определяем смещения областей поиска для каждого типа [X1, Y1, X2, Y2]
-    ; Индексы соответствуют массиву $aBeltFiles
     Local $aOffsets[3][4] = [ _
-        [967, 51, 995, 150], _ ; Область для Типа 1 (например, верх списка)
-        [967, 151, 995, 300], _ ; Область для Типа 2 (середина)
-        [967, 301, 995, 433]  _ ; Область для Типа 3 (низ)
+        [967, 51, 995, 150], _  ; Область для Типа 1
+        [967, 151, 995, 300], _ ; Область для Типа 2
+        [967, 301, 995, 433]  _ ; Область для Типа 3
     ]
 
     Local $x, $y
-    Local $aArea[4] ; Вспомогательный массив для текущей области
+    Local $aArea[4]       ; Рабочая область поиска
+    Local $aTargetArea[4] ; Область найденной цели для передачи в _WarpTo
 
-    ; 3. Перебираем типы по очереди (от 0 до 2)
+    ; 3. Перебираем типы по очереди
     For $i = 0 To 2
         _Log("_GoToRandomBelt [" & $sCurrentClient & "]: Проверка типа " & ($i + 1))
 
-        ; Рассчитываем актуальные экранные координаты для текущего типа
+        ; Рассчитываем координаты области поиска
         $aArea[0] = $aCPos[0] + $aOffsets[$i][0]
         $aArea[1] = $aCPos[1] + $aOffsets[$i][1]
         $aArea[2] = $aCPos[0] + $aOffsets[$i][2]
         $aArea[3] = $aCPos[1] + $aOffsets[$i][3]
 
-        ; Ищем пояс конкретного типа в его специфической области
+        ; Ищем пояс
         If _MyImageSearch($aBeltFiles[$i], $sResourceDir, $aArea, $x, $y, 100) Then
-            _Log("_GoToRandomBelt [" & $sCurrentClient & "]: Выбран пояс типа " & ($i + 1))
+            _Log("_GoToRandomBelt [" & $sCurrentClient & "]: Найден пояс типа " & ($i + 1))
             
-            _HumanSleep(200, 400)
-            MouseClick("left", $x, $y, 1, 1) ; Кликаем точно по найденной иконке
-            _HumanSleep(800, 1200)
+            ; Формируем область цели вокруг найденных координат (например, квадрат 20x20 пикселей)
+            $aTargetArea[0] = $x - 10
+            $aTargetArea[1] = $y - 10
+            $aTargetArea[2] = $x + 10
+            $aTargetArea[3] = $y + 10
 
-            ; Вызываем варп
-            Return _WarpTo($sCurrentClient, "Пояс тип " & ($i + 1))
+            ; Вызываем варп, передавая имя окна, описание цели и область клика
+            Return _WarpTo($sCurrentClient, "Пояс тип " & ($i + 1), $aTargetArea)
         EndIf
     Next
 
     _Log("_GoToRandomBelt [" & $sCurrentClient & "]: Доступные пояса не найдены.")
     Return False
 EndFunc   ;==>_GoToRandomBelt
+
 
 
 ; #FUNCTION# ====================================================================================================================
@@ -573,6 +578,96 @@ Func _IsSafe($sCurrentClient, $iClientIdx)
 EndFunc   ;==>_IsSafe
 
 
+; #FUNCTION# ====================================================================================================================
+; Name...........: _GoToStation
+; Description....: Выполняет перелет и стыковку (док) со станцией.
+; Syntax.........: _GoToStation($sCurrentClient)
+; Parameters ....: $sCurrentClient - Заголовок текущего окна клиента.
+; Return values .: True         - Корабль внутри станции.
+;                  False        - Ошибка на любом из этапов.
+; Updated .......: 2026.04.26
+; Version .......: 1.10
+; Remarks .......: Обрабатывает два сценария: прямой док (если рядом) или варп с последующим доком.
+; ===============================================================================================================================
+Func _GoToStation($sCurrentClient)
+    Local $aCPos = _WinGetClientPos($sCurrentClient)
+    If @error Then Return False
+
+    _Log("_GoToStation [" & $sCurrentClient & "]: Возвращаемся на базу...")
+
+    ; 1. Выбираем фильтр станций в гриде (Шаг 4 из _OpenBeltsList, но с иконкой станции)
+    Local $aArea[4]
+    $aArea[0] = $aCPos[0] + 1210
+    $aArea[1] = $aCPos[1] + 50
+    $aArea[2] = $aCPos[0] + 1280
+    $aArea[3] = $aCPos[1] + 550
+    
+    If Not _FindAndClick("imgStationMarker.bmp", $sResourceDir, $aArea) Then Return False
+    _HumanSleep(500, 800)
+
+    ; Выбираем пункт "Станции" в выпадающем меню
+    $aArea[0] = $aCPos[0] + 950
+    $aArea[1] = $aCPos[1] + 50
+    $aArea[2] = $aCPos[0] + 1210
+    $aArea[3] = $aCPos[1] + 720
+    
+    Local $x = 0 
+    Local $y = 0 
+
+    If Not _MyImageSearch("imgStationMarker.bmp", $sResourceDir, $aArea, $x, $y, 100) Then
+        _Log("_GoToStation [" & $sCurrentClient & "]: Станция не найдена в списке!")
+        Return False
+    EndIf
+    
+    ; Кликаем по найденной станции
+    MouseClick("left", $x, $y, 1, 1)
+    _HumanSleep(500, 800)
+
+    ; 3. Ищем кнопку "Dock" (обычно там же, где кнопка Warp)
+    Local $aDockBtnArea[4]
+    $aDockBtnArea[0] = $aCPos[0] + 704
+    $aDockBtnArea[1] = $aCPos[1] + 40
+    $aDockBtnArea[2] = $aCPos[0] + 972
+    $aDockBtnArea[3] = $aCPos[1] + 562
+
+    If Not _FindAndClick("imgEnterToStation.bmp", $sResourceDir, $aDockBtnArea) Then
+        _Log("_GoToStation [" & $sCurrentClient & "]: Кнопка 'Вход' не найдена.")
+        Return False
+    EndIf
+
+    ; 4. Обработка ситуации: Варп или сразу Док
+    _Log("_GoToStation [" & $sCurrentClient & "]: Команда принята. Ожидаем результат...")
+    
+    Local $aWarpZone[4]
+    $aWarpZone[0] = $aCPos[0] + 404
+    $aWarpZone[1] = $aCPos[1] + 515
+    $aWarpZone[2] = $aCPos[0] + 808
+    $aWarpZone[3] = $aCPos[1] + 555
+
+    Local $outX, $outY
+    Local $iTimer = TimerInit()
+    
+    ; Цикл ожидания: либо появится индикатор варпа, либо иконка "внутри станции"
+    While TimerDiff($iTimer) < 180000 ; Общий таймаут 3 минуты
+        ; А. Проверяем, не зашли ли мы уже на станцию (imgInsideStation.bmp - например, иконка ангара)
+        If _MyImageSearch("imgUnDock.bmp", $sResourceDir, $aCPos, $outX, $outY, 100) Then
+            _Log("_GoToStation [" & $sCurrentClient & "]: Мы внутри станции.")
+            Return True
+        EndIf
+
+        ; Б. Проверяем, не находимся ли мы в варпе
+        If _MyImageSearch("imgWarpTo.bmp", $sResourceDir, $aWarpZone, $outX, $outY, 100) Then
+            _Log("_GoToStation [" & $sCurrentClient & "]: Летим к станции...")
+            ; Если летим, ждем окончания (imgShipStopping.bmp)
+            _MyWaitForImageSearch("imgShipStopping.bmp", $sResourceDir, $aWarpZone, 120, $outX, $outY, 100)
+        EndIf
+
+        Sleep(1000)
+    WEnd
+
+    _Log("_GoToStation [" & $sCurrentClient & "]: Ошибка - Время ожидания дока истекло.")
+    Return False
+EndFunc   ;==>_GoToStation
 
 
 ; - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
