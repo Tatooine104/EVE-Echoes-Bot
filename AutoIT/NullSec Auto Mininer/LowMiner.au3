@@ -27,6 +27,7 @@
 #include <GUIConstantsEx.au3>    ; Содержит $GUI_EVENT_CLOSE
 #include <WindowsConstants.au3>  ; Содержит $WS_EX_TOPMOST
 #include <StaticConstants.au3>   ; Содержит константы для стилей текста (Label)
+#include <libImageSearch.au3>    ; Содержит функции поиска изображений на экране
 
 ; ===============================================================================================================================
 ; 1. РЕСУРСЫ И ИНИЦИАЛИЗАЦИЯ ПАПОК
@@ -79,6 +80,9 @@ Global $DeliveredCount = Int(IniRead($sIniPath, "Statistics", "OreCount", "0"))
 ; --- Оформление ---
 Global $sFontFace = "JetBrains Mono"            ; Основной шрифт интерфейса
 
+; --- Режим отладки ---
+Global $Debug = false
+
 ; ===============================================================================================================================
 ; 4. ИНТЕРФЕЙС УПРАВЛЕНИЯ (GUI)
 ; ===============================================================================================================================
@@ -123,20 +127,23 @@ Func _Undock()
         Return False
     EndIf
 
-    ; 3. Вычисляем область поиска (Координаты из вашего примера)
-    Local $iX1 = $aCPos[0] + 1060 
-    Local $iY1 = $aCPos[1] + 230  
-    Local $iX2 = $aCPos[0] + 1280
-    Local $iY2 = $aCPos[1] + 300
+    ; 3. Вычисляем область поиска
+    Local $aArea[4] ; Явно объявляем массив на 4 элемента
+    $aArea[0] = $aCPos[0] + 1060 ; X1
+    $aArea[1] = $aCPos[1] + 230  ; Y1
+    $aArea[2] = $aCPos[0] + 1280 ; X2
+    $aArea[3] = $aCPos[1] + 300  ; Y2
+    
     Local $x, $y
 
     ; 4. Поиск изображения кнопки Undock
-    If _MyImageSearch("imgUnDock.bmp", $iX1, $iY1, $iX2, $iY2, $x, $y, 100) = 1 Then
+    If _MyImageSearch("imgUnDock.bmp", $sResourceDir, $aArea, $x, $y, 100) = 1 Then
         _Log("_Undock: Кнопка 'Undock' найдена. Выходим в космос")
         _HumanSleep()      
-        Send("{SC016}")    ; Нажимаем на клавиатуре клавишу "U", настроенную на кнопке "Undock"
+        Send("{SC016}")
         Return True
     EndIf
+
 
     _Log("_Undock: Ошибка - Кнопка не найдена")
     Return False
@@ -160,20 +167,22 @@ Func IsCargoFull()
         Return False
     EndIf
 
-    ; 3. Вычисляем область поиска (Смещение: 0, 70, 122, 55)
-    Local $iX1 = $aCPos[0] + 0
-    Local $iY1 = $aCPos[1] + 80
-    Local $iX2 = $aCPos[0] + 60
-    Local $iY2 = $aCPos[1] + 170
+    ; 3. Вычисляем область поиска
+    Local $aArea
+    $aArea[0] = $aCPos[0] + 0   ; X1
+    $aArea[1] = $aCPos[1] + 80  ; Y1
+    $aArea[2] = $aCPos[0] + 60  ; X2
+    $aArea[3] = $aCPos[1] + 170 ; Y2
 
     _Log("IsCargoFull: Проверяем грузовой отсек...")
 
     Local $x, $y
-    ; 4. Поиск изображения 100% карго
-    If _MyImageSearch("imgCargoFull.bmp", $iX1, $iY1, $iX2, $iY2, $x, $y, 100) = 1 Then
+    ; 4. Поиск изображения 100% карго с использованием обновленной функции
+    If _MyImageSearch("imgCargoFull.bmp", $sResourceDir, $aArea, $x, $y, 100) = 1 Then
         _Log("IsCargoFull: Грузовой отсек полон")
         Return True
     EndIf
+
 
     _Log("IsCargoFull: Грузовой отсек еще не полон")
     Return False
@@ -196,12 +205,6 @@ Func _MoveCargo()
         _Log("_MoveCargo: Ошибка - Не удалось получить координаты клиента")
         Return False
     EndIf
-
-    ; Шаг 3: Вычисляем область поиска (Смещение: 0, 80, 60, 170)
-    Local $iX1 = $aCPos[0] + 0
-    Local $iY1 = $aCPos[1] + 80
-    Local $iX2 = $aCPos[0] + 60
-    Local $iY2 = $aCPos[1] + 170
 
     _Log("_MoveCargo: Перемещаем из грузового отсека...")
 
@@ -239,13 +242,22 @@ Func _MoveCargo()
     ; Шаг 12: Финальная проверка пустого трюма с повторными попытками
     Local $x, $y
     Local $iMaxRetries = 3 ; Количество дополнительных проверок
+    Local $aArea[4] ; Массив для хранения координа поиска относительно окна
+
+    $aArea[0] = $aCPos[0] + 0
+    $aArea[1] = $aCPos[1] + 80
+    $aArea[2] = $aCPos[0] + 60
+    $aArea[3] = $aCPos[1] + 170
 
     For $i = 1 To $iMaxRetries
-        If _MyImageSearch("imgCargoEmpty.bmp", $iX1, $iY1, $iX2, $iY2, $x, $y, 100) = 1 Then
+        ; Используем обновленный вызов с путем к ресурсам и массивом координат
+        If _MyImageSearch("imgCargoEmpty.bmp", $sResourceDir, $aArea, $x, $y, 100) = 1 Then
             $DeliveredCount += 1
             _Log("_MoveCargo: Успешно. Выгрузка #" & $DeliveredCount)
             Return True
         EndIf
+
+
         
         ; Если не нашли, ждем немного и пробуем снова (постепенно увеличивая ожидание)
         _Log("_MoveCargo: Карго пока не пустое, ожидание... (Попытка " & $i & " из " & $iMaxRetries & ")")
@@ -276,10 +288,11 @@ Func _OpenMenuIfNeed()
     EndIf
 
     ; Шаг 3: Вычисляем область поиска
-    Local $iX1 = $aCPos[0] + 1190
-    Local $iY1 = $aCPos[1] + 370
-    Local $iX2 = $aCPos[0] + 1260
-    Local $iY2 = $aCPos[1] + 430
+    Local $aArea[4]
+    $aArea[0] = $aCPos[0] + 1190 ; X1
+    $aArea[1] = $aCPos[1] + 370  ; Y1
+    $aArea[2] = $aCPos[0] + 1260 ; X2
+    $aArea[3] = $aCPos[1] + 430  ; Y2
 
     _Log("_OpenMenuIfNeed: Проверяем состояние меню...")
 
@@ -289,10 +302,12 @@ Func _OpenMenuIfNeed()
     ; Шаг 4: Цикл попыток открытия меню
     For $i = 1 To $iMaxRetries
         ; Проверяем, видна ли иконка "глаза" (значит меню закрыто)
-        If _MyImageSearch("imgEyeIcon.bmp", $iX1, $iY1, $iX2, $iY2, $x, $y, 100) = 0 Then
+        ; Теперь передаем $sResourceDir и массив $aArea
+        If _MyImageSearch("imgEyeIcon.bmp", $sResourceDir, $aArea, $x, $y, 100) = 0 Then
             _Log("_OpenMenuIfNeed: Меню открыто (иконка глаза не найдена)")
             Return True
         EndIf
+
 
         _Log("_OpenMenuIfNeed: Меню закрыто. Попытка открытия " & $i & " из " & $iMaxRetries)
         
@@ -330,8 +345,25 @@ Func _OpenBeltsList($bNeedToGo)
 
     ; Шаг 3: Проверяем, не открыт ли список уже
     Local $x, $y
-    Local $bMiningCurrent = _MyImageSearch("imgMiningCurrent.bmp", $aCPos[0] + 970, $aCPos[1] + 1, $aCPos[0] + 1100, $aCPos[1] + 50, $x, $y, 100)
-    Local $bSelectOre = _MyImageSearch("imgSelectOreToMine.bmp", $aCPos[0] + 970, $aCPos[1] + 55, $aCPos[0] + 1000, $aCPos[1] + 720, $x, $y, 100)
+    Local $aArea[4] ; Объявляем массив для области
+
+    ; --- Поиск текущей добычи (Mining Current) ---
+    $aArea[0] = $aCPos[0] + 970  ; X1
+    $aArea[1] = $aCPos[1] + 1    ; Y1
+    $aArea[2] = $aCPos[0] + 1100 ; X2
+    $aArea[3] = $aCPos[1] + 50   ; Y2
+
+    Local $bMiningCurrent = _MyImageSearch("imgMiningCurrent.bmp", $sResourceDir, $aArea, $x, $y, 100)
+
+
+    ; --- Поиск выбора руды (Select Ore) ---
+    $aArea[0] = $aCPos[0] + 970  ; X1
+    $aArea[1] = $aCPos[1] + 55   ; Y1
+    $aArea[2] = $aCPos[0] + 1000 ; X2
+    $aArea[3] = $aCPos[1] + 720  ; Y2
+
+    Local $bSelectOre = _MyImageSearch("imgSelectOreToMine.bmp", $sResourceDir, $aArea, $x, $y, 100)
+
 
     If $bMiningCurrent = 1 And $bSelectOre = 1 Then
         _Log("_OpenBeltsList: Список добычи уже открыт")
@@ -464,20 +496,45 @@ Func _CW($sText)
     ConsoleWrite(BinaryToString(StringToBinary($sText & @CRLF, 4), 1))
 EndFunc
 
+; #FUNCTION# ====================================================================================================================
+; Name...........: _Log
+; Description....: Выводит текст в статус-бар GUI, в консоль (если $Debug = True) и записывает в файл лога.
+; Syntax.........: _Log($sText)
+; Parameters ....: $sText - Текст сообщения для записи в лог.
+; Return values .: 1 - Успешно
+;                  0 - Ошибка при записи в файл
+; Date ..........: 2026.04.25
+; Version .......: 1.03
+; Remarks .......: Формат даты: [ГГГГ.ММ.ДД ЧЧ:ММ:СС]. Зависит от глобальной переменной $Debug.
+; ===============================================================================================================================
 Func _Log($sText)
+    ; 1. Подготовка путей
+    Local $sLogDir = @ScriptDir & "\Logs"
+    If Not FileExists($sLogDir) Then DirCreate($sLogDir)
 
-    ; 1. Пишем в консоль (для отладки)
-    ; ConsoleWrite($sText & @CRLF)
+    ; Имя лога соответствует имени скрипта
+    Local $sLogFileName = StringTrimRight(@ScriptName, 4) & ".log"
+    Local $sFullPath = $sLogDir & "\" & $sLogFileName
+
+    ; 2. Формирование строки записи
+    Local $sLogEntry = "[" & @YEAR & "." & @MON & "." & @MDAY & " " & @HOUR & ":" & @MIN & ":" & @SEC & "] -> " & $sText
+
+    ; 3. Вывод в консоль (только если включен режим отладки)
+    If $Debug Then ConsoleWrite($sLogEntry & @CRLF)
+
+    ; 4. Обновление GUI
+    If IsDeclared("hStatusLabel") Then GUICtrlSetData($hStatusLabel, $sText)
+
+    ; 5. Запись в файл
+    Local $hFile = FileOpen($sFullPath, 1 + 8) 
+    If $hFile = -1 Then Return 0
     
-    ; 2. Обновляем текст в нашем окошке
-    GUICtrlSetData($hStatusLabel, $sText)
-    
-    ; 3. Можно также писать в текстовый файл, если нужно
-    Local $hFile = FileOpen("bot_log.txt", 1)
-    FileWriteLine($hFile, @MDAY & "." & @MON & " " & @HOUR & ":" & @MIN & ":" & @SEC & " -> " & $sText)
+    FileWriteLine($hFile, $sLogEntry)
     FileClose($hFile)
 
-EndFunc
+    Return 1
+EndFunc   ;==>_Log
+
 
 
 ; - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
