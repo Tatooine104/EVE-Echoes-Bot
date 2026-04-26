@@ -388,15 +388,15 @@ EndFunc   ;==>_OpenBeltsList
 
 ; #FUNCTION# ====================================================================================================================
 ; Name...........: _WarpTo
-; Description....: Выполняет варп к выбранному объекту, находя и нажимая кнопку варпа.
+; Description....: Выполняет варп к объекту, подтверждает вход в варп и ожидает прибытия.
 ; Syntax.........: _WarpTo($sCurrentClient, $sTargetName)
 ; Parameters ....: $sCurrentClient - Заголовок текущего окна клиента.
-;                  $sTargetName    - Название объекта (используется для логирования).
-; Return values .: True         - Кнопка варпа найдена и нажата.
-;                  False        - Кнопка не найдена или ошибка координат.
+;                  $sTargetName    - Название объекта (для лога).
+; Return values .: True         - Корабль успешно долетел до цели.
+;                  False        - Ошибка на любом из этапов или тайм-аут прибытия.
 ; Updated .......: 2026.04.26
-; Version .......: 1.12
-; Remarks .......: Координаты кнопки рассчитываются относительно клиентской области окна.
+; Version .......: 1.15
+; Remarks .......: Содержит два этапа ожидания: вход в варп и выход из него.
 ; ===============================================================================================================================
 Func _WarpTo($sCurrentClient, $sTargetName)
     ; 1. Получаем координаты клиентской области
@@ -406,7 +406,7 @@ Func _WarpTo($sCurrentClient, $sTargetName)
         Return False
     EndIf
 
-    ; 2. Вычисляем область поиска кнопки варпа (Смещение: 704, 40, 972, 562)
+    ; 2. Область для поиска кнопки "Warp"
     Local $aArea[4]
     $aArea[0] = $aCPos[0] + 704
     $aArea[1] = $aCPos[1] + 40
@@ -415,21 +415,44 @@ Func _WarpTo($sCurrentClient, $sTargetName)
 
     _Log("_WarpTo [" & $sCurrentClient & "]: Попытка варпа к: " & $sTargetName)
 
-    ; 3. Поиск и клик по кнопке варпа (warp.png)
+    ; 3. Находим и кликаем кнопку варпа
     If _FindAndClick("warp.png", $sResourceDir, $aArea) Then
-        _Log("_WarpTo [" & $sCurrentClient & "]: Кнопка найдена. Разгон к " & $sTargetName)
+        _Log("_WarpTo [" & $sCurrentClient & "]: Кнопка нажата. Ожидаем индикатор...")
         
-        ; Имитируем человеческую паузу после клика
-        ;_HumanSleep()
-        ; Тут нужна логика проверки что варпанул
-        ;
-
-        Return True
+        ; 4. Область для индикатора варпа (х: 404-808, у: 515-555)
+        Local $aWarpZone[4]
+        $aWarpZone[0] = $aCPos[0] + 404
+        $aWarpZone[1] = $aCPos[1] + 515
+        $aWarpZone[2] = $aCPos[0] + 808
+        $aWarpZone[3] = $aCPos[1] + 555
+        
+        Local $outX, $outY
+        
+        ; 5. Ожидаем появление индикатора входа в варп (30 сек)
+        If _MyWaitForImageSearch("imgWarpTo.bmp", $sResourceDir, $aWarpZone, 30, $outX, $outY, 100) Then
+            _Log("_WarpTo [" & $sCurrentClient & "]: Варп подтвержден. В полете...")
+            
+            ; 6. Ожидаем прибытие (появление картинки завершения варпа, например, 120 сек)
+            ; Можно использовать ту же область или другую, если индикатор прибытия в ином месте
+            If _MyWaitForImageSearch("imgShipStopping.bmp", $sResourceDir, $aWarpZone, 1200, $outX, $outY, 100) Then
+                _Log("_WarpTo [" & $sCurrentClient & "]: Прибыли к объекту " & $sTargetName)
+                Return True
+            Else
+                _Log("_WarpTo [" & $sCurrentClient & "]: Ошибка - Превышено время ожидания завершения полета.")
+                Return False
+            EndIf
+        Else
+            _Log("_WarpTo [" & $sCurrentClient & "]: ПРЕДУПРЕЖДЕНИЕ - Индикатор варпа не найден.")
+            Return False
+        EndIf
     Else
         _Log("_WarpTo [" & $sCurrentClient & "]: ОШИБКА - Кнопка варпа не найдена.")
         Return False
     EndIf
 EndFunc   ;==>_WarpTo
+
+
+
 
 
 ; - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +

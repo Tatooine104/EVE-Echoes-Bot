@@ -24,6 +24,47 @@
 #include <libUtility.au3>
 
 ; #FUNCTION# ====================================================================================================================
+; Name...........: _MyWaitForImageSearch
+; Description....: Ожидает появления изображения в конкретной области (массиве) в течение заданного времени.
+; Syntax.........: _MyWaitForImageSearch($sImgName, $sResDir, $aRect, $iWaitSecs, ByRef $x, ByRef $y, $iTolerance)
+; Parameters ....: $sImgName   - Имя файла изображения.
+;                  $sResDir    - Путь к папке с изображениями.
+;                  $aRect      - Массив координат области поиска [X1, Y1, X2, Y2].
+;                  $iWaitSecs  - Время ожидания в секундах.
+;                  $x          - [ByRef] Переменная для записи найденной координаты X.
+;                  $y          - [ByRef] Переменная для записи найденной координаты Y.
+;                  $iTolerance - Допуск поиска (0-255).
+; Return values .: 1 - Изображение найдено.
+;                  0 - Время ожидания истекло.
+; Updated .......: 2026.04.26
+; Version .......: 1.00
+; Remarks .......: Проверка выполняется каждые 100 мс. Использует TimerInit для точности.
+; ===============================================================================================================================
+Func _MyWaitForImageSearch($sImgName, $sResDir, $aRect, $iWaitSecs, ByRef $x, ByRef $y, $iTolerance)
+    ; Проверка входных данных
+    If Not IsArray($aRect) Or UBound($aRect) < 4 Then Return 0
+    
+    Local $iWaitMs = $iWaitSecs * 1000
+    Local $hTimer = TimerInit()
+    
+    _Log("Ожидание появления '" & $sImgName & "' (" & $iWaitSecs & " сек.)")
+
+    While TimerDiff($hTimer) < $iWaitMs
+        ; Используем нашу основную функцию поиска (флаг возврата центра уже вшит в неё)
+        If _MyImageSearch($sImgName, $sResDir, $aRect, $x, $y, $iTolerance) Then
+            Return 1
+        EndIf
+        
+        Sleep(100) ; Пауза между проверками
+    WEnd
+
+    _Log("Тайм-аут: '" & $sImgName & "' не появилось.")
+    Return 0
+EndFunc   ;==>_MyWaitForImageSearch
+
+
+
+; #FUNCTION# ====================================================================================================================
 ; Name...........: _FindAndClick
 ; Description....: Ищет изображение в заданной области (массиве) и выполняет клик при обнаружении.
 ; Syntax.........: _FindAndClick($sImg, $sResDir, $aRect)
