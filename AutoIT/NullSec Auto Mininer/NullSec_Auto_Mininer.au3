@@ -29,10 +29,10 @@
 #include <GUIConstantsEx.au3>    ; Содержит $GUI_EVENT_CLOSE
 #include <WindowsConstants.au3>  ; Содержит $WS_EX_TOPMOST
 #include <StaticConstants.au3>   ; Содержит константы для стилей текста (Label)
-#include <libImageSearch.au3>    ; Содержит функции поиска изображений на экране
-#include <libUtility.au3>        ; Содержит общий и служебные функции 
-#include <libGUI.au3>            ; Подключаем вашу новую библиотеку интерфейса
 #include <WinAPIFiles.au3>
+#include "..\Resource\libImageSearch.au3"    ; Содержит функции поиска изображений на экране
+#include "..\Resource\libUtility.au3"        ; Содержит общий и служебные функции 
+#include "..\Resource\libGUI.au3"            ; Подключаем вашу новую библиотеку интерфейса
 
 ; ===============================================================================================================================
 ; 1. РЕСУРСЫ И ИНИЦИАЛИЗАЦИЯ ПАПОК
@@ -69,8 +69,8 @@ Opt("GUIOnEventMode", 1)       ; Включение режима событий 
 
 ; --- Пути и файлы ---
 Global $sIniPath = @ScriptDir & "\settings.ini" ; Файл настроек рядом с исполняемым файлом
-Global $sResourceDir = _WinAPI_GetFullPathName(@ScriptDir & "\..\Resource\") & "\"
 Global $sImagesDir = _WinAPI_GetFullPathName(@ScriptDir & "\..\Images\") & "\"
+Global $sResourceDir = _WinAPI_GetFullPathName(@ScriptDir & "\..\Resource\") & "\"
 
 ; Проверяем, видит ли скрипт папку
 If Not FileExists($sResourceDir) Then 

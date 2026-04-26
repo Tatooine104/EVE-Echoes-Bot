@@ -220,41 +220,56 @@ EndFunc   ;==>_ImageSearchClientArea
 ;                  $tolerance      - Допуск несовпадения цветов (0-255).
 ;                  $hwnd           - [Optional] Дескриптор окна для коррекции координат (по умолчанию 0).
 ; Return values .: 1 - Изображение успешно найдено
-;                  0 - Изображение не найдено
-; Updated .......: 2026.04.25
-; Version .......: 1.00
-; Remarks .......: Использует внешнюю библиотеку ImageSearchDLL.dll.
+;                  0 - Изображение не найдено или ошибка DLL
+; Updated .......: 2026.04.26
+; Version .......: 1.16
+; Remarks .......: Динамически загружает DLL из папки расположения текущего файла библиотеки.
 ; ===============================================================================================================================
 Func _ImageSearchArea($findImage, $resultPosition, $x1, $y1, $right, $bottom, ByRef $x, ByRef $y, $tolerance, $hwnd = 0)
 
-	If $tolerance > 0 Then $findImage = "*" & $tolerance & " " & $findImage
-	Local $result = DllCall("ImageSearchDLL.dll", "str", "ImageSearch", "int", $x1, "int", $y1, "int", $right, "int", $bottom, "str", $findImage)
-
-	; Если поиск не удался
-	If $result[0] = "0" Then Return 0
-
-	; Разбиваем результат: результат|x|y|ширина|высота
-	Local $array = StringSplit($result[0], "|")
-
-	$x = Int(Number($array[2]))
-	$y = Int(Number($array[3]))
+    ; 1. Определяем путь к DLL (папка, где лежит этот файл .au3)
+    Local $sDllPath = @AutoItIncludeStarDir & "\ImageSearchDLL.dll"
     
-	; Если нужен центр объекта
-	If $resultPosition = 1 Then
-		$x = $x + Int(Number($array[4]) / 2)
-		$y = $y + Int(Number($array[5]) / 2)
-	EndIf
-    
-	; Корректировка под координаты клиентской области окна
-	If $hwnd <> 0 Then
-		Local $wpos = _WinGetClientPos($hwnd)
-		$x = $x - $wpos[0]
-		$y = $y - $wpos[1]
-	EndIf
+    ; 2. Проверка наличия DLL
+    If Not FileExists($sDllPath) Then
+        _Log("КРИТИЧЕСКАЯ ОШИБКА: DLL не найдена в папке библиотеки: " & $sDllPath)
+        Return 0
+    EndIf
 
-	Return 1
+    If $tolerance > 0 Then $findImage = "*" & $tolerance & " " & $findImage
     
+    ; 3. Вызов DLL по полному пути
+    Local $result = DllCall($sDllPath, "str", "ImageSearch", "int", $x1, "int", $y1, "int", $right, "int", $bottom, "str", $findImage)
+
+    ; Проверка на ошибки вызова
+    If @error Or Not IsArray($result) Then Return 0
+    If $result[0] = "0" Then Return 0
+
+    ; 4. Разбор результата (формат: результат|x|y|ширина|высота)
+    Local $array = StringSplit($result[0], "|")
+    If $array[0] < 3 Then Return 0
+
+    $x = Int(Number($array[2]))
+    $y = Int(Number($array[3]))
+    
+    ; Если нужен центр объекта, прибавляем половину ширины и высоты
+    If $resultPosition = 1 Then
+        $x = $x + Int(Number($array[4]) / 2)
+        $y = $y + Int(Number($array[5]) / 2)
+    EndIf
+    
+    ; Корректировка координат относительно клиентской области окна
+    If $hwnd <> 0 Then
+        Local $wpos = _WinGetClientPos($hwnd)
+        If IsArray($wpos) Then
+            $x = $x - $wpos[0]
+            $y = $y - $wpos[1]
+        EndIf
+    EndIf
+
+    Return 1
 EndFunc   ;==>_ImageSearchArea
+
 
 
 
