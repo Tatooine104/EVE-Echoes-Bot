@@ -75,7 +75,7 @@ Global $sCurrentClient = $aClients[0]           ; Индекс окна, с ко
 
 ; --- Игровые параметры ---
 Global $InSpace    = False                      ; Статус: в космосе или нет
-Global $IsSave     = False                      ; Статус: безопасность (враги/щит)
+Global $aIsSave[UBound($aClients)]              ; Массив статусов безопасности для всех окон                      ; Статус: безопасность (враги/щит)
 
 ; --- Статистика ---
 ; Загружаем сохраненный счетчик из INI (по умолчанию "0" если файл не найден)
@@ -451,6 +451,126 @@ Func _WarpTo($sCurrentClient, $sTargetName)
     EndIf
 EndFunc   ;==>_WarpTo
 
+
+; #FUNCTION# ====================================================================================================================
+; Name...........: _GoToRandomBelt
+; Description....: Ищет пояса по приоритету с использованием уникальных областей поиска для каждого типа.
+; Syntax.........: _GoToRandomBelt($sCurrentClient)
+; Parameters ....: $sCurrentClient - Заголовок текущего окна клиента.
+; Return values .: True         - Успешный варп к поясу.
+;                  False        - Пояса не найдены или ошибка варпа.
+; Updated .......: 2026.04.26
+; Version .......: 1.30
+; Remarks .......: Приоритеты и области: Тип 1 (Large) -> Тип 2 (Medium) -> Тип 3 (Small).
+; ===============================================================================================================================
+Func _GoToRandomBelt($sCurrentClient)
+    Local $aCPos = _WinGetClientPos($sCurrentClient)
+    If @error Then Return False
+
+    ; 1. Определяем типы поясов (имена файлов)
+    Local $aBeltFiles[3] = ["imgBeltLarge.bmp", "imgBeltMedium.bmp", "imgBeltSmall.bmp"]
+
+; === !!! === !!! Тут надо доделать !!! === !!! ====
+
+    ; 2. Определяем смещения областей поиска для каждого типа [X1, Y1, X2, Y2]
+    ; Индексы соответствуют массиву $aBeltFiles
+    Local $aOffsets[3][4] = [ _
+        [967, 51, 995, 150], _ ; Область для Типа 1 (например, верх списка)
+        [967, 151, 995, 300], _ ; Область для Типа 2 (середина)
+        [967, 301, 995, 433]  _ ; Область для Типа 3 (низ)
+    ]
+
+    Local $x, $y
+    Local $aArea[4] ; Вспомогательный массив для текущей области
+
+    ; 3. Перебираем типы по очереди (от 0 до 2)
+    For $i = 0 To 2
+        _Log("_GoToRandomBelt [" & $sCurrentClient & "]: Проверка типа " & ($i + 1))
+
+        ; Рассчитываем актуальные экранные координаты для текущего типа
+        $aArea[0] = $aCPos[0] + $aOffsets[$i][0]
+        $aArea[1] = $aCPos[1] + $aOffsets[$i][1]
+        $aArea[2] = $aCPos[0] + $aOffsets[$i][2]
+        $aArea[3] = $aCPos[1] + $aOffsets[$i][3]
+
+        ; Ищем пояс конкретного типа в его специфической области
+        If _MyImageSearch($aBeltFiles[$i], $sResourceDir, $aArea, $x, $y, 100) Then
+            _Log("_GoToRandomBelt [" & $sCurrentClient & "]: Выбран пояс типа " & ($i + 1))
+            
+            _HumanSleep(200, 400)
+            MouseClick("left", $x, $y, 1, 1) ; Кликаем точно по найденной иконке
+            _HumanSleep(800, 1200)
+
+            ; Вызываем варп
+            Return _WarpTo($sCurrentClient, "Пояс тип " & ($i + 1))
+        EndIf
+    Next
+
+    _Log("_GoToRandomBelt [" & $sCurrentClient & "]: Доступные пояса не найдены.")
+    Return False
+EndFunc   ;==>_GoToRandomBelt
+
+
+; #FUNCTION# ====================================================================================================================
+; Name...........: _IsSafe
+; Description....: Проверяет локальный чат конкретного окна и записывает статус в массив безопасности.
+; Syntax.........: _IsSafe($sCurrentClient, $iClientIdx)
+; Parameters ....: $sCurrentClient - Заголовок текущего окна клиента.
+;                  $iClientIdx      - Индекс текущего клиента в массиве статусов.
+; Return values .: True         - Безопасно.
+;                  False        - Обнаружена угроза.
+; Updated .......: 2026.04.26
+; Version .......: 1.20
+; Remarks .......: Результат записывается в Global $aIsSave[$iClientIdx].
+; ===============================================================================================================================
+Func _IsSafe($sCurrentClient, $iClientIdx)
+    Local $aCPos = _WinGetClientPos($sCurrentClient)
+    If @error Then Return False
+
+    ; 1. Область локального чата
+    Local $aArea[4]
+    $aArea[0] = $aCPos[0] + 0
+    $aArea[1] = $aCPos[1] + 330
+    $aArea[2] = $aCPos[0] + 400
+    $aArea[3] = $aCPos[1] + 720
+
+    ; Ищем плохие стендинги: Криминал, Минус, Нейтрал
+    Local $aMarkers[3] = ["imgLocalStatCriminal.bmp", "imgLocalStatMinus.bmp", "imgLocalStatNeitral.bmp"]
+    Local $x, $y, $outX, $outY
+    Local $iTolerance = 100
+    Local $bStatus = True ; По умолчанию считаем, что безопасно
+
+    _Log("_IsSafe [" & $sCurrentClient & "]: Проверка локала...")
+
+    ; 2. Проверка маркеров угроз
+    For $i = 0 To 2
+        If _MyImageSearch($aMarkers[$i], $sResourceDir, $aArea, $x, $y, $iTolerance) Then
+            
+            ; 3. Проверка: есть ли рядом иконка "своего" (синий/зеленый плюс), перекрывающая угрозу
+            ; (Например, если нейтарл на самом деле в твоем флоте)
+            Local $aStatusArea[4]
+            $aStatusArea[0] = $x + 10 
+            $aStatusArea[1] = $y - 20 
+            $aStatusArea[2] = $x + 60 
+            $aStatusArea[3] = $y + 20 
+            
+            ; Если иконка подтверждения безопасности (imgLocalStatNull.bmp) НЕ найдена рядом с угрозой
+            If Not _MyImageSearch("imgLocalStatNull.bmp", $sResourceDir, $aStatusArea, $outX, $outY, $iTolerance) Then
+                _Log("_IsSafe [" & $sCurrentClient & "]: !!! ОБНАРУЖЕН ВРАГ !!!")
+                $bStatus = False
+                ExitLoop 
+            EndIf
+        EndIf
+    Next
+
+    ; 4. Записываем результат в массив статусов конкретного окна
+    If IsDeclared("aIsSave") Then
+        ; Используем Execute для записи в массив по индексу, так как Assign плохо работает с индексами массивов напрямую
+        Execute('$aIsSave[' & $iClientIdx & '] = ' & ($bStatus ? 'True' : 'False'))
+    EndIf
+
+    Return $bStatus
+EndFunc   ;==>_IsSafe
 
 
 
