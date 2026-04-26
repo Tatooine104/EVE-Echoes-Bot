@@ -100,44 +100,48 @@ EndFunc   ;==>_FindAndClick
 
 ; #FUNCTION# ====================================================================================================================
 ; Name...........: _MyImageSearch
-; Description....: Ищет изображение в заданной области (массиве) с подстановкой пути к папке ресурсов.
+; Description....: Ищет изображение в заданной области (массиве) с автоматической склейкой пути к ресурсам.
 ; Syntax.........: _MyImageSearch($sImgName, $sResDir, $aRect, ByRef $x, ByRef $y, $iTolerance)
-; Parameters ....: $sImgName   - Имя файла изображения (например, "button.png").
-;                  $sResDir    - Путь к папке с изображениями.
-;                  $aRect      - Массив координат области поиска [X1, Y1, X2, Y2].
-;                  $x          - [ByRef] Переменная для записи найденной координаты X (центр изображения).
-;                  $y          - [ByRef] Переменная для записи найденной координаты Y (центр изображения).
-;                  $iTolerance - Допуск поиска (0-255).
-; Return values .: 1 - Изображение успешно найдено
-;                  0 - Изображение не найдено или передан неверный массив координат
-; Updated .......: 2026.04.25
-; Version .......: 1.03
-; Remarks .......: При неудаче сохраняет скриншот области поиска в папку @ScriptDir & "\Logs\"
+; Parameters ....: $sImgName   - Имя файла (например, "imgMining.bmp").
+;                  $sResDir    - Путь к папке (Global $sResourceDir).
+;                  $aRect      - Массив [X1, Y1, X2, Y2].
+;                  $x, $y      - [ByRef] Переменные для координат результата.
+;                  $iTolerance - Допуск (0-255).
+; Return values .: 1 - Найдено, 0 - Не найдено.
+; Updated .......: 2026.04.26
+; Version .......: 1.05
+; Remarks .......: Если картинка не найдена, сохраняет скриншот области в папку \Logs\.
 ; ===============================================================================================================================
 Func _MyImageSearch($sImgName, $sResDir, $aRect, ByRef $x, ByRef $y, $iTolerance)
+    ; 1. Проверка массива координат
+    If Not IsArray($aRect) Or UBound($aRect) < 4 Then 
+        _Log("_MyImageSearch: Ошибка - передан неверный массив координат для " & $sImgName)
+        Return 0
+    EndIf
 
-    If Not IsArray($aRect) Or UBound($aRect) < 4 Then Return 0
+    ; 2. Корректировка пути (добавляем слэш, если его нет)
     If $sResDir <> "" And StringRight($sResDir, 1) <> "\" Then $sResDir &= "\"
-
     Local $sFullPath = $sResDir & $sImgName
+
+    ; 3. Вызов базовой функции поиска (1 - поиск центра)
+    ; Передаем элементы массива явно: [0], [1], [2], [3]
     Local $iResult = _ImageSearchArea($sFullPath, 1, $aRect[0], $aRect[1], $aRect[2], $aRect[3], $x, $y, $iTolerance)
     
-    ; --- ЛОГИКА ОТЛАДКИ ---
+    ; 4. Если НЕ нашли — делаем скриншот для отладки
     If $iResult = 0 Then
         Local $sLogDir = @ScriptDir & "\Logs"
         If Not FileExists($sLogDir) Then DirCreate($sLogDir)
         
-        ; Формируем имя файла: ИмяКартинки_Время_Ошибка.jpg
-        Local $sFileName = $sLogDir & "\" & StringReplace($sImgName, ".", "_") & "_" & @HOUR & @MIN & @SEC & "_err.jpg"
+        ; Формируем имя скриншота: ИмяКартинки_Время.jpg
+        Local $sFileErr = $sLogDir & "\" & StringReplace($sImgName, ".", "_") & "_" & @HOUR & @MIN & @SEC & "_err.jpg"
         
-        ; Делаем скриншот именно той области, где искали
-        _ScreenCapture_Capture($sFileName, $aRect[0], $aRect[1], $aRect[2], $aRect[3])
+        ; Снимаем именно ту область, где искали
+        _ScreenCapture_Capture($sFileErr, $aRect[0], $aRect[1], $aRect[2], $aRect[3])
     EndIf
-    ; ----------------------
 
     Return $iResult
-
 EndFunc   ;==>_MyImageSearch
+
 
 
 

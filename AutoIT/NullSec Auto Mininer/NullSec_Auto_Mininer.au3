@@ -32,6 +32,7 @@
 #include <libImageSearch.au3>    ; Содержит функции поиска изображений на экране
 #include <libUtility.au3>        ; Содержит общий и служебные функции 
 #include <libGUI.au3>            ; Подключаем вашу новую библиотеку интерфейса
+#include <WinAPIFiles.au3>
 
 ; ===============================================================================================================================
 ; 1. РЕСУРСЫ И ИНИЦИАЛИЗАЦИЯ ПАПОК
@@ -68,6 +69,32 @@ Opt("GUIOnEventMode", 1)       ; Включение режима событий 
 
 ; --- Пути и файлы ---
 Global $sIniPath = @ScriptDir & "\settings.ini" ; Файл настроек рядом с исполняемым файлом
+Global $sResourceDir = _WinAPI_GetFullPathName(@ScriptDir & "\..\Resource\") & "\"
+Global $sImagesDir = _WinAPI_GetFullPathName(@ScriptDir & "\..\Images\") & "\"
+
+; Проверяем, видит ли скрипт папку
+If Not FileExists($sResourceDir) Then 
+    ; Сначала выводим сообщение пользователю
+    MsgBox(16, "Критическая ошибка", "Папка с ресурсами не найдена!" & @CRLF & "Путь: " & $sResourceDir)
+    
+    ; Если лог уже может работать, записываем ошибку туда
+    _Log("ОСТАНОВКА: Папка ресурсов не найдена по пути " & $sResourceDir)
+    
+    ; Прерываем выполнение
+    Exit 
+EndIf 
+
+; Проверяем, видит ли скрипт папку
+If Not FileExists($sImagesDir) Then 
+    ; Сначала выводим сообщение пользователю
+    MsgBox(16, "Критическая ошибка", "Папка с картинками не найдена!" & @CRLF & "Путь: " & $sImagesDir)
+    
+    ; Если лог уже может работать, записываем ошибку туда
+    _Log("ОСТАНОВКА: Папка ресурсов не найдена по пути " & $sResourceDir)
+    
+    ; Прерываем выполнение
+    Exit 
+EndIf 
 
 ; --- Данные окна ---
 Global $aClients = ["(Client W.01)"] ; Список окон через запятую
@@ -580,14 +607,14 @@ EndFunc   ;==>_IsSafe
 
 ; #FUNCTION# ====================================================================================================================
 ; Name...........: _GoToStation
-; Description....: Выполняет перелет и стыковку (док) со станцией.
+; Description....: Выполняет перелет и стыковку со станцией с проверкой результата по кнопке Undock.
 ; Syntax.........: _GoToStation($sCurrentClient)
 ; Parameters ....: $sCurrentClient - Заголовок текущего окна клиента.
-; Return values .: True         - Корабль внутри станции.
+; Return values .: True         - Корабль успешно пристыкован (кнопка Undock найдена).
 ;                  False        - Ошибка на любом из этапов.
 ; Updated .......: 2026.04.26
-; Version .......: 1.10
-; Remarks .......: Обрабатывает два сценария: прямой док (если рядом) или варп с последующим доком.
+; Version .......: 1.12
+; Remarks .......: Исправлены опечатки в переменных и индексах массивов.
 ; ===============================================================================================================================
 Func _GoToStation($sCurrentClient)
     Local $aCPos = _WinGetClientPos($sCurrentClient)
@@ -595,48 +622,49 @@ Func _GoToStation($sCurrentClient)
 
     _Log("_GoToStation [" & $sCurrentClient & "]: Возвращаемся на базу...")
 
-    ; 1. Выбираем фильтр станций в гриде (Шаг 4 из _OpenBeltsList, но с иконкой станции)
+    ; 1. Выбираем фильтр станций в гриде
     Local $aArea[4]
-    $aArea[0] = $aCPos[0] + 1210
-    $aArea[1] = $aCPos[1] + 50
-    $aArea[2] = $aCPos[0] + 1280
-    $aArea[3] = $aCPos[1] + 550
-    
-    If Not _FindAndClick("imgStationMarker.bmp", $sResourceDir, $aArea) Then Return False
+    $aArea[0] = $aCPos[0] + 970
+    $aArea[1] = $aCPos[1] + 1
+    $aArea[2] = $aCPos[0] + 1010
+    $aArea[3] = $aCPos[1] + 40
+    If Not _FindAndClick("imgShowDropdownMy.bmp", $sResourceDir, $aArea) Then Return False
     _HumanSleep(500, 800)
 
-    ; Выбираем пункт "Станции" в выпадающем меню
-    $aArea[0] = $aCPos[0] + 950
+    ; Выбираем пункт "Станции"
+    $aArea[0] = $aCPos[0] + 970
     $aArea[1] = $aCPos[1] + 50
-    $aArea[2] = $aCPos[0] + 1210
+    $aArea[2] = $aCPos[0] + 1220
     $aArea[3] = $aCPos[1] + 720
-    
-    Local $x = 0 
-    Local $y = 0 
+    If Not _FindAndClick("imgStationFilter.bmp", $sResourceDir, $aArea) Then Return False
+    _HumanSleep(800, 1200)
 
-    If Not _MyImageSearch("imgStationMarker.bmp", $sResourceDir, $aArea, $x, $y, 100) Then
-        _Log("_GoToStation [" & $sCurrentClient & "]: Станция не найдена в списке!")
+    ; 2. Ищем и выбираем станцию в списке
+    Local $x, $y
+    $aArea[0] = $aCPos[0] + 970
+    $aArea[1] = $aCPos[1] + 50
+    $aArea[2] = $aCPos[0] + 995
+    $aArea[3] = $aCPos[1] + 433
+    If Not _MyImageSearch("imgStationLocation.bmp", $sResourceDir, $aArea, $x, $y, 100) Then
+        _Log("_GoToStation [" & $sCurrentClient & "]: Станция не найдена.")
         Return False
     EndIf
-    
-    ; Кликаем по найденной станции
     MouseClick("left", $x, $y, 1, 1)
     _HumanSleep(500, 800)
 
-    ; 3. Ищем кнопку "Dock" (обычно там же, где кнопка Warp)
-    Local $aDockBtnArea[4]
-    $aDockBtnArea[0] = $aCPos[0] + 704
-    $aDockBtnArea[1] = $aCPos[1] + 40
-    $aDockBtnArea[2] = $aCPos[0] + 972
-    $aDockBtnArea[3] = $aCPos[1] + 562
-
-    If Not _FindAndClick("imgEnterToStation.bmp", $sResourceDir, $aDockBtnArea) Then
-        _Log("_GoToStation [" & $sCurrentClient & "]: Кнопка 'Вход' не найдена.")
+    ; 3. Нажимаем кнопку "Dock" (область интерфейса станции)
+    Local $aDockArea[4]
+    $aDockArea[0] = $aCPos[0] + 1060
+    $aDockArea[1] = $aCPos[1] + 230
+    $aDockArea[2] = $aCPos[0] + 1280
+    $aDockArea[3] = $aCPos[1] + 300
+    If Not _FindAndClick("imgDockBtn.bmp", $sResourceDir, $aDockArea) Then
+        _Log("_GoToStation [" & $sCurrentClient & "]: Кнопка 'Dock' не найдена.")
         Return False
     EndIf
 
-    ; 4. Обработка ситуации: Варп или сразу Док
-    _Log("_GoToStation [" & $sCurrentClient & "]: Команда принята. Ожидаем результат...")
+    ; 4. Ожидание результата
+    _Log("_GoToStation [" & $sCurrentClient & "]: Ожидаем завершение стыковки...")
     
     Local $aWarpZone[4]
     $aWarpZone[0] = $aCPos[0] + 404
@@ -645,29 +673,144 @@ Func _GoToStation($sCurrentClient)
     $aWarpZone[3] = $aCPos[1] + 555
 
     Local $outX, $outY
-    Local $iTimer = TimerInit()
+    Local $hTimer = TimerInit()
     
-    ; Цикл ожидания: либо появится индикатор варпа, либо иконка "внутри станции"
-    While TimerDiff($iTimer) < 180000 ; Общий таймаут 3 минуты
-        ; А. Проверяем, не зашли ли мы уже на станцию (imgInsideStation.bmp - например, иконка ангара)
-        If _MyImageSearch("imgUnDock.bmp", $sResourceDir, $aCPos, $outX, $outY, 100) Then
-            _Log("_GoToStation [" & $sCurrentClient & "]: Мы внутри станции.")
+    While TimerDiff($hTimer) < 180000 ; Таймаут 3 минуты
+        ; Проверка 1: Появилась ли кнопка Undock (используем ту же область $aDockArea)
+        If _MyImageSearch("imgUnDock.bmp", $sResourceDir, $aDockArea, $outX, $outY, 100) Then
+            _Log("_GoToStation [" & $sCurrentClient & "]: Успешно в доке.")
             Return True
         EndIf
 
-        ; Б. Проверяем, не находимся ли мы в варпе
+        ; Проверка 2: Если мы в варпе — ждем индикатор остановки
+        ; Здесь важно: _MyImageSearch требует массив области, передаем $aWarpZone
         If _MyImageSearch("imgWarpTo.bmp", $sResourceDir, $aWarpZone, $outX, $outY, 100) Then
-            _Log("_GoToStation [" & $sCurrentClient & "]: Летим к станции...")
-            ; Если летим, ждем окончания (imgShipStopping.bmp)
+            _Log("_GoToStation [" & $sCurrentClient & "]: В варпе к станции...")
             _MyWaitForImageSearch("imgShipStopping.bmp", $sResourceDir, $aWarpZone, 120, $outX, $outY, 100)
+            ; После выхода из варпа не выходим из цикла, а ждем появления Undock
         EndIf
 
         Sleep(1000)
     WEnd
 
-    _Log("_GoToStation [" & $sCurrentClient & "]: Ошибка - Время ожидания дока истекло.")
+    _Log("_GoToStation [" & $sCurrentClient & "]: ОШИБКА - Не удалось подтвердить док.")
     Return False
 EndFunc   ;==>_GoToStation
+
+
+; #FUNCTION# ====================================================================================================================
+; Name...........: _AlliChatMessage
+; Description....: Открывает чат альянса и отправляет сообщение разведки.
+; Syntax.........: _AlliChatMessage($sCurrentClient)
+; Parameters ....: $sCurrentClient - Заголовок текущего окна клиента.
+; Return values .: True         - Сообщение успешно отправлено.
+;                  False        - Ошибка на одном из этапов (с записью в лог).
+; Updated .......: 2026.04.26
+; Version .......: 1.13
+; Remarks .......: Оптимизировано использование массива координат. Добавлена кнопка меню перед информированием.
+; ===============================================================================================================================
+Func _AlliChatMessage($sCurrentClient)
+    Local $aCPos = _WinGetClientPos($sCurrentClient)
+    If @error Then 
+        _Log("_AlliChatMessage [" & $sCurrentClient & "]: Ошибка - не удалось получить координаты клиента.")
+        Return False
+    EndIf
+
+    _Log("_AlliChatMessage [" & $sCurrentClient & "]: Подготовка к отправке разведданных...")
+
+    ; 1. Нажимаем на иконку чата (нижний левый угол)
+    _HumanSleep(200, 400)
+    MouseClick("left", $aCPos[0] + 25, $aCPos[1] + 625, 1, 1) 
+    _HumanSleep(800, 1200)
+
+    ; 2. Проверяем статус чата
+    Local $aArea[4]
+    $aArea[0] = $aCPos[0] + 0
+    $aArea[1] = $aCPos[1] + 30
+    $aArea[2] = $aCPos[0] + 104
+    $aArea[3] = $aCPos[1] + 720
+
+    Local $x, $y
+    Local $bIsChatOpen = _MyImageSearch("imgAllianceChat.bmp", $sResourceDir, $aArea, $x, $y, 100)
+    Local $bIsChatActive = _MyImageSearch("imgAllianceChatActive.bmp", $sResourceDir, $aArea, $x, $y, 100)
+
+    If $bIsChatOpen Or $bIsChatActive Then
+        
+        ; 3. Активируем вкладку, если она не активна
+        If $bIsChatOpen And Not $bIsChatActive Then
+            If Not _FindAndClick("imgAllianceChat.bmp", $sResourceDir, $aArea) Then 
+                _Log("_AlliChatMessage [" & $sCurrentClient & "]: Ошибка - не удалось активировать вкладку.")
+                Return False
+            EndIf
+            _HumanSleep(600, 900)
+        EndIf
+
+        ; 4. Нажимаем на кнопку меню чата (перед информированием)
+        $aArea[0] = $aCPos[0] + 320
+        $aArea[1] = $aCPos[1] + 650
+        $aArea[2] = $aCPos[0] + 390
+        $aArea[3] = $aCPos[1] + 720
+        If Not _FindAndClick("imgChatMenu.bmp", $sResourceDir, $aArea) Then
+            _Log("_AlliChatMessage [" & $sCurrentClient & "]: Ошибка - кнопка 'imgChatMenu.bmp' не найдена.")
+            Return False
+        EndIf
+        _HumanSleep(400, 600)
+
+        ; 5. Нажимаем кнопку "Информировать"
+        $aArea[0] = $aCPos[0] + 1050
+        $aArea[1] = $aCPos[1] + 630
+        $aArea[2] = $aCPos[0] + 1280
+        $aArea[3] = $aCPos[1] + 720
+        If Not _FindAndClick("imgInformButton.bmp", $sResourceDir, $aArea) Then 
+            _Log("_AlliChatMessage [" & $sCurrentClient & "]: Ошибка - кнопка 'imgInformButton.bmp' не найдена.")
+            Return False
+        EndIf
+        _HumanSleep(500, 800)
+
+        ; 6. Выбираем раздел "Разведка"
+        $aArea[0] = $aCPos[0] + 5
+        $aArea[1] = $aCPos[1] + 295
+        $aArea[2] = $aCPos[0] + 200
+        $aArea[3] = $aCPos[1] + 595
+        If Not _FindAndClick("imgIntelligence.bmp", $sResourceDir, $aArea) Then 
+            _Log("_AlliChatMessage [" & $sCurrentClient & "]: Ошибка - раздел 'imgIntelligence.bmp' не найден.")
+            Return False
+        EndIf
+        _HumanSleep(500, 800)
+
+        ; 7. Выбираем сообщение угрозы
+        $aArea[0] = $aCPos[0] + 190
+        $aArea[1] = $aCPos[1] + 400
+        $aArea[2] = $aCPos[0] + 490
+        $aArea[3] = $aCPos[1] + 550
+        If Not _FindAndClick("imgWarningMessage.bmp", $sResourceDir, $aArea) Then 
+            _Log("_AlliChatMessage [" & $sCurrentClient & "]: Ошибка - сообщение 'imgWarningMessage.bmp' не найдено.")
+            Return False
+        EndIf
+        _HumanSleep(500, 800)
+
+        ; 8. Нажимаем кнопку "Отправить"
+        $aArea[0] = $aCPos[0] + 360
+        $aArea[1] = $aCPos[1] + 200
+        $aArea[2] = $aCPos[0] + 560
+        $aArea[3] = $aCPos[1] + 300
+        If Not _FindAndClick("imgSendButton.bmp", $sResourceDir, $aArea) Then 
+            _Log("_AlliChatMessage [" & $sCurrentClient & "]: Ошибка - кнопка 'imgSendButton.bmp' не найдена.")
+            Return False
+        EndIf
+        
+        _Log("_AlliChatMessage [" & $sCurrentClient & "]: Отчет успешно отправлен.")
+        Return True
+    Else
+        _Log("_AlliChatMessage [" & $sCurrentClient & "]: Ошибка - интерфейс чата не открылся.")
+        Return False
+    EndIf
+EndFunc   ;==>_AlliChatMessage
+
+
+
+
+
 
 
 ; - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
