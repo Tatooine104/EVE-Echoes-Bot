@@ -2,17 +2,22 @@
 ; #                                                                                                                             #
 ; # PROJECT........: NullSec Auto Mininer (Utility Library)                                                                     #
 ; # VERSION........: 1.0.0                                                                                                      #
-; # BUILD..........: 2026.04.25                                                                                                 #
+; # BUILD..........: 2026.04.26                                                                                                 #
 ; # FILENAME.......: libUtility.au3                                                                                             #
 ; # GITHUB.........: https://github.com/Tatooine104/EVE-Echoes-Bot.git                                                          #
 ; # DESCRIPTION....: Библиотека общих и служебных функций бота.                                                                 #
 ; #                                                                                                                             #
-; # FUNCTIONS......: _Log                   - Запись событий в файл, консоль и GUI статус-бар.                                  #
+; # FUNCTIONS......: _CheckAndActivateClient - Проверка существования и активация окна клиента.                                 #
+; #                  _CW                     - Вывод текста в консоль с корректной кодировкой (UTF-8).                          #
 ; #                  _HumanSleep            - Рандомизированная пауза для имитации действий человека.                           #
+; #                  _Log                   - Запись событий в файл, консоль и расширенный GUI лог.                             #
+; #                  _SaveToIni             - Сохранение параметров в конфигурационный файл.                                    #
 ; #                                                                                                                             #
 ; ###############################################################################################################################
 
 #include-once ; Добавить в первую строку файла библиотеки
+
+#include <libGUI.au3> 
 
 ; #FUNCTION# ====================================================================================================================
 ; Name...........: _CheckAndActivateClient
@@ -87,26 +92,24 @@ EndFunc   ;==>_HumanSleep
 
 ; #FUNCTION# ====================================================================================================================
 ; Name...........: _Log
-; Description....: Записывает сообщение в файл лога, обновляет статус-бар GUI и выводит в консоль.
+; Description....: Записывает сообщение в лог-файл, консоль и обновляет GUI (включая список последних 5 событий).
 ; Syntax.........: _Log($sText[, $bDebug = Default[, $hControlID = Default]])
 ; Parameters ....: $sText       - Сообщение для записи в лог.
-;                  $bDebug      - [Optional] Принудительное включение/выключение вывода в консоль (True/False).
-;                                 Если Default, используется глобальная переменная $Debug.
-;                  $hControlID  - [Optional] ID элемента GUI (Label/Input) для вывода текста.
-;                                 Если Default, ищется глобальная переменная $hStatusLabel.
-; Return values .: 1 - Успешно.
-;                  0 - Ошибка открытия файла лога.
-; Updated .......: 2026.04.25
-; Version .......: 1.05
-; Remarks .......: Автоматически создает папку \Logs\. Безопасно работает в скриптах без GUI.
+;                  $bDebug      - [Optional] Режим отладки (True/False). По умолчанию берется из $Debug.
+;                  $hControlID  - [Optional] ID элемента для основного статуса. По умолчанию $hStatusLabel.
+; Return values .: 1 - Успешно, 0 - Ошибка доступа к файлу.
+; Updated .......: 2026.04.26
+; Version .......: 1.06
+; Remarks .......: Интегрирована функция _GUI_AddLog для циклического отображения событий в интерфейсе.
 ; ===============================================================================================================================
 Func _Log($sText, $bDebug = Default, $hControlID = Default)
-    ; 1. Определяем режим отладки (приоритет: параметр -> глобальная переменная -> False)
+
+    ; 1. Определяем режим отладки
     If $bDebug = Default Then
         $bDebug = IsDeclared("Debug") ? Eval("Debug") : False
     EndIf
 
-    ; 2. Подготовка путей и папок
+    ; 2. Подготовка путей
     Local $sLogDir = @ScriptDir & "\Logs"
     If Not FileExists($sLogDir) Then DirCreate($sLogDir)
 
@@ -120,23 +123,29 @@ Func _Log($sText, $bDebug = Default, $hControlID = Default)
     If $bDebug Then ConsoleWrite($sLogEntry & @CRLF)
 
     ; 5. Обновление GUI
-    ; Если передан конкретный ID контрола — используем его
+    ; Обновляем основной статус (одна строка)
     If $hControlID <> Default And $hControlID <> 0 Then
         GUICtrlSetData($hControlID, $sText)
-    ; Иначе ищем стандартную глобальную переменную hStatusLabel
     ElseIf IsDeclared("hStatusLabel") Then
         GUICtrlSetData(Eval("hStatusLabel"), $sText)
     EndIf
 
+    ; Обновляем список последних 5 событий в GUI
+    If IsDeclared("hGUI_Log") Then
+        _GUI_AddLog($sText)
+    EndIf
+
     ; 6. Запись в файл
-    Local $hFile = FileOpen($sFullPath, 1 + 8) ; 1 = Append, 8 = Create directory structure
+    Local $hFile = FileOpen($sFullPath, 1 + 8) 
     If $hFile = -1 Then Return 0
     
     FileWriteLine($hFile, $sLogEntry)
     FileClose($hFile)
 
     Return 1
+
 EndFunc   ;==>_Log
+
 
 
 

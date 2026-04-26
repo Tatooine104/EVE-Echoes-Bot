@@ -31,7 +31,7 @@
 #include <StaticConstants.au3>   ; Содержит константы для стилей текста (Label)
 #include <libImageSearch.au3>    ; Содержит функции поиска изображений на экране
 #include <libUtility.au3>        ; Содержит общий и служебные функции 
-#include <libGUI.au3> ; Подключаем вашу новую библиотеку интерфейса
+#include <libGUI.au3>            ; Подключаем вашу новую библиотеку интерфейса
 
 ; ===============================================================================================================================
 ; 1. РЕСУРСЫ И ИНИЦИАЛИЗАЦИЯ ПАПОК
@@ -86,31 +86,6 @@ Global $sFontFace = "JetBrains Mono"            ; Основной шрифт и
 
 ; --- Режим отладки ---
 Global $Debug = false
-
-; ===============================================================================================================================
-; 4. ИНТЕРФЕЙС УПРАВЛЕНИЯ (GUI)
-; ===============================================================================================================================
-
-Global $hStatusGUI = GUICreate("Mining Control", 320, 160, 20, 20, -1, $WS_EX_TOPMOST)
-GUISetOnEvent($GUI_EVENT_CLOSE, "_Terminate")
-
-; Текстовое поле статуса
-Global $hStatusLabel = GUICtrlCreateLabel("Бот готов", 10, 15, 300, 45)
-GUICtrlSetFont(-1, 9, 400, 0, $sFontFace)
-
-; Текстовое поле счетчика руды
-Global $hCountLabel = GUICtrlCreateLabel("Выгружено: " & $DeliveredCount, 10, 65, 300, 30)
-GUICtrlSetFont(-1, 11, 800, 0, $sFontFace)
-GUICtrlSetColor(-1, 0x008800) ; Зеленый цвет для прогресса
-
-; Кнопка принудительной остановки
-Global $btnStop = GUICtrlCreateButton("STOP BOT", 60, 105, 200, 40)
-GUICtrlSetFont(-1, 10, 800, 0, $sFontFace)
-GUICtrlSetBkColor(-1, 0xFFCCCC) ; Светло-красный фон кнопки
-GUICtrlSetOnEvent($btnStop, "_Terminate")
-
-; Показываем окно, не делая его активным (чтобы не мешать игре)
-GUISetState(@SW_SHOWNOACTIVATE, $hStatusGUI)
 
 ; - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
@@ -471,6 +446,12 @@ EndFunc
 
 ; 1. Запускаем GUI
 _GUI_Init("NullSec Miner v1.0")
+
+While 1
+    _GUI_Update() ; Обновляет таймер в окне
+    ; ... ваш код бота ...
+    Sleep(100)
+WEnd
 
 ; Закрываем GUI
 _Terminate()
