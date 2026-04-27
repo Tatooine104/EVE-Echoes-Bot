@@ -133,7 +133,7 @@ Func _MyImageSearch($sImgName, $sResDir, $aRect, ByRef $x, ByRef $y, $iTolerance
         If Not FileExists($sLogDir) Then DirCreate($sLogDir)
         
         ; Формируем имя скриншота: ИмяКартинки_Время.jpg
-        Local $sFileErr = $sLogDir & "\" & StringReplace($sImgName, ".", "_") & "_" & @HOUR & @MIN & @SEC & "_err.jpg"
+        Local $sFileErr = $sLogDir & "\" & StringReplace($sImgName, ".", "_") & "_" & @HOUR & @MIN & @SEC & "_err.bmp"
         
         ; Снимаем именно ту область, где искали
         _ScreenCapture_Capture($sFileErr, $aRect[0], $aRect[1], $aRect[2], $aRect[3])
