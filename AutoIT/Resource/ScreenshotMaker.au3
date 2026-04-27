@@ -1,55 +1,70 @@
 ; ###############################################################################################################################
 ; #                                                                                                                             #
-; # PROJECT........: EVE Echoes Bot                                                                                             #
-; # VERSION........: 1.0.0                                                                                                      #
+; # PROJECT........: EVE Echoes Bots                                                                                            #
+; # VERSION........: 1.2.0                                                                                                      #
 ; # BUILD..........: 2026.04.27                                                                                                 #
 ; # FILENAME.......: ScreenshotMaker.au3                                                                                        #
-; # GITHUB.........: https://github.com/Tatooine104/EVE-Echoes-Bot.git                                                          #
-; # DESCRIPTION....: Наборо инструментов для автоматизации рутины в EVE Echoes                                                  #
-; #                  -                                                                                                          #
-; #                  -                                                                                                          #
-; #                  -                                                                                                          #
+; # GITHUB.........: https://github.com                                                          #
+; # DESCRIPTION....: Автоматизированный комплекс управления добычей руды.                                                       #
+; #                  - Захват экрана через ADB (MEmu)                                                                           #
+; #                  - Конвертация в 24-bit BMP через GDIPlus (без внешних зависимостей)                                        #
 ; #                                                                                                                             #
 ; ###############################################################################################################################
 
 #include <Constants.au3>
 #include <libUtility.au3>
+#include <GDIPlus.au3>
 
 ; --- НАСТРОЙКИ ---
-; Путь к исполняемому файлу ADB в директории MEmu
-Global $adbPath = "C:\Program Files\Microvirt\MEmu\adb.exe"
-; Адрес и порт эмулятора (по умолчанию для первого окна MEmu - 21503)
+Global $adbPath   = "C:\Program Files\Microvirt\MEmu\adb.exe"
 Global $adbDevice = "127.0.0.1:21503"
-; Директория сохранения скриншотов
-Global $savePath = @ScriptDir & "\screenshots\game_screen.png"
+Global $tempPng   = @ScriptDir & "\screenshots\temp_screen.png"
+Global $finalBmp  = @ScriptDir & "\screenshots\game_screen.bmp"
 ; -----------------
 
 ; 1. ПРОВЕРКА НАЛИЧИЯ ADB
 If Not FileExists($adbPath) Then
-    MsgBox(16, "Ошибка", "Файл adb.exe не найден по пути: " & @CRLF & $adbPath)
+    MsgBox(16, "Ошибка", "Файл adb.exe не найден!")
     Exit
 EndIf
 
 ; 2. ПОДГОТОВКА ДИРЕКТОРИИ
-Local $dir = StringLeft($savePath, StringInStr($savePath, "\", 0, -1))
+Local $dir = StringLeft($finalBmp, StringInStr($finalBmp, "\", 0, -1))
 If Not FileExists($dir) Then DirCreate($dir)
 
-; 3. ПОДКЛЮЧЕНИЕ К УСТРОЙСТВУ
-_CW("--> Подключение к эмулятору: " & $adbDevice & @CRLF)
+; 3. ПОДКЛЮЧЕНИЕ
+_CW("--> Подключение к " & $adbDevice & @CRLF)
 RunWait('"' & $adbPath & '" connect ' & $adbDevice, "", @SW_HIDE)
-Sleep(500) ; Пауза для стабилизации соединения
 
-; 4. ЗАХВАТ ЭКРАНА
-_CW("--> Создание скриншота через ADB..." & @CRLF)
-; Снимаем скриншот во внутреннюю память Android
+; 4. ЗАХВАТ (PNG)
+_CW("--> Снятие скриншота через ADB..." & @CRLF)
 RunWait('"' & $adbPath & '" -s ' & $adbDevice & ' shell screencap -p /sdcard/screen.png', "", @SW_HIDE)
-; Копируем файл из Android на локальный диск ПК
-Local $res = RunWait('"' & $adbPath & '" -s ' & $adbDevice & ' pull /sdcard/screen.png "' & $savePath & '"', "", @SW_HIDE)
+RunWait('"' & $adbPath & '" -s ' & $adbDevice & ' pull /sdcard/screen.png "' & $tempPng & '"', "", @SW_HIDE)
 
-; 5. ВЕРИФИКАЦИЯ РЕЗУЛЬТАТА
-If FileExists($savePath) Then
-    _CW("+++ УСПЕХ! Снимок сохранен: " & $savePath & @CRLF)
+; 5. КОНВЕРТАЦИЯ В 24-BIT BMP (GDIPlus)
+If FileExists($tempPng) Then
+    _CW("--> Конвертация в 24-bit BMP (GDIPlus)..." & @CRLF)
+    
+    _GDIPlus_Startup()
+    Local $hImage = _GDIPlus_ImageLoadFromFile($tempPng)
+    
+    ; Сохраняем как BMP. GDI+ по умолчанию делает совместимый формат.
+    _GDIPlus_ImageSaveToFile($hImage, $finalBmp)
+    
+    ; Очистка ресурсов
+    _GDIPlus_ImageDispose($hImage)
+    _GDIPlus_Shutdown()
+    
+    FileDelete($tempPng)
 Else
-    _CW("!!! ОШИБКА: Не удалось получить скриншот." & @CRLF)
-    MsgBox(16, "Ошибка", "Скриншот не получен. Убедитесь, что MEmu запущен и ADB-порт " & $adbDevice & " активен.")
+    _CW("!!! ОШИБКА: PNG файл не найден после захвата." & @CRLF)
+    Exit
+EndIf
+
+; 6. ВЕРИФИКАЦИЯ
+If FileExists($finalBmp) Then
+    _CW("+++ УСПЕХ: " & $finalBmp & @CRLF)
+Else
+    _CW("!!! ОШИБКА КОНВЕРТАЦИИ" & @CRLF)
+    MsgBox(16, "Ошибка", "Не удалось создать BMP файл.")
 EndIf
