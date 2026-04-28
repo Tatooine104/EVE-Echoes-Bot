@@ -1,167 +1,157 @@
-#include "..\Resource\libImageSearch.au3"    ; Содержит функции поиска изображений на экране
-#include "..\Resource\libUtility.au3"        ; Содержит общий и служебные функции 
-#include "..\Resource\libGUI.au3"            ; Подключаем вашу новую библиотеку интерфейса
+#include "..\Resource\libImageSearch.au3"
+#include "..\Resource\libUtility.au3"
+#include "..\Resource\libGUI.au3"
 
-; Создаем временную папку для ресурсов во временном каталоге системы
-Global $sResourceDir = @TempDir & "\MyBotResources\"
-DirCreate($sResourceDir)
+; Создаем чистый путь без всяких ".."
+Global $sImagesDir = _WinAPI_GetFullPathName(@ScriptDir & "\..\Images") & "\"
 
-; #FUNCTION# ====================================================================================================================
-; Name...........: _IsSafe
-; Description....: Проверяет локальный чат через ADB и обновляет глобальный статус безопасности окна.
-; Syntax.........: _IsSafe($sDeviceID, $iClientIdx)
-; Parameters ....: $sDeviceID  - ID эмулятора (например, "127.0.0.1:21503").
-;                  $iClientIdx - Индекс текущего окна в глобальном массиве $aIsSave.
-; Return values .: True - Врагов нет, False - Обнаружена угроза.
+; Убираем возможные двойные слеши, которые ломают проверку
+$sImagesDir = StringReplace($sImagesDir, "\\", "\")
+
+; ПРОВЕРКА: Ищем конкретный файл, который точно должен быть в папке
+If Not FileExists($sImagesDir & "imgAllianceChat.bmp") Then
+    MsgBox(16, "Критическая ошибка", "Бот ищет ресурсы здесь:" & @CRLF & $sImagesDir & @CRLF & @CRLF & "Но папка пуста или файла imgAllianceChat.bmp там нет.")
+    Exit
+EndIf
+
+; ===============================================================================================================================
+; FUNCTION.......: _IsSafe
 ; ===============================================================================================================================
 Func _IsSafe($sDeviceID, $iClientIdx)
-    ; 1. Получаем скриншот для анализа
+    ; Подключаем глобальные пути
+    Global $sResourceDir, $sImagesDir, $aIsSave
+
+    ; 1. Получаем скриншот
     Local $sFile = _Get_Screenshot_By_ID($sDeviceID)
     If $sFile = "" Then Return False
 
-    ; 2. Область локального чата (фиксированные координаты для 1280x720)
-    Local $aArea[4] = [0,330,400,7200] 
-
-    ; Маркеры угроз: Криминал, Минус, Нейтрал
+    ; 2. Настройки
+    Local $aArea[4] = [0, 330, 400, 720] ; Область локала
+    ; Маркеры УГРОЗ
     Local $aMarkers[3] = ["imgLocalStatCriminal.bmp", "imgLocalStatMinus.bmp", "imgLocalStatNeitral.bmp"]
-    Local $x, $y, $outX, $outY
-    Local $iTolerance = 100
-    Local $bStatus = True ; По умолчанию безопасно
+    Local $x, $y
+    Local $iTolerance = 255
+    Local $bDangerFound = False ; Флаг обнаружения опасности
 
-    _CW("_IsSafe [" & $sDeviceID & "]: Мониторинг локала..." & @CRLF)
+    _CW("--> [" & $sDeviceID & "] Проверка локала на угрозы..." & @CRLF)
 
-    ; 3. Проверка маркеров угроз на текущем скриншоте
+    ; 3. Проверка маркеров
     For $i = 0 To 2
-        If _MyImageSearch($aMarkers[$i], $sResourceDir, $aArea, $x, $y, $iTolerance, $sFile) Then
-            
-            ; 4. Проверка на "дружелюбность" (ложная тревога: софлотовец или сокорп)
-            ; Задаем область справа от найденного маркера
-            Local $aStatusArea[4] = [$aArea[0] + 10, $aArea[0] + 20, $aArea[0] + 60, $aArea[0] + 20] 
-            
-            ; Если иконка "своего" (imgLocalStatNull.bmp) НЕ найдена рядом с маркером
-            If Not _MyImageSearch("imgLocalStatNull.bmp", $sResourceDir, $aStatusArea, $outX, $outY, $iTolerance, $sFile) Then
-                _CW("_IsSafe [" & $sDeviceID & "]: !!! ВНИМАНИЕ: ОБНАРУЖЕН ВРАГ !!!" & @CRLF)
-                $bStatus = False
-                ExitLoop 
-            EndIf
+        ; Передаем координаты элементами массива!
+        If _MyImageSearch($aMarkers[$i], $sImagesDir, $aArea, $x, $y, $iTolerance, $sFile) Then
+            _CW("!!! НАЙДЕНА УГРОЗА: " & $aMarkers[$i] & @CRLF)
+            $bDangerFound = True
+            ExitLoop ; Если нашли хоть одного врага, дальше можно не искать
         EndIf
     Next
 
-    ; Удаляем проанализированный файл
+    ; 4. Чистим скриншот
     FileDelete($sFile)
 
-    ; 5. Записываем результат в глобальный массив статусов
+    ; 5. Результат: Безопасно, если НЕ нашли ни одного врага
+    Local $bStatus = Not $bDangerFound
+
     If IsDeclared("aIsSave") Then
-        ; Обновляем значение напрямую в глобальном массиве
-        Global $aIsSave ; Обращаемся к объявленной ранее переменной
         $aIsSave[$iClientIdx] = $bStatus
     EndIf
 
+    If Not $bStatus Then
+        _CW("!!! ВНИМАНИЕ: Система НЕБЕЗОПАСНА !!!" & @CRLF)
+    Else
+        _CW("+++ В системе чисто." & @CRLF)
+    EndIf
+
     Return $bStatus
-EndFunc   ;==>_IsSafe
+EndFunc
 
 
-
-; #FUNCTION# ====================================================================================================================
-; Name...........: _AlliChatMessage
-; Description....: Открывает чат альянса и отправляет сообщение разведки через ADB.
-; Syntax.........: _AlliChatMessage($sDeviceID)
-; Parameters ....: $sDeviceID - ID эмулятора (например, "127.0.0.1:21503").
-; Return values .: True         - Сообщение успешно отправлено.
-;                  False        - Ошибка на одном из этапов.
-; Updated .......: 2026.04.28
-; Version .......: 1.14
-; Remarks .......: Работает в фоновом режиме. Каждый шаг подтверждается новым скриншотом.
 ; ===============================================================================================================================
-Func _AlliChatMessage($sDeviceID)
-    _CW("_AlliChatMessage [" & $sDeviceID & "]: Подготовка к отправке разведданных...")
+; FUNCTION.......: _AlliChatMessage
+; ===============================================================================================================================
+Func _AlliChatMessage($sDeviceID, $iClientIdx)
 
-    Local $sFile, $aArea, $x, $y
+    Global $aIsSave, $aIntelSent
 
-    ; 1. Нажимаем на иконку чата (нижний левый угол)
+    ; Предотвращение ошибок обращения к необъявленным массивам
+    If Not IsDeclared("aIsSave") Or Not IsDeclared("aIntelSent") Then Return False
+
+    ; 1. Если безопасно — сбрасываем флаг и выходим
+    If $aIsSave[$iClientIdx] = True Then
+        $aIntelSent[$iClientIdx] = False 
+        Return True
+    EndIf
+
+    ; 2. Если уже отправляли для этой угрозы — выходим
+    If $aIntelSent[$iClientIdx] = True Then Return True 
+
+    _CW("_AlliChatMessage [" & $sDeviceID & "]: Отправка разведданных..." & @CRLF)
+
+    Local $sFile, $x, $y
+
+    ; Открываем чат
     _ADB_Click($sDeviceID, 25, 625) 
     _HumanSleep(800, 1200)
 
-    ; 2. Проверяем статус чата
     $sFile = _Get_Screenshot_By_ID($sDeviceID)
     If $sFile = "" Then Return False
 
-    Local $aArea[4] = [0, 30, 104, 720] ; Левая панель вкладок
-    Local $bIsChatOpen = _MyImageSearch("imgAllianceChat.bmp", $sResourceDir, $aArea, $x, $y, 100, $sFile)
-    Local $bIsChatActive = _MyImageSearch("imgAllianceChatActive.bmp", $sResourceDir, $aArea, $x, $y, 100, $sFile)
+    Local $aTabArea[4] = [0, 30, 104, 720]
+    Local $bIsChatOpen = _MyImageSearch("imgAllianceChat.bmp", $sImagesDir, $aTabArea, $x, $y, 100, $sFile)
+    Local $bIsChatActive = _MyImageSearch("imgAllianceChatActive.bmp", $sImagesDir, $aTabArea, $x, $y, 100, $sFile)
 
     If $bIsChatOpen Or $bIsChatActive Then
-        
-        ; 3. Активируем вкладку, если она не активна
+        ; Активация вкладки
         If $bIsChatOpen And Not $bIsChatActive Then
-            If Not _FindAndClick("imgAllianceChat.bmp", $sResourceDir, $aArea, $sDeviceID, $sFile) Then 
-                _CW("_AlliChatMessage: Ошибка активации вкладки.")
-                FileDelete($sFile)
-                Return False
-            EndIf
+            _FindAndClick("imgAllianceChat.bmp", $sImagesDir, $aTabArea, $sDeviceID, $sFile)
             FileDelete($sFile)
-            _HumanSleep(600, 900)
-            $sFile = _Get_Screenshot_By_ID($sDeviceID) ; Обновляем скрин
+            _HumanSleep(800, 1200)
+            $sFile = _Get_Screenshot_By_ID($sDeviceID)
         EndIf
 
-        ; 4. Нажимаем на кнопку меню чата (плюсик/меню)
-        Local $aArea[4] = [320, 650, 390, 720]
-        If Not _FindAndClick("imgChatMenu.bmp", $sResourceDir, $aArea, $sDeviceID, $sFile) Then
-            _CW("_AlliChatMessage: Кнопка 'imgChatMenu.bmp' не найдена.")
-            FileDelete($sFile)
-            Return False
-        EndIf
-        FileDelete($sFile)
-        _HumanSleep(400, 600)
-
-        ; 5. Нажимаем кнопку "Информировать"
-        $sFile = _Get_Screenshot_By_ID($sDeviceID)
-        Local $aArea[4] = [1050, 630, 1280, 720]
-        If Not _FindAndClick("imgInformButton.bmp", $sResourceDir, $aArea, $sDeviceID, $sFile) Then 
-            _CW("_AlliChatMessage: Кнопка 'imgInformButton.bmp' не найдена.")
-            FileDelete($sFile)
-            Return False
-        EndIf
+        ; Плюсик меню
+        Local $aMenuArea[4] = [320, 650, 390, 720]
+        If Not _FindAndClick("imgChatMenu.bmp", $sImagesDir, $aMenuArea, $sDeviceID, $sFile) Then Return _ErrCleanup($sFile)
         FileDelete($sFile)
         _HumanSleep(500, 800)
 
-        ; 6. Выбираем раздел "Разведка"
+        ; Информировать
         $sFile = _Get_Screenshot_By_ID($sDeviceID)
-        Local $aArea[4] = [5, 295, 200, 595]
-        If Not _FindAndClick("imgIntelligence.bmp", $sResourceDir, $aArea, $sDeviceID, $sFile) Then 
-            _CW("_AlliChatMessage: Раздел 'imgIntelligence.bmp' не найден.")
-            FileDelete($sFile)
-            Return False
-        EndIf
+        Local $aInfArea[4] = [1050, 630, 1280, 720]
+        If Not _FindAndClick("imgInformButton.bmp", $sImagesDir, $aInfArea, $sDeviceID, $sFile) Then Return _ErrCleanup($sFile)
         FileDelete($sFile)
-        _HumanSleep(500, 800)
+        _HumanSleep(600, 1000)
 
-        ; 7. Выбираем сообщение угрозы
+        ; Разведка
         $sFile = _Get_Screenshot_By_ID($sDeviceID)
-        Local $aArea[4] = [190, 400, 490, 550]
-        If Not _FindAndClick("imgWarningMessage.bmp", $sResourceDir, $aArea, $sDeviceID, $sFile) Then 
-            _CW("_AlliChatMessage: Сообщение 'imgWarningMessage.bmp' не найдено.")
-            FileDelete($sFile)
-            Return False
-        Endif
+        Local $aIntArea[4] = [5, 295, 200, 595]
+        If Not _FindAndClick("imgIntelligence.bmp", $sImagesDir, $aIntArea, $sDeviceID, $sFile) Then Return _ErrCleanup($sFile)
         FileDelete($sFile)
-        _HumanSleep(500, 800)
+        _HumanSleep(600, 1000)
 
-        ; 8. Нажимаем кнопку "Отправить"
+        ; Угроза
         $sFile = _Get_Screenshot_By_ID($sDeviceID)
-        Local $aArea[4] = [360, 200, 560, 300]
-        If Not _FindAndClick("imgSendButton.bmp", $sResourceDir, $aArea, $sDeviceID, $sFile) Then 
-            _CW("_AlliChatMessage: Кнопка 'imgSendButton.bmp' не найдена.")
-            FileDelete($sFile)
-            Return False
-        EndIf
+        Local $aWarnArea[4] = [190, 400, 490, 550]
+        If Not _FindAndClick("imgWarningMessage.bmp", $sImagesDir, $aWarnArea, $sDeviceID, $sFile) Then Return _ErrCleanup($sFile)
         FileDelete($sFile)
+        _HumanSleep(600, 1000)
+
+        ; Отправить
+        $sFile = _Get_Screenshot_By_ID($sDeviceID)
+        Local $aSendArea[4] = [360, 200, 560, 300]
+        If Not _FindAndClick("imgSendButton.bmp", $sImagesDir, $aSendArea, $sDeviceID, $sFile) Then Return _ErrCleanup($sFile)
         
-        _CW("_AlliChatMessage [" & $sDeviceID & "]: Отчет успешно отправлен.")
-        Return True
-    Else
-        _CW("_AlliChatMessage [" & $sDeviceID & "]: Ошибка - интерфейс чата не открылся.")
         FileDelete($sFile)
-        Return False
+        $aIntelSent[$iClientIdx] = True ; Флаг успеха
+        _CW("+++ Отчет отправлен успешно!" & @CRLF)
+        Return True
     EndIf
-EndFunc   ;==>_AlliChatMessage
+
+    FileDelete($sFile)
+    Return False
+EndFunc
+
+; Вспомогательная функция для очистки при ошибке
+Func _ErrCleanup($sFile)
+    If FileExists($sFile) Then FileDelete($sFile)
+    Return False
+EndFunc

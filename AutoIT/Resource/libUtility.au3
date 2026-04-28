@@ -210,40 +210,51 @@ EndFunc   ;==>_HumanSleep
 ; Version .......: 1.06
 ; Remarks .......: Интегрирована функция _GUI_AddLog для циклического отображения событий в интерфейсе.
 ; ===============================================================================================================================
-Func _Log($sText, $bDebug = Default, $hControlID = Default)
+Func _Log($sText, $sDeviceID = "", $bDebug = Default, $hControlID = Default)
+    ; 1. Подготовка глобальных ссылок
+    Global $Debug, $hStatusLabel, $hGUI_Log
 
-    ; 1. Определяем режим отладки
+    ; 2. Определяем режим отладки
     If $bDebug = Default Then
-        $bDebug = IsDeclared("Debug") ? Eval("Debug") : False
+        $bDebug = IsDeclared("Debug") ? $Debug : False
     EndIf
 
-    ; 2. Подготовка путей
+    ; 3. Формирование префикса устройства
+    Local $sDevPrefix = ($sDeviceID <> "" ? "[" & $sDeviceID & "] " : "")
+    
+    ; 4. Подготовка путей
     Local $sLogDir = @ScriptDir & "\Logs"
     If Not FileExists($sLogDir) Then DirCreate($sLogDir)
-
     Local $sLogFileName = StringTrimRight(@ScriptName, 4) & ".log"
     Local $sFullPath = $sLogDir & "\" & $sLogFileName
 
-    ; 3. Формирование строки записи [ГГГГ.ММ.ДД ЧЧ:ММ:СС]
-    Local $sLogEntry = StringFormat("[%s.%s.%s %s:%s:%s] -> %s", @YEAR, @MON, @MDAY, @HOUR, @MIN, @SEC, $sText)
+    ; 5. Формирование строки записи [ЧЧ:ММ:СС]
+    Local $sTime = StringFormat("%s:%s:%s", @HOUR, @MIN, @SEC)
+    Local $sLogEntry = StringFormat("[%s] %s%s", $sTime, $sDevPrefix, $sText)
 
-    ; 4. Вывод в консоль Scite
-    If $bDebug Then _CW($sLogEntry)
+    ; 6. Вывод в консоль (через библиотечную функцию _CW)
+    If $bDebug Then _CW($sLogEntry & @CRLF)
 
-    ; 5. Обновление GUI
-    ; Обновляем основной статус (одна строка)
+    ; 7. Обновление GUI
+    ; Обновляем основной статус-бар (если передан ID или есть глобальный ярлык)
     If $hControlID <> Default And $hControlID <> 0 Then
         GUICtrlSetData($hControlID, $sText)
     ElseIf IsDeclared("hStatusLabel") Then
-        GUICtrlSetData(Eval("hStatusLabel"), $sText)
+        GUICtrlSetData($hStatusLabel, $sText)
     EndIf
 
-    ; Обновляем список последних 5 событий в GUI
+    ; Добавляем строку в список логов GUI (если библиотека GUI подключена)
     If IsDeclared("hGUI_Log") Then
-        _GUI_AddLog($sText)
+        ; Используем внутреннюю функцию GUI для добавления строки в List/Edit
+        ; Обновляем список последних 5 событий в GUI
+        If IsDeclared("hGUI_Log") Then
+            ; Проверяем, существует ли функция _GUI_AddLog
+            Local $hFunc = IsFunc("_GUI_AddLog")
+            If $hFunc Then _GUI_AddLog($sLogEntry)
+        EndIf
     EndIf
 
-    ; 6. Запись в файл
+    ; 8. Запись в файл (режим 1 + 8: Append + Create Dir)
     Local $hFile = FileOpen($sFullPath, 1 + 8) 
     If $hFile = -1 Then Return 0
     
@@ -251,7 +262,6 @@ Func _Log($sText, $bDebug = Default, $hControlID = Default)
     FileClose($hFile)
 
     Return 1
-
 EndFunc   ;==>_Log
 
 

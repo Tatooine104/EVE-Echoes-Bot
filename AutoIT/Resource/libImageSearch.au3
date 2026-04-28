@@ -143,46 +143,24 @@ EndFunc   ;==>_FindAndClick
 ; #                  $sSourceBmp - ПУТЬ К СКРИНШОТУ, полученному через ADB.
 ; # RETURN.........: 1 - Найдено, 0 - Не найдено.
 ; ###############################################################################################################################
+; ###############################################################################################################################
+; # FUNCTION.......: _MyImageSearch
+; # DESCRIPTION....: Ищет изображение внутри BMP-файла (ADB) с корректной передачей всех 10 параметров.
+; ###############################################################################################################################
 Func _MyImageSearch($sImgName, $sResDir, $aRect, ByRef $x, ByRef $y, $iTolerance, $sSourceBmp)
-    ; 1. Валидация входных данных
-    If Not IsArray($aRect) Or UBound($aRect) < 4 Then 
-        _CW("_MyImageSearch: Ошибка массива координат для " & $sImgName & @CRLF)
-        Return 0
-    EndIf
-    
-    If Not FileExists($sSourceBmp) Then
-        _CW("_MyImageSearch: Ошибка - файл скриншота не найден: " & $sSourceBmp & @CRLF)
-        Return 0
-    EndIf
-
-    ; 2. Формируем путь к эталону
     If $sResDir <> "" And StringRight($sResDir, 1) <> "\" Then $sResDir &= "\"
-    Local $sPatternPath = $sResDir & $sImgName
+    Local $sPattern = $sResDir & $sImgName
 
-    ; 3. ПОИСК (Используем ImageSearchArea, передавая путь к исходному скриншоту)
-    ; Примечание: В зависимости от вашей версии DLL, путь к источнику ($sSourceBmp) 
-    ; может передаваться последним параметром или через доп. функции.
-    ; Стандартный вызов для поиска в файле:
-    Local $iResult = _ImageSearchArea($sPatternPath, 1, $aRect[0], $aRect[1], $aRect[2], $aRect[3], $x, $y, $iTolerance, $sSourceBmp)
+    ; Вызываем базовую функцию. Считаем запятые: их должно быть ровно 9 перед $sSourceBmp
+    Local $iRes = _ImageSearchArea($sPattern, 1, $aRect[0], $aRect[1], $aRect[2], $aRect[3], $x, $y, $iTolerance, $sSourceBmp)
     
-    ; 4. Обработка промаха (Логирование)
-    If $iResult = 0 Then
-        Local $sLogDir = @ScriptDir & "\Logs"
-        If Not FileExists($sLogDir) Then DirCreate($sLogDir)
-        
-        ; Добавляем в имя лога ID устройства (из пути к скриншоту), чтобы логи разных окон не перемешались
-        Local $sDeviceName = StringRegExpReplace($sSourceBmp, ".*snap_(.*)\.bmp", "$1") 
-        Local $sLogFile = $sLogDir & "\ERR_" & @HOUR & @MIN & @SEC & "_" & $sDeviceName & "_" & $sImgName
-        
-        FileCopy($sSourceBmp, $sLogFile, 8) 
-        _CW("[-] Не нашли " & $sImgName & " на устройстве " & $sDeviceName & @CRLF)
+    If $iRes = 0 Then
+        Local $sErrFile = @ScriptDir & "\Logs\ERR_" & @HOUR & @MON & @MDAY & "_" & @HOUR & @MIN & @SEC & "_" & $sImgName
+        If FileExists($sSourceBmp) Then FileCopy($sSourceBmp, $sErrFile, 8)
+        _Log("[-] Не найдено: " & $sImgName)
     EndIf
-
-    Return $iResult
+    Return $iRes
 EndFunc
-
-
-
 
 
 ; ###############################################################################################################################
@@ -243,52 +221,41 @@ EndFunc   ;==>_ImageSearchClientArea
 ; # PARAMETERS ....: ..., $hSource - [Optional] ПУТЬ К BMP-ФАЙЛУ (скриншоту ADB). Если 0 - ищет на экране.
 ; ###############################################################################################################################
 Func _ImageSearchArea($findImage, $resultPosition, $x1, $y1, $right, $bottom, ByRef $x, ByRef $y, $tolerance, $hSource = 0)
-
-    ; 1. Путь к DLL
-    Local $sResPath = IsDeclared("sResourceDir") ? Eval("sResourceDir") : @ScriptDir & "\"
-    Local $sDllPath = $sResPath & "ImageSearchDLL.dll"
+    Global $sResourceDir, $sDllDir
+    Local $sCurrentDllDir = IsDeclared("sDllDir") ? $sDllDir : $sResourceDir
+    Local $sDllPath = $sCurrentDllDir & "ImageSearchDLL.dll"
     
-    If Not FileExists($sDllPath) Then
-        _CW("КРИТИЧЕСКАЯ ОШИБКА: DLL не найдена: " & $sDllPath & @CRLF)
-        Return 0
-    EndIf
-
-    ; 2. Подготовка строки поиска
-    Local $sSearchStr = $findImage
-    If $tolerance > 0 Then $sSearchStr = "*" & $tolerance & " " & $findImage
+    ; Подготовка строки допуска
+    Local $sSearchStr = ($tolerance > 0) ? ("*" & $tolerance & " " & $findImage) : $findImage
     
-    ; --- НОВЫЙ БЛОК: Поиск в файле (ADB режим) ---
-    Local $result
-    If $hSource <> 0 And FileExists($hSource) Then
-        ; Если передан путь к файлу, используем вызов "ImageSearchOnImage" 
-        ; (Большинство современных ImageSearchDLL поддерживают этот метод для фонового поиска)
-        $result = DllCall($sDllPath, "str", "ImageSearchOnImage", "str", $hSource, "int", $x1, "int", $y1, "int", $right, "int", $bottom, "str", $sSearchStr)
+    Local $aRet, $sMode = "SCREEN"
+
+    ; ПРОВЕРКА: Если $hSource это строка и файл существует
+    If IsString($hSource) And FileExists($hSource) Then
+        $sMode = "FILE"
+        $aRet = DllCall($sDllPath, "str", "ImageSearchOnImage", "str", $hSource, "int", $x1, "int", $y1, "int", $right, "int", $bottom, "str", $sSearchStr)
     Else
-        ; Стандартный поиск по всему экрану (если файл не передан)
-        $result = DllCall($sDllPath, "str", "ImageSearch", "int", $x1, "int", $y1, "int", $right, "int", $bottom, "str", $sSearchStr)
+        $aRet = DllCall($sDllPath, "str", "ImageSearch", "int", $x1, "int", $y1, "int", $right, "int", $bottom, "str", $sSearchStr)
     EndIf
-    ; ----------------------------------------------
 
-    If @error Or Not IsArray($result) Or $result[0] = "0" Then Return 0
+    ; ВЫВОД ДЛЯ ОТЛАДКИ (Смотрим, что попало в $hSource)
+    _CW(StringFormat("DEBUG DLL: Mode=%s | hSourceVal=%s | Find=%s\n", $sMode, $hSource, $findImage))
 
-    ; 3. Разбор результата
-    Local $array = StringSplit($result[0], "|")
+    If @error Or Not IsArray($aRet) Or $aRet[0] = "0" Then Return 0
+
+    Local $array = StringSplit($aRet[0], "|")
     If $array[0] < 3 Then Return 0
 
     $x = Int(Number($array[2]))
     $y = Int(Number($array[3]))
     
     If $resultPosition = 1 Then
-        $x = $x + Int(Number($array[4]) / 2)
-        $y = $y + Int(Number($array[5]) / 2)
+        $x += Int(Number($array[4]) / 2)
+        $y += Int(Number($array[5]) / 2)
     EndIf
     
-    ; В ADB режиме ($hSource <> 0) нам НЕ НУЖНО вычитать координаты окна _WinGetClientPos, 
-    ; так как координаты в файле всегда начинаются с 0,0 (это чистый Android).
-    
     Return 1
-EndFunc   ;==>_ImageSearchArea
-
+EndFunc
 
 
 
