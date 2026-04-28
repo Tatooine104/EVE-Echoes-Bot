@@ -116,697 +116,617 @@ Global $Debug = false
 
 
 
-; #FUNCTION# ====================================================================================================================
-; Name...........: _Undock
-; Description....: Выполняет выход со станции в космос, находя кнопку "Undock".
-; Syntax.........: _Undock($sCurrentClient)
-; Parameters ....: $sCurrentClient - Заголовок текущего окна, с которым работаем.
-; Return values .: True         - Кнопка найдена и нажата.
-;                  False        - Кнопка не найдена или возникла ошибка получения координат.
-; Updated .......: 2026.04.26
-; Version .......: 1.10
-; Remarks .......: Функция больше не активирует окно сама, полагаясь на внешний цикл мультиокна.
-; ===============================================================================================================================
-Func _Undock($sCurrentClient)
-    ; 1. Получаем координаты клиентской области (проверка существования окна вшита в _WinGetClientPos)
-    Local $aCPos = _WinGetClientPos($sCurrentClient)
-    If @error Then 
-        _Log("_Undock: Ошибка - Не удалось получить координаты '" & $sCurrentClient & "'")
-        Return False
-    EndIf
-
-    ; 2. Вычисляем область поиска
-    Local $aArea[4]
-    $aArea[0] = $aCPos[0] + 1060 ; X1
-    $aArea[1] = $aCPos[1] + 230  ; Y1
-    $aArea[2] = $aCPos[0] + 1280 ; X2
-    $aArea[3] = $aCPos[1] + 300  ; Y2
+; ###############################################################################################################################
+; # FUNCTION.......: _Undock
+; # DESCRIPTION....: Выполняет выход со станции через ADB, используя заранее подготовленный скриншот.
+; # PARAMETERS ....: $sDeviceID  - ID эмулятора (напр. "127.0.0.1:21503").
+; #                  $sSourceBmp - Путь к актуальному скриншоту этого устройства.
+; # RETURN.........: True - кнопка нажата, False - не найдена.
+; ###############################################################################################################################
+Func _Undock($sDeviceID, $sSourceBmp)
+    ; 1. Задаем область поиска кнопки Undock (координаты внутри Android-экрана 1280x720)
+    ; Кнопка обычно находится в правой части экрана
+    Local $aArea[4] = [1060, 230, 1280, 300] 
     
     Local $x, $y
 
-    ; 3. Поиск изображения кнопки Undock
-    If _MyImageSearch("imgUnDock.bmp", $sResourceDir, $aArea, $x, $y, 100) = 1 Then
-        _Log("_Undock [" & $sCurrentClient & "]: Кнопка найдена. Выходим.")
+    ; 2. Поиск изображения кнопки (теперь передаем $sSourceBmp)
+    ; $sResourceDir должна быть объявлена глобально
+    If _MyImageSearch("imgUnDock.bmp", $sResourceDir, $aArea, $x, $y, 100, $sSourceBmp) = 1 Then
+        _CW("_Undock [" & $sDeviceID & "]: Кнопка найдена. Выполняем андок." & @CRLF)
+        
+        ; 3. Пауза и фоновый клик по координатам кнопки
         _HumanSleep(200, 500)      
-        Send("{SC016}") ; Клавиша "U"
+        _ADB_Click($sDeviceID, $x, $y) 
+        
         Return True
     EndIf
 
-    _Log("_Undock [" & $sCurrentClient & "]: Кнопка не найдена.")
+    _CW("_Undock [" & $sDeviceID & "]: Кнопка не найдена." & @CRLF)
     Return False
 EndFunc   ;==>_Undock
 
 
 
-; #FUNCTION# ====================================================================================================================
-; Name...........: IsCargoFull
-; Description....: Проверяет заполнение грузового отсека (карго) по графическому индикатору 100%.
-; Syntax.........: IsCargoFull($sCurrentClient)
-; Parameters ....: $sCurrentClient - Заголовок текущего окна, с которым работаем.
-; Return values .: True         - Индикатор полной загрузки найден.
-;                  False        - Индикатор не найден или возникла ошибка клиента.
-; Updated .......: 2026.04.26
-; Version .......: 1.11
-; Remarks .......: Предполагает, что окно уже активировано внешним циклом.
-; ===============================================================================================================================
-Func IsCargoFull($sCurrentClient)
-    ; 1. Получаем координаты клиентской области
-    Local $aCPos = _WinGetClientPos($sCurrentClient)
-    If @error Then 
-        _Log("IsCargoFull: Ошибка - Не удалось получить координаты '" & $sCurrentClient & "'")
-        Return False
-    EndIf
 
-    ; 2. Вычисляем область поиска (Смещение: 0, 80, 60, 170)
-    Local $aArea[4] ; Явно указываем размер, чтобы избежать ошибок записи
-    $aArea[0] = $aCPos[0] + 0
-    $aArea[1] = $aCPos[1] + 80
-    $aArea[2] = $aCPos[0] + 60
-    $aArea[3] = $aCPos[1] + 170
+; ###############################################################################################################################
+; # FUNCTION.......: IsCargoFull
+; # DESCRIPTION....: Проверяет заполнение грузового отсека (карго) по заранее подготовленному скриншоту ADB.
+; # PARAMETERS ....: $sDeviceID  - ID эмулятора (напр. "127.0.0.1:21503").
+; #                  $sSourceBmp - Путь к актуальному скриншоту этого устройства.
+; # RETURN.........: True - Карго заполнено, False - есть место или ошибка.
+; ###############################################################################################################################
+Func IsCargoFull($sDeviceID, $sSourceBmp)
+    ; 1. Задаем область поиска индикатора 100% (фиксированные координаты для 1280x720)
+    Local $aArea[4] = [0, 80, 60, 170]
 
-    _Log("IsCargoFull [" & $sCurrentClient & "]: Проверяем отсек...")
+    _CW("IsCargoFull [" & $sDeviceID & "]: Проверка индикатора заполнения..." & @CRLF)
 
     Local $x, $y
-    ; 3. Поиск изображения 100% карго
-    If _MyImageSearch("imgCargoFull.bmp", $sResourceDir, $aArea, $x, $y, 100) = 1 Then
-        _Log("IsCargoFull [" & $sCurrentClient & "]: Грузовой отсек ПОЛОН")
+    ; 2. Поиск изображения индикатора 100% (imgCargoFull.bmp)
+    ; Используем переданный скриншот $sSourceBmp
+    If _MyImageSearch("imgCargoFull.bmp", $sResourceDir, $aArea, $x, $y, 100, $sSourceBmp) = 1 Then
+        _CW("IsCargoFull [" & $sDeviceID & "]: [!] Грузовой отсек ПОЛОН" & @CRLF)
         Return True
     EndIf
 
-    _Log("IsCargoFull [" & $sCurrentClient & "]: Еще есть место")
+    _CW("IsCargoFull [" & $sDeviceID & "]: Ок, место в трюме еще есть." & @CRLF)
     Return False
 EndFunc   ;==>IsCargoFull
 
 
+; ###############################################################################################################################
+; # FUNCTION.......: _MoveCargo
+; # DESCRIPTION....: Выполняет цикл перемещения руды из трюма на станцию через ADB (фоновые нажатия).
+; # PARAMETERS ....: $sDeviceID - ID эмулятора (например, "127.0.0.1:21503").
+; # RETURN.........: True - трюм пуст, False - ошибка выгрузки.
+; ###############################################################################################################################
+Func _MoveCargo($sDeviceID)
+    _CW("_MoveCargo [" & $sDeviceID & "]: Начинаем цикл выгрузки..." & @CRLF)
 
-
-; #FUNCTION# ====================================================================================================================
-; Name...........: _MoveCargo
-; Description....: Выполняет цикл перемещения руды из трюма на станцию через горячие клавиши.
-; Syntax.........: _MoveCargo($sCurrentClient)
-; Parameters ....: $sCurrentClient - Заголовок текущего окна клиента.
-; Return values .: True         - Выгрузка подтверждена (трюм пуст).
-;                  False        - Ошибка выгрузки или трюм остался полным.
-; Updated .......: 2026.04.26
-; Version .......: 1.10
-; Remarks .......: Использует серию Send команд и финальную проверку через imgCargoEmpty.bmp.
-; ===============================================================================================================================
-Func _MoveCargo($sCurrentClient)
-    ; 1. Получаем координаты клиентской области
-    Local $aCPos = _WinGetClientPos($sCurrentClient)
-    If @error Then 
-        _Log("_MoveCargo: Ошибка - Не удалось получить координаты '" & $sCurrentClient & "'")
-        Return False
-    EndIf
-
-    _Log("_MoveCargo [" & $sCurrentClient & "]: Начинаем выгрузку...")
-
-    ; 2. Последовательность горячих клавиш (Инвентарь -> Свернуть -> Трюм -> Выделить -> Переместить -> Подтвердить)
-    _HumanSleep(200, 400)
-    Send("{SC002}") ; "1" - Инвентарь
-    _HumanSleep(300, 600)
-    Send("{SC002}") ; "1" - Свернуть Станцию
-    _HumanSleep(300, 600)
-    Send("{SC00B}") ; "0" - Трюм для руды
-    _HumanSleep(400, 700)
-    Send("{SC020}") ; "D" - Выделить всё
-    _HumanSleep(400, 700)
-    Send("{SC006}") ; "5" - Переместить
-    _HumanSleep(400, 700)
-    Send("{SC008}") ; "7" - Подтвердить (в коде была опечатка SC007 - это "6", исправил на "7")
+    ; 1. ПОСЛЕДОВАТЕЛЬНОСТЬ КОМАНД (ADB Keyevents)
+    ; 8 - '1' (Инвентарь), 7 - '0' (Трюм), 32 - 'D' (Выделить), 12 - '5' (Перенести), 14 - '7' (Ок)
+    Local $aKeys[6] = [8, 8, 7, 32, 12, 14]
     
-    _HumanSleep(1000, 1500) ; Ожидание завершения анимации
+    For $i = 0 To UBound($aKeys) - 1
+        RunWait('"' & $g_adbPath & '" -s ' & $sDeviceID & ' shell input keyevent ' & $aKeys[$i], "", @SW_HIDE)
+        _HumanSleep(500, 800) ; Пауза для обработки команд игрой
+    Next
+    
+    _HumanSleep(1500, 2000) ; Ждем завершения анимации переноса предметов
 
-    Send("{SC001}") ; "Esc" - Закрыть инвентарь
+    ; Закрываем инвентарь (ESC = keyevent 111)
+    RunWait('"' & $g_adbPath & '" -s ' & $sDeviceID & ' shell input keyevent 111', "", @SW_HIDE)
     _HumanSleep(500, 800)
 
-    ; 3. Финальная проверка пустого трюма
+    ; 2. ФИНАЛЬНАЯ ПРОВЕРКА (Поиск индикатора пустого трюма)
     Local $x, $y, $iMaxRetries = 3
-    Local $aArea[4]
-    $aArea = $aCPos + 0
-    $aArea = $aCPos + 80
-    $aArea = $aCPos + 60
-    $aArea = $aCPos + 170
+    ; Фиксированная область индикатора (X1, Y1, X2, Y2)
+    Local $aArea[4] = [0, 80, 60, 170]
 
     For $i = 1 To $iMaxRetries
-        If _MyImageSearch("imgCargoEmpty.bmp", $sResourceDir, $aArea, $x, $y, 100) = 1 Then
-            ; Безопасно обновляем глобальный счетчик выгрузок
-            If IsDeclared("DeliveredCount") Then 
-                Assign("DeliveredCount", Eval("DeliveredCount") + 1, 2)
+        ; Снимаем свежий скриншот для проверки результата
+        Local $sCheckFile = _Get_Screenshot_By_ID($sDeviceID)
+        
+        If $sCheckFile <> "" Then
+            If _MyImageSearch("imgCargoEmpty.bmp", $sResourceDir, $aArea, $x, $y, 100, $sCheckFile) = 1 Then
+                FileDelete($sCheckFile) ; Удаляем временный файл
+                
+                ; Обновление глобального счетчика выгрузок
+                If IsDeclared("DeliveredCount") Then 
+                    Assign("DeliveredCount", Eval("DeliveredCount") + 1, 2)
+                EndIf
+                
+                _CW("_MoveCargo [" & $sDeviceID & "]: УСПЕХ. Трюм очищен." & @CRLF)
+                Return True
             EndIf
             
-            _Log("_MoveCargo [" & $sCurrentClient & "]: Успешно выгружено.")
-            Return True
+            FileDelete($sCheckFile) ; Удаляем скриншот перед следующей попыткой
         EndIf
 
-        _Log("_MoveCargo [" & $sCurrentClient & "]: Ожидание очистки трюма... Попытка " & $i)
-        _HumanSleep(800, 1200) 
+        _CW("_MoveCargo [" & $sDeviceID & "]: Ожидание очистки... Попытка " & $i & @CRLF)
+        _HumanSleep(1000, 1500) 
     Next
 
-    _Log("_MoveCargo [" & $sCurrentClient & "]: ОШИБКА - Трюм не очистился.")
+    _CW("_MoveCargo [" & $sDeviceID & "]: ОШИБКА - Трюм не пуст." & @CRLF)
     Return False
 EndFunc   ;==>_MoveCargo
 
 
-; #FUNCTION# ====================================================================================================================
-; Name...........: _OpenMenuIfNeed
-; Description....: Проверяет состояние меню грида и открывает его, если оно закрыто (по отсутствию иконки "глаза").
-; Syntax.........: _OpenMenuIfNeed($sCurrentClient)
-; Parameters ....: $sCurrentClient - Заголовок текущего окна клиента.
-; Return values .: True         - Меню открыто (или уже было открыто).
-;                  False        - Не удалось открыть меню за отведенное количество попыток.
-; Updated .......: 2026.04.26
-; Version .......: 1.12
-; Remarks .......: Использует проверку наличия imgEyeIcon.bmp и горячую клавишу SC032.
-; ===============================================================================================================================
-Func _OpenMenuIfNeed($sCurrentClient)
 
-    ; 1. Получаем координаты клиентской области
-    Local $aCPos = _WinGetClientPos($sCurrentClient)
-    If @error Then 
-        _Log("_OpenMenuIfNeed: Ошибка - Не удалось получить координаты '" & $sCurrentClient & "'")
-        Return False
-    EndIf
+; ###############################################################################################################################
+; # FUNCTION.......: _OpenMenuIfNeed
+; # DESCRIPTION....: Проверяет состояние меню и открывает его через ADB, если оно закрыто.
+; # PARAMETERS ....: $sDeviceID - ID эмулятора.
+; # RETURN.........: True - меню открыто, False - ошибка.
+; ###############################################################################################################################
+Func _OpenMenuIfNeed($sDeviceID)
+    ; 1. Задаем фиксированную область поиска иконки "глаза" (для 1280x720)
+    ; На основе смещения (1190, 370, 1260, 430)
+    Local $aArea[4] = [1190, 370, 1260, 430]
 
-    ; 2. Вычисляем область поиска (Смещение: 1190, 370, 1260, 430)
-    Local $aArea[4]
-    $aArea[0] = $aCPos[0] + 1190
-    $aArea[1] = $aCPos[1] + 370
-    $aArea[2] = $aCPos[0] + 1260
-    $aArea[3] = $aCPos[1] + 430
-
-    _Log("_OpenMenuIfNeed [" & $sCurrentClient & "]: Проверяем состояние меню...")
+    _CW("_OpenMenuIfNeed [" & $sDeviceID & "]: Проверка состояния меню..." & @CRLF)
 
     Local $x, $y
     Local $iMaxRetries = 3
 
-    ; 3. Цикл попыток открытия меню
     For $i = 1 To $iMaxRetries
-        ; Если иконка "глаза" НЕ найдена (результат 0), значит меню развернуто
-        If _MyImageSearch("imgEyeIcon.bmp", $sResourceDir, $aArea, $x, $y, 100) = 0 Then
-            _Log("_OpenMenuIfNeed [" & $sCurrentClient & "]: Меню открыто.")
+        ; ШАГ А: Получаем свежий скриншот
+        Local $sCurrentFile = _Get_Screenshot_By_ID($sDeviceID)
+        If $sCurrentFile = "" Then ContinueLoop
+
+        ; ШАГ Б: Проверяем наличие "глаза" (если 0 — значит меню уже развернуто)
+        If _MyImageSearch("imgEyeIcon.bmp", $sResourceDir, $aArea, $x, $y, 100, $sCurrentFile) = 0 Then
+            FileDelete($sCurrentFile) ; Чистим за собой
+            _CW("_OpenMenuIfNeed [" & $sDeviceID & "]: Меню открыто." & @CRLF)
             Return True
         EndIf
 
-        _Log("_OpenMenuIfNeed [" & $sCurrentClient & "]: Меню закрыто. Попытка открытия " & $i)
+        ; ШАГ В: Если меню закрыто, нажимаем клавишу (SC032 — это 'M' в EVE, ADB код 41)
+        FileDelete($sCurrentFile) ; Удаляем скриншот перед нажатием
+        _CW("_OpenMenuIfNeed [" & $sDeviceID & "]: Меню скрыто. Открываем (Попытка " & $i & ")" & @CRLF)
         
-        ; Нажимаем клавишу открытия (SC032)
-        _HumanSleep()
-        Send("{SC032}") 
+        _HumanSleep(200, 400)
+        ; ADB Keyevent 41 соответствует клавише 'M'
+        RunWait('"' & $g_adbPath & '" -s ' & $sDeviceID & ' shell input keyevent 41', "", @SW_HIDE)
 
-        ; Ожидание анимации
-        _HumanSleep(800, 1200) 
+        ; Ожидание анимации развертывания
+        _HumanSleep(1000, 1500) 
     Next
 
-    _Log("_OpenMenuIfNeed [" & $sCurrentClient & "]: ОШИБКА - Меню не открылось.")
+    _CW("_OpenMenuIfNeed [" & $sDeviceID & "]: ОШИБКА - Не удалось развернуть меню." & @CRLF)
     Return False
-
 EndFunc   ;==>_OpenMenuIfNeed
 
 
 
-; #FUNCTION# ====================================================================================================================
-; Name...........: _OpenBeltsList
-; Description....: Проверяет наличие открытого списка астероидных поясов и открывает его при необходимости.
-; Syntax.........: _OpenBeltsList($sCurrentClient, $bNeedToGo)
-; Parameters ....: $sCurrentClient - Заголовок текущего окна клиента.
-;                  $bNeedToGo       - Булево значение: если True, после открытия вызывает переход на случайный пояс.
-; Return values .: True         - Список успешно открыт (или уже был открыт).
-;                  False        - Ошибка на любом из этапов открытия.
-; Updated .......: 2026.04.26
-; Version .......: 1.12
-; Remarks .......: Предполагает, что окно уже активировано внешним циклом. Использует _MyImageSearch и _FindAndClick.
-; ===============================================================================================================================
-Func _OpenBeltsList($sCurrentClient, $bNeedToGo)
-    ; 1. Получаем координаты клиентской области
-    Local $aCPos = _WinGetClientPos($sCurrentClient)
-    If @error Then 
-        _Log("_OpenBeltsList: Ошибка - Не удалось получить координаты '" & $sCurrentClient & "'")
-        Return False
-    EndIf
 
-    _Log("_OpenBeltsList [" & $sCurrentClient & "]: Проверяем список астероидов...")
+; ###############################################################################################################################
+; # FUNCTION.......: _OpenBeltsList
+; # DESCRIPTION....: Открывает список астероидных поясов через ADB и выбирает вкладку добычи.
+; # PARAMETERS ....: $sDeviceID - ID эмулятора.
+; #                  $bNeedToGo - если True, вызывает переход на пояс.
+; # RETURN.........: True - список открыт, False - ошибка.
+; ###############################################################################################################################
+Func _OpenBeltsList($sDeviceID, $bNeedToGo)
+    _CW("_OpenBeltsList [" & $sDeviceID & "]: Проверка списка астероидов..." & @CRLF)
 
-    ; 2. Проверяем, не открыт ли список уже
+    ; 1. Получаем базовый скриншот для первичной проверки
+    Local $sFile = _Get_Screenshot_By_ID($sDeviceID)
+    If $sFile = "" Then Return False
+
     Local $x, $y
-    Local $aArea[4]
+    ; Local $aArea
 
-    ; --- Область: Mining Current ---
-    $aArea[0] = $aCPos[0] + 970
-    $aArea[1] = $aCPos[1] + 1
-    $aArea[2] = $aCPos[0] + 1100
-    $aArea[3] = $aCPos[1] + 50
-    Local $bMiningCurrent = _MyImageSearch("imgMiningCurrent.bmp", $sResourceDir, $aArea, $x, $y, 100)
+    ; 2. Проверяем, не открыт ли список уже (MiningCurrent + SelectOre)
+    Local $aArea[4] = [970, 0, 1104, 50] ; Область заголовка
+    Local $bMiningCurrent = _MyImageSearch("imgMiningCurrent.bmp", $sResourceDir, $aArea, $x, $y, 100, $sFile)
 
-    ; --- Область: Select Ore ---
-    $aArea[0] = $aCPos[0] + 970
-    $aArea[1] = $aCPos[1] + 55
-    $aArea[2] = $aCPos[0] + 1000
-    $aArea[3] = $aCPos[1] + 720
-    Local $bSelectOre = _MyImageSearch("imgSelectOreToMine.bmp", $sResourceDir, $aArea, $x, $y, 100)
+    Local $aArea[4] = [1250, 50, 1280, 550] ; Область колонки выбора
+    Local $bSelectOre = _MyImageSearch("imgSelectOreToMine.bmp", $sResourceDir, $aArea, $x, $y, 100, $sFile)
 
     If $bMiningCurrent = 1 And $bSelectOre = 1 Then
-        _Log("_OpenBeltsList [" & $sCurrentClient & "]: Список уже открыт.")
-        If $bNeedToGo Then Return _GoToRandomBelt($sCurrentClient)
+        _CW("_OpenBeltsList [" & $sDeviceID & "]: Список уже открыт." & @CRLF)
+        FileDelete($sFile)
+        If $bNeedToGo Then Return _GoToRandomBelt($sDeviceID) ; Функцию тоже нужно будет поправить под ADB
         Return True
     EndIf
+    FileDelete($sFile) ; Удаляем старый скрин перед кликами
 
     ; 3. Открываем выпадающее меню
-    _Log("_OpenBeltsList [" & $sCurrentClient & "]: Открываем меню выбора...")
-    $aArea[0] = $aCPos[0] + 970
-    $aArea[1] = $aCPos[1] + 1
-    $aArea[2] = $aCPos[0] + 1010
-    $aArea[3] = $aCPos[1] + 40
+    _CW("_OpenBeltsList [" & $sDeviceID & "]: Открываем меню выбора..." & @CRLF)
+    $sFile = _Get_Screenshot_By_ID($sDeviceID) ; Свежий скрин
+
+    Local $aArea[4] = [970, 0, 1104, 50]
     
-    If _FindAndClick("imgShowDropdownMy.bmp", $sResourceDir, $aArea) Then
-        _HumanSleep()
+    If _FindAndClick("imgShowDropdownMy.bmp", $sResourceDir, $aArea, $sDeviceID, $sFile) Then
+        FileDelete($sFile)
+        _HumanSleep(600, 1000) ; Ждем раскрытия меню
 
-        ; 4. Выбираем пункт добычи
-        $aArea[0] = $aCPos[0] + 970
-        $aArea[1] = $aCPos[1] + 50
-        $aArea[2] = $aCPos[0] + 1220
-        $aArea[3] = $aCPos[1] + 720
+        ; 4. Выбираем пункт добычи (в открывшемся списке)
+        $sFile = _Get_Screenshot_By_ID($sDeviceID)
+        Local $aArea[4] = [970, 0, 1104, 500]
         
-        If _FindAndClick("imgMinigScreen.bmp", $sResourceDir, $aArea) Then
-            _Log("_OpenBeltsList [" & $sCurrentClient & "]: Вкладка добычи выбрана.")
-            _HumanSleep()
+        If _FindAndClick("imgMinigScreen.bmp", $sResourceDir, $aArea, $sDeviceID, $sFile) Then
+            _CW("_OpenBeltsList [" & $sDeviceID & "]: Вкладка добычи выбрана." & @CRLF)
+            FileDelete($sFile)
+            _HumanSleep(800, 1200)
 
-            ; 5. Дополнительный клик (управление списком)
-            $aArea[0] = $aCPos[0] + 1220
-            $aArea[1] = $aCPos[1] + 60
-            $aArea[2] = $aCPos[0] + 1270
-            $aArea[3] = $aCPos[1] + 530
-            _FindAndClick("imgMinigScreen.bmp", $sResourceDir, $aArea)
-            _HumanSleep()
-
-            If $bNeedToGo Then Return _GoToRandomBelt($sCurrentClient)
+            ; 5. Финальный скриншот для проверки или перехода
+            If $bNeedToGo Then Return _GoToRandomBelt($sDeviceID)
             Return True
         Else
-            _Log("_OpenBeltsList [" & $sCurrentClient & "]: Ошибка - вкладка не нажата.")
+            _CW("_OpenBeltsList [" & $sDeviceID & "]: Ошибка - вкладка не найдена." & @CRLF)
+            FileDelete($sFile)
             Return False
         EndIf
     Else
-        _Log("_OpenBeltsList [" & $sCurrentClient & "]: Ошибка - кнопка меню не найдена.")
+        _CW("_OpenBeltsList [" & $sDeviceID & "]: Ошибка - кнопка меню не найдена." & @CRLF)
+        FileDelete($sFile)
         Return False
     EndIf
 EndFunc   ;==>_OpenBeltsList
 
 
+; ###############################################################################################################################
+; # FUNCTION.......: _WarpTo
+; # DESCRIPTION....: Выбирает цель и выполняет варп через ADB с мониторингом состояния полета.
+; # PARAMETERS ....: $sDeviceID   - ID эмулятора (127.0.0.1:21503).
+; #                  $sTargetName - Название цели для лога.
+; #                  $aTargetArea - Массив [X1, Y1, X2, Y2] координат цели внутри экрана 1280x720.
+; # RETURN.........: True - прибыли, False - ошибка.
+; ###############################################################################################################################
+Func _WarpTo($sDeviceID, $sTargetName, $aTargetArea)
+    _CW("_WarpTo [" & $sDeviceID & "]: Выбираем цель: " & $sTargetName & @CRLF)
 
-; #FUNCTION# ====================================================================================================================
-; Name...........: _WarpTo
-; Description....: Выполняет клик по цели и последующий варп с ожиданием прибытия.
-; Syntax.........: _WarpTo($sCurrentClient, $sTargetName, $aTargetArea)
-; Parameters ....: $sCurrentClient - Заголовок окна клиента.
-;                  $sTargetName    - Название объекта для лога.
-;                  $aTargetArea    - Массив [X1, Y1, X2, Y2] области/объекта, по которому нужно кликнуть для выбора.
-; Return values .: True - Прибытие подтверждено, False - Ошибка на любом этапе.
-; Updated .......: 2026.04.26
-; Version .......: 1.16
-; Remarks .......: Сначала выбирает цель по $aTargetArea, затем ищет кнопку варпа.
-; ===============================================================================================================================
-Func _WarpTo($sCurrentClient, $sTargetName, $aTargetArea)
-    ; 1. Получаем базовые координаты клиента
-    Local $aCPos = _WinGetClientPos($sCurrentClient)
-    If @error Then Return False
-
-    _Log("_WarpTo [" & $sCurrentClient & "]: Выбираем цель: " & $sTargetName)
-
-    ; 2. Кликаем по самой цели (например, по строке в списке астероидов)
-    ; Кликаем в центр переданной области $aTargetArea
+    ; 1. Кликаем по цели в фоновом режиме (в центр области $aTargetArea)
     Local $iTargetX = $aTargetArea[0] + ($aTargetArea[2] - $aTargetArea[0]) / 2
     Local $iTargetY = $aTargetArea[1] + ($aTargetArea[3] - $aTargetArea[1]) / 2
-    MouseClick("left", $iTargetX, $iTargetY, 1, 1)
-    _HumanSleep(500, 800)
+    _ADB_Click($sDeviceID, $iTargetX, $iTargetY)
+    _HumanSleep(600, 1000) ; Ждем появления кнопок действий
 
-    ; 3. Область для поиска кнопки "Warp" (появляется после клика по цели)
-    Local $aWarpBtnArea[4]
-    $aWarpBtnArea[0] = $aCPos[0] + 700
-    $aWarpBtnArea[1] = $aCPos[1] + 40
-    $aWarpBtnArea[2] = $aCPos[0] + 1000
-    $aWarpBtnArea[3] = $aCPos[1] + 700
+    ; 2. Область для поиска кнопки "Warp" (правая часть экрана)
+    Local $aWarpBtnArea[4] = [700, 40, 1000, 700] 
 
-    ; 4. Находим и кликаем кнопку варпа
-    If _FindAndClick("warp.png", $sResourceDir, $aWarpBtnArea) Then
-        _Log("_WarpTo [" & $sCurrentClient & "]: Кнопка нажата. Ожидаем разгон...")
+    ; 3. Делаем скриншот для поиска кнопки варпа
+    Local $sFile = _Get_Screenshot_By_ID($sDeviceID)
+    If $sFile = "" Then Return False
+
+    ; 4. Находим и нажимаем кнопку варпа
+    If _FindAndClick("warp.png", $sResourceDir, $aWarpBtnArea, $sDeviceID, $sFile) Then
+        FileDelete($sFile) ; Удаляем скрин после нажатия
+        _CW("_WarpTo [" & $sDeviceID & "]: Кнопка нажата. Ждем входа в варп..." & @CRLF)
         
-        ; 5. Зона индикатора варпа
-        Local $aWarpZone[4]
-        $aWarpZone[0] = $aCPos[0] + 404
-        $aWarpZone[1] = $aCPos[1] + 515
-        $aWarpZone[2] = $aCPos[0] + 808
-        $aWarpZone[3] = $aCPos[1] + 555
-        
+        ; 5. Координаты зоны индикаторов варпа (низ центральной части экрана)
+        Local $aWarpZone = [404, 515, 808, 555] 
         Local $outX, $outY
         
-        ; 6. Ждем индикатор начала варпа
-        If _MyWaitForImageSearch("imgWarpTo.bmp", $sResourceDir, $aWarpZone, 30, $outX, $outY, 100) Then
-            _Log("_WarpTo [" & $sCurrentClient & "]: В варпе. Ожидаем остановку...")
+        ; 6. Ждем индикатор начала варпа (используем обновленную функцию с $sDeviceID)
+        ; Эта функция внутри себя будет делать и удалять скриншоты автоматически
+        If _MyWaitForImageSearch("imgWarpTo.bmp", $sResourceDir, $aWarpZone, 30, $outX, $outY, 100, $sDeviceID) Then
+            _CW("_WarpTo [" & $sDeviceID & "]: Корабль в варпе. Ожидаем прибытия..." & @CRLF)
             
-            ; 7. Ждем индикатор выхода из варпа (остановка корабля)
-            If _MyWaitForImageSearch("imgShipStopping.bmp", $sResourceDir, $aWarpZone, 1200, $outX, $outY, 100) Then
-                _Log("_WarpTo [" & $sCurrentClient & "]: Прибыли к " & $sTargetName)
+            ; 7. Ждем индикатор выхода из варпа (остановка/появление интерфейса)
+            ; Увеличиваем время ожидания для длинных перелетов
+            If _MyWaitForImageSearch("imgShipStopping.bmp", $sResourceDir, $aWarpZone, 600, $outX, $outY, 100, $sDeviceID) Then
+                _CW("_WarpTo [" & $sDeviceID & "]: Прибыли к " & $sTargetName & @CRLF)
                 Return True
             Else
-                _Log("_WarpTo [" & $sCurrentClient & "]: Ошибка - Тайм-аут завершения полета.")
+                _CW("_WarpTo [" & $sDeviceID & "]: Ошибка - Потеря визуального контроля при выходе." & @CRLF)
                 Return False
             EndIf
         Else
-            _Log("_WarpTo [" & $sCurrentClient & "]: ПРЕДУПРЕЖДЕНИЕ - Варп не начался.")
+            _CW("_WarpTo [" & $sDeviceID & "]: Варп не зафиксирован (возможно цель слишком близко)." & @CRLF)
             Return False
         EndIf
     Else
-        _Log("_WarpTo [" & $sCurrentClient & "]: ОШИБКА - Кнопка варпа не найдена.")
+        FileDelete($sFile)
+        _CW("_WarpTo [" & $sDeviceID & "]: ОШИБКА - Кнопка варпа не найдена." & @CRLF)
         Return False
-    EndIf
+    Endif
 EndFunc   ;==>_WarpTo
 
 
 
 ; #FUNCTION# ====================================================================================================================
 ; Name...........: _GoToRandomBelt
-; Description....: Ищет пояса по приоритету с использованием уникальных областей поиска для каждого типа.
-; Syntax.........: _GoToRandomBelt($sCurrentClient)
-; Parameters ....: $sCurrentClient - Заголовок текущего окна клиента.
-; Return values .: True         - Успешный варп к поясу.
-;                  False        - Пояса не найдены или ошибка варпа.
-; Updated .......: 2026.04.26
-; Version .......: 1.31
-; Remarks .......: Передает область найденного пояса в обновленную функцию _WarpTo.
+; Description....: Ищет пояса по приоритету на ADB-скриншоте и инициирует варп.
+; Syntax.........: _GoToRandomBelt($sDeviceID)
+; Parameters ....: $sDeviceID - ID эмулятора (например, "127.0.0.1:21503").
+; Return values .: True - Варп начат и успешно завершен, False - Пояса не найдены или ошибка.
 ; ===============================================================================================================================
-Func _GoToRandomBelt($sCurrentClient)
-    Local $aCPos = _WinGetClientPos($sCurrentClient)
-    If @error Then Return False
+Func _GoToRandomBelt($sDeviceID)
+    _CW("_GoToRandomBelt [" & $sDeviceID & "]: Анализ доступных поясов..." & @CRLF)
 
-    ; 1. Определяем типы поясов (имена файлов)
+    ; 1. Получаем скриншот (один для всех проверок в цикле)
+    Local $sFile = _Get_Screenshot_By_ID($sDeviceID)
+    If $sFile = "" Then Return False
+
+    ; 2. База данных поясов: файлы и фиксированные области [X1, Y1, X2, Y2]
     Local $aBeltFiles[3] = ["imgBeltLarge.bmp", "imgBeltMedium.bmp", "imgBeltSmall.bmp"]
-
-    ; 2. Определяем смещения областей поиска для каждого типа [X1, Y1, X2, Y2]
     Local $aOffsets[3][4] = [ _
-        [967, 51, 995, 150], _  ; Область для Типа 1
-        [967, 151, 995, 300], _ ; Область для Типа 2
-        [967, 301, 995, 433]  _ ; Область для Типа 3
+        [967, 51, 995, 150], _  ; Large
+        [967, 151, 995, 300], _ ; Medium
+        [967, 301, 995, 433]  _ ; Small
     ]
 
     Local $x, $y
-    Local $aArea[4]       ; Рабочая область поиска
-    Local $aTargetArea[4] ; Область найденной цели для передачи в _WarpTo
+    Local $aTargetArea[4]
 
-    ; 3. Перебираем типы по очереди
+    ; 3. Перебор типов поясов
     For $i = 0 To 2
-        _Log("_GoToRandomBelt [" & $sCurrentClient & "]: Проверка типа " & ($i + 1))
-
-        ; Рассчитываем координаты области поиска
-        $aArea[0] = $aCPos[0] + $aOffsets[$i][0]
-        $aArea[1] = $aCPos[1] + $aOffsets[$i][1]
-        $aArea[2] = $aCPos[0] + $aOffsets[$i][2]
-        $aArea[3] = $aCPos[1] + $aOffsets[$i][3]
-
-        ; Ищем пояс
-        If _MyImageSearch($aBeltFiles[$i], $sResourceDir, $aArea, $x, $y, 100) Then
-            _Log("_GoToRandomBelt [" & $sCurrentClient & "]: Найден пояс типа " & ($i + 1))
+        ; Ищем пояс конкретного типа на текущем скриншоте
+        If _MyImageSearch($aBeltFiles[$i], $sResourceDir, $aOffsets[$i], $x, $y, 100, $sFile) Then
+            _CW("_GoToRandomBelt [" & $sDeviceID & "]: Обнаружен " & $aBeltFiles[$i] & @CRLF)
             
-            ; Формируем область цели вокруг найденных координат (например, квадрат 20x20 пикселей)
+            ; Формируем область клика вокруг найденной иконки
             $aTargetArea[0] = $x - 10
             $aTargetArea[1] = $y - 10
             $aTargetArea[2] = $x + 10
             $aTargetArea[3] = $y + 10
 
-            ; Вызываем варп, передавая имя окна, описание цели и область клика
-            Return _WarpTo($sCurrentClient, "Пояс тип " & ($i + 1), $aTargetArea)
+            ; Удаляем скриншот перед уходом в длительную функцию варпа
+            FileDelete($sFile)
+            
+            ; Вызываем обновленный _WarpTo (внутри него будут свои скриншоты для мониторинга полета)
+            Return _WarpTo($sDeviceID, "Пояс приоритет " & ($i + 1), $aTargetArea)
         EndIf
     Next
 
-    _Log("_GoToRandomBelt [" & $sCurrentClient & "]: Доступные пояса не найдены.")
+    ; Если ничего не нашли, чистим за собой
+    FileDelete($sFile)
+    _CW("_GoToRandomBelt [" & $sDeviceID & "]: Подходящие пояса не найдены в списке." & @CRLF)
     Return False
 EndFunc   ;==>_GoToRandomBelt
 
 
+; ###############################################################################################################################
+; #                                                                                                                             #
+; # PROJECT........: EVE Echoes Bots                                                                                            #
+; # VERSION........: 1.1.2                                                                                                      #
+; # BUILD..........: 2026.04.27                                                                                                 #
+; # FILENAME.......: ScreenshotMaker.au3                                                                                        #
+; # GITHUB.........: https://github.com                                                          #
+; # DESCRIPTION....: Автоматизированный комплекс управления добычей руды.                                                       #
+; #                  - Перелет и стыковка со станцией через ADB.                                                                #
+; #                  - Мониторинг состояния варпа и подтверждение дока.                                                         #
+; #                                                                                                                             #
+; ###############################################################################################################################
+
 ; #FUNCTION# ====================================================================================================================
 ; Name...........: _GoToStation
-; Description....: Выполняет перелет и стыковку со станцией с проверкой результата по кнопке Undock.
-; Syntax.........: _GoToStation($sCurrentClient)
-; Parameters ....: $sCurrentClient - Заголовок текущего окна клиента.
-; Return values .: True         - Корабль успешно пристыкован (кнопка Undock найдена).
-;                  False        - Ошибка на любом из этапов.
-; Updated .......: 2026.04.26
-; Version .......: 1.12
-; Remarks .......: Исправлены опечатки в переменных и индексах массивов.
+; Description....: Выполняет перелет и стыковку со станцией через ADB с проверкой результата по кнопке Undock.
+; Syntax.........: _GoToStation($sDeviceID)
+; Parameters ....: $sDeviceID - ID эмулятора (например, "127.0.0.1:21503").
+; Return values .: True - Корабль в доке, False - Ошибка.
 ; ===============================================================================================================================
-Func _GoToStation($sCurrentClient)
-    Local $aCPos = _WinGetClientPos($sCurrentClient)
-    If @error Then Return False
+Func _GoToStation($sDeviceID)
+    _CW("_GoToStation [" & $sDeviceID & "]: Возвращаемся на базу..." & @CRLF)
 
-    _Log("_GoToStation [" & $sCurrentClient & "]: Возвращаемся на базу...")
+    Local $x, $y, $sFile
+    ; Local $aArea
 
-    ; 1. Выбираем фильтр станций в гриде
-    Local $aArea[4]
-    $aArea[0] = $aCPos[0] + 970
-    $aArea[1] = $aCPos[1] + 1
-    $aArea[2] = $aCPos[0] + 1010
-    $aArea[3] = $aCPos[1] + 40
-    If Not _FindAndClick("imgShowDropdownMy.bmp", $sResourceDir, $aArea) Then Return False
-    _HumanSleep(500, 800)
+    ; 1. ВЫБОР ФИЛЬТРА СТАНЦИЙ
+    $sFile = _Get_Screenshot_By_ID($sDeviceID)
+    If $sFile = "" Then Return False
+
+    Local $aArea[4] = [970, 1, 1010, 40]
+    If Not _FindAndClick("imgShowDropdownMy.bmp", $sResourceDir, $aArea, $sDeviceID, $sFile) Then 
+        FileDelete($sFile)
+        Return False
+    EndIf
+    FileDelete($sFile)
+    _HumanSleep(600, 1000)
 
     ; Выбираем пункт "Станции"
-    $aArea[0] = $aCPos[0] + 970
-    $aArea[1] = $aCPos[1] + 50
-    $aArea[2] = $aCPos[0] + 1220
-    $aArea[3] = $aCPos[1] + 720
-    If Not _FindAndClick("imgStationFilter.bmp", $sResourceDir, $aArea) Then Return False
+    $sFile = _Get_Screenshot_By_ID($sDeviceID)
+    local $aArea[4] = [970, 50, 1220, 720]
+    If Not _FindAndClick("imgStationFilter.bmp", $sResourceDir, $aArea, $sDeviceID, $sFile) Then
+        FileDelete($sFile)
+        Return False
+    EndIf
+    FileDelete($sFile)
     _HumanSleep(800, 1200)
 
-    ; 2. Ищем и выбираем станцию в списке
-    Local $x, $y
-    $aArea[0] = $aCPos[0] + 970
-    $aArea[1] = $aCPos[1] + 50
-    $aArea[2] = $aCPos[0] + 995
-    $aArea[3] = $aCPos[1] + 433
-    If Not _MyImageSearch("imgStationLocation.bmp", $sResourceDir, $aArea, $x, $y, 100) Then
-        _Log("_GoToStation [" & $sCurrentClient & "]: Станция не найдена.")
+    ; 2. ВЫБОР СТАНЦИИ В ГРИДЕ
+    $sFile = _Get_Screenshot_By_ID($sDeviceID)
+    Local $aArea[4] = [970, 50, 995, 433]
+    If Not _MyImageSearch("imgStationLocation.bmp", $sResourceDir, $aArea, $x, $y, 100, $sFile) Then
+        FileDelete($sFile)
+        _CW("_GoToStation [" & $sDeviceID & "]: Станция не найдена в списке." & @CRLF)
         Return False
     EndIf
-    MouseClick("left", $x, $y, 1, 1)
-    _HumanSleep(500, 800)
+    _ADB_Click($sDeviceID, $x, $y)
+    FileDelete($sFile)
+    _HumanSleep(600, 1000)
 
-    ; 3. Нажимаем кнопку "Dock" (область интерфейса станции)
-    Local $aDockArea[4]
-    $aDockArea[0] = $aCPos[0] + 1060
-    $aDockArea[1] = $aCPos[1] + 230
-    $aDockArea[2] = $aCPos[0] + 1280
-    $aDockArea[3] = $aCPos[1] + 300
-    If Not _FindAndClick("imgDockBtn.bmp", $sResourceDir, $aDockArea) Then
-        _Log("_GoToStation [" & $sCurrentClient & "]: Кнопка 'Dock' не найдена.")
+    ; 3. НАЖАТИЕ КНОПКИ "DOCK"
+    $sFile = _Get_Screenshot_By_ID($sDeviceID)
+    Local $aDockArea[4] = [1060, 230, 1280, 300]
+    If Not _FindAndClick("imgDockBtn.bmp", $sResourceDir, $aDockArea, $sDeviceID, $sFile) Then
+        _CW("_GoToStation [" & $sDeviceID & "]: Кнопка 'Dock' не появилась." & @CRLF)
+        FileDelete($sFile)
         Return False
     EndIf
+    FileDelete($sFile)
 
-    ; 4. Ожидание результата
-    _Log("_GoToStation [" & $sCurrentClient & "]: Ожидаем завершение стыковки...")
+    ; 4. МОНИТОРИНГ ПОЛЕТА И СТЫКОВКИ
+    _CW("_GoToStation [" & $sDeviceID & "]: Ожидаем завершение стыковки..." & @CRLF)
     
-    Local $aWarpZone[4]
-    $aWarpZone[0] = $aCPos[0] + 404
-    $aWarpZone[1] = $aCPos[1] + 515
-    $aWarpZone[2] = $aCPos[0] + 808
-    $aWarpZone[3] = $aCPos[1] + 555
-
-    Local $outX, $outY
+    Local $aWarpZone[4] = [404, 515, 808, 555]
     Local $hTimer = TimerInit()
     
     While TimerDiff($hTimer) < 180000 ; Таймаут 3 минуты
-        ; Проверка 1: Появилась ли кнопка Undock (используем ту же область $aDockArea)
-        If _MyImageSearch("imgUnDock.bmp", $sResourceDir, $aDockArea, $outX, $outY, 100) Then
-            _Log("_GoToStation [" & $sCurrentClient & "]: Успешно в доке.")
+        $sFile = _Get_Screenshot_By_ID($sDeviceID)
+        If $sFile = "" Then 
+            Sleep(1000)
+            ContinueLoop
+        EndIf
+
+        ; Проверка 1: Мы уже в доке? (Ищем кнопку Undock)
+        If _MyImageSearch("imgUnDock.bmp", $sResourceDir, $aDockArea, $x, $y, 100, $sFile) Then
+            _CW("_GoToStation [" & $sDeviceID & "]: Успешно пристыкованы." & @CRLF)
+            FileDelete($sFile)
             Return True
         EndIf
 
-        ; Проверка 2: Если мы в варпе — ждем индикатор остановки
-        ; Здесь важно: _MyImageSearch требует массив области, передаем $aWarpZone
-        If _MyImageSearch("imgWarpTo.bmp", $sResourceDir, $aWarpZone, $outX, $outY, 100) Then
-            _Log("_GoToStation [" & $sCurrentClient & "]: В варпе к станции...")
-            _MyWaitForImageSearch("imgShipStopping.bmp", $sResourceDir, $aWarpZone, 120, $outX, $outY, 100)
-            ; После выхода из варпа не выходим из цикла, а ждем появления Undock
+        ; Проверка 2: Мы еще летим?
+        If _MyImageSearch("imgWarpTo.bmp", $sResourceDir, $aWarpZone, $x, $y, 100, $sFile) Then
+            _CW("_GoToStation [" & $sDeviceID & "]: В варпе..." & @CRLF)
+            FileDelete($sFile)
+            ; Ждем выхода из варпа (функция сама делает/удаляет скрины)
+            _MyWaitForImageSearch("imgShipStopping.bmp", $sResourceDir, $aWarpZone, 120, $x, $y, 100, $sDeviceID)
+            ContinueLoop
         EndIf
 
-        Sleep(1000)
+        FileDelete($sFile)
+        Sleep(2000) ; Интервал проверки состояния
     WEnd
 
-    _Log("_GoToStation [" & $sCurrentClient & "]: ОШИБКА - Не удалось подтвердить док.")
+    _CW("_GoToStation [" & $sDeviceID & "]: ОШИБКА - Превышено время ожидания дока." & @CRLF)
     Return False
 EndFunc   ;==>_GoToStation
 
 
-
 ; #FUNCTION# ====================================================================================================================
 ; Name...........: _IsSafe
-; Description....: Проверяет локальный чат конкретного окна и записывает статус в массив безопасности.
-; Syntax.........: _IsSafe($sCurrentClient, $iClientIdx)
-; Parameters ....: $sCurrentClient - Заголовок текущего окна клиента.
-;                  $iClientIdx      - Индекс текущего клиента в массиве статусов.
-; Return values .: True         - Безопасно.
-;                  False        - Обнаружена угроза.
-; Updated .......: 2026.04.26
-; Version .......: 1.20
-; Remarks .......: Результат записывается в Global $aIsSave[$iClientIdx].
+; Description....: Проверяет локальный чат через ADB и обновляет глобальный статус безопасности окна.
+; Syntax.........: _IsSafe($sDeviceID, $iClientIdx)
+; Parameters ....: $sDeviceID  - ID эмулятора (например, "127.0.0.1:21503").
+;                  $iClientIdx - Индекс текущего окна в глобальном массиве $aIsSave.
+; Return values .: True - Врагов нет, False - Обнаружена угроза.
 ; ===============================================================================================================================
-Func _IsSafe($sCurrentClient, $iClientIdx)
-    Local $aCPos = _WinGetClientPos($sCurrentClient)
-    If @error Then Return False
+Func _IsSafe($sDeviceID, $iClientIdx)
+    ; 1. Получаем скриншот для анализа
+    Local $sFile = _Get_Screenshot_By_ID($sDeviceID)
+    If $sFile = "" Then Return False
 
-    ; 1. Область локального чата
-    Local $aArea[4]
-    $aArea[0] = $aCPos[0] + 0
-    $aArea[1] = $aCPos[1] + 330
-    $aArea[2] = $aCPos[0] + 400
-    $aArea[3] = $aCPos[1] + 720
+    ; 2. Область локального чата (фиксированные координаты для 1280x720)
+    Local $aArea[4] = [0,330,400,7200] 
 
-    ; Ищем плохие стендинги: Криминал, Минус, Нейтрал
+    ; Маркеры угроз: Криминал, Минус, Нейтрал
     Local $aMarkers[3] = ["imgLocalStatCriminal.bmp", "imgLocalStatMinus.bmp", "imgLocalStatNeitral.bmp"]
     Local $x, $y, $outX, $outY
     Local $iTolerance = 100
-    Local $bStatus = True ; По умолчанию считаем, что безопасно
+    Local $bStatus = True ; По умолчанию безопасно
 
-    _Log("_IsSafe [" & $sCurrentClient & "]: Проверка локала...")
+    _CW("_IsSafe [" & $sDeviceID & "]: Мониторинг локала..." & @CRLF)
 
-    ; 2. Проверка маркеров угроз
+    ; 3. Проверка маркеров угроз на текущем скриншоте
     For $i = 0 To 2
-        If _MyImageSearch($aMarkers[$i], $sResourceDir, $aArea, $x, $y, $iTolerance) Then
+        If _MyImageSearch($aMarkers[$i], $sResourceDir, $aArea, $x, $y, $iTolerance, $sFile) Then
             
-            ; 3. Проверка: есть ли рядом иконка "своего" (синий/зеленый плюс), перекрывающая угрозу
-            ; (Например, если нейтарл на самом деле в твоем флоте)
-            Local $aStatusArea[4]
-            $aStatusArea[0] = $x + 10 
-            $aStatusArea[1] = $y - 20 
-            $aStatusArea[2] = $x + 60 
-            $aStatusArea[3] = $y + 20 
+            ; 4. Проверка на "дружелюбность" (ложная тревога: софлотовец или сокорп)
+            ; Задаем область справа от найденного маркера
+            Local $aStatusArea[4] = [$aArea[0] + 10, $aArea[0] + 20, $aArea[0] + 60, $aArea[0] + 20] 
             
-            ; Если иконка подтверждения безопасности (imgLocalStatNull.bmp) НЕ найдена рядом с угрозой
-            If Not _MyImageSearch("imgLocalStatNull.bmp", $sResourceDir, $aStatusArea, $outX, $outY, $iTolerance) Then
-                _Log("_IsSafe [" & $sCurrentClient & "]: !!! ОБНАРУЖЕН ВРАГ !!!")
+            ; Если иконка "своего" (imgLocalStatNull.bmp) НЕ найдена рядом с маркером
+            If Not _MyImageSearch("imgLocalStatNull.bmp", $sResourceDir, $aStatusArea, $outX, $outY, $iTolerance, $sFile) Then
+                _CW("_IsSafe [" & $sDeviceID & "]: !!! ВНИМАНИЕ: ОБНАРУЖЕН ВРАГ !!!" & @CRLF)
                 $bStatus = False
                 ExitLoop 
             EndIf
         EndIf
     Next
 
-    ; 4. Записываем результат в массив статусов конкретного окна
+    ; Удаляем проанализированный файл
+    FileDelete($sFile)
+
+    ; 5. Записываем результат в глобальный массив статусов
     If IsDeclared("aIsSave") Then
-        ; Используем Execute для записи в массив по индексу, так как Assign плохо работает с индексами массивов напрямую
-        Execute('$aIsSave[' & $iClientIdx & '] = ' & ($bStatus ? 'True' : 'False'))
+        ; Обновляем значение напрямую в глобальном массиве
+        Global $aIsSave ; Обращаемся к объявленной ранее переменной
+        $aIsSave[$iClientIdx] = $bStatus
     EndIf
 
     Return $bStatus
 EndFunc   ;==>_IsSafe
 
 
+
 ; #FUNCTION# ====================================================================================================================
 ; Name...........: _AlliChatMessage
-; Description....: Открывает чат альянса и отправляет сообщение разведки.
-; Syntax.........: _AlliChatMessage($sCurrentClient)
-; Parameters ....: $sCurrentClient - Заголовок текущего окна клиента.
+; Description....: Открывает чат альянса и отправляет сообщение разведки через ADB.
+; Syntax.........: _AlliChatMessage($sDeviceID)
+; Parameters ....: $sDeviceID - ID эмулятора (например, "127.0.0.1:21503").
 ; Return values .: True         - Сообщение успешно отправлено.
-;                  False        - Ошибка на одном из этапов (с записью в лог).
-; Updated .......: 2026.04.26
-; Version .......: 1.13
-; Remarks .......: Оптимизировано использование массива координат. Добавлена кнопка меню перед информированием.
+;                  False        - Ошибка на одном из этапов.
+; Updated .......: 2026.04.28
+; Version .......: 1.14
+; Remarks .......: Работает в фоновом режиме. Каждый шаг подтверждается новым скриншотом.
 ; ===============================================================================================================================
-Func _AlliChatMessage($sCurrentClient)
-    Local $aCPos = _WinGetClientPos($sCurrentClient)
-    If @error Then 
-        _Log("_AlliChatMessage [" & $sCurrentClient & "]: Ошибка - не удалось получить координаты клиента.")
-        Return False
-    EndIf
+Func _AlliChatMessage($sDeviceID)
+    _CW("_AlliChatMessage [" & $sDeviceID & "]: Подготовка к отправке разведданных...")
 
-    _Log("_AlliChatMessage [" & $sCurrentClient & "]: Подготовка к отправке разведданных...")
+    Local $sFile, $aArea, $x, $y
 
     ; 1. Нажимаем на иконку чата (нижний левый угол)
-    _HumanSleep(200, 400)
-    MouseClick("left", $aCPos[0] + 25, $aCPos[1] + 625, 1, 1) 
+    _ADB_Click($sDeviceID, 25, 625) 
     _HumanSleep(800, 1200)
 
     ; 2. Проверяем статус чата
-    Local $aArea[4]
-    $aArea[0] = $aCPos[0] + 0
-    $aArea[1] = $aCPos[1] + 30
-    $aArea[2] = $aCPos[0] + 104
-    $aArea[3] = $aCPos[1] + 720
+    $sFile = _Get_Screenshot_By_ID($sDeviceID)
+    If $sFile = "" Then Return False
 
-    Local $x, $y
-    Local $bIsChatOpen = _MyImageSearch("imgAllianceChat.bmp", $sResourceDir, $aArea, $x, $y, 100)
-    Local $bIsChatActive = _MyImageSearch("imgAllianceChatActive.bmp", $sResourceDir, $aArea, $x, $y, 100)
+    Local $aArea[4] = [0, 30, 104, 720] ; Левая панель вкладок
+    Local $bIsChatOpen = _MyImageSearch("imgAllianceChat.bmp", $sResourceDir, $aArea, $x, $y, 100, $sFile)
+    Local $bIsChatActive = _MyImageSearch("imgAllianceChatActive.bmp", $sResourceDir, $aArea, $x, $y, 100, $sFile)
 
     If $bIsChatOpen Or $bIsChatActive Then
         
         ; 3. Активируем вкладку, если она не активна
         If $bIsChatOpen And Not $bIsChatActive Then
-            If Not _FindAndClick("imgAllianceChat.bmp", $sResourceDir, $aArea) Then 
-                _Log("_AlliChatMessage [" & $sCurrentClient & "]: Ошибка - не удалось активировать вкладку.")
+            If Not _FindAndClick("imgAllianceChat.bmp", $sResourceDir, $aArea, $sDeviceID, $sFile) Then 
+                _CW("_AlliChatMessage: Ошибка активации вкладки.")
+                FileDelete($sFile)
                 Return False
             EndIf
+            FileDelete($sFile)
             _HumanSleep(600, 900)
+            $sFile = _Get_Screenshot_By_ID($sDeviceID) ; Обновляем скрин
         EndIf
 
-        ; 4. Нажимаем на кнопку меню чата (перед информированием)
-        $aArea[0] = $aCPos[0] + 320
-        $aArea[1] = $aCPos[1] + 650
-        $aArea[2] = $aCPos[0] + 390
-        $aArea[3] = $aCPos[1] + 720
-        If Not _FindAndClick("imgChatMenu.bmp", $sResourceDir, $aArea) Then
-            _Log("_AlliChatMessage [" & $sCurrentClient & "]: Ошибка - кнопка 'imgChatMenu.bmp' не найдена.")
+        ; 4. Нажимаем на кнопку меню чата (плюсик/меню)
+        Local $aArea[4] = [320, 650, 390, 720]
+        If Not _FindAndClick("imgChatMenu.bmp", $sResourceDir, $aArea, $sDeviceID, $sFile) Then
+            _CW("_AlliChatMessage: Кнопка 'imgChatMenu.bmp' не найдена.")
+            FileDelete($sFile)
             Return False
         EndIf
+        FileDelete($sFile)
         _HumanSleep(400, 600)
 
         ; 5. Нажимаем кнопку "Информировать"
-        $aArea[0] = $aCPos[0] + 1050
-        $aArea[1] = $aCPos[1] + 630
-        $aArea[2] = $aCPos[0] + 1280
-        $aArea[3] = $aCPos[1] + 720
-        If Not _FindAndClick("imgInformButton.bmp", $sResourceDir, $aArea) Then 
-            _Log("_AlliChatMessage [" & $sCurrentClient & "]: Ошибка - кнопка 'imgInformButton.bmp' не найдена.")
+        $sFile = _Get_Screenshot_By_ID($sDeviceID)
+        Local $aArea[4] = [1050, 630, 1280, 720]
+        If Not _FindAndClick("imgInformButton.bmp", $sResourceDir, $aArea, $sDeviceID, $sFile) Then 
+            _CW("_AlliChatMessage: Кнопка 'imgInformButton.bmp' не найдена.")
+            FileDelete($sFile)
             Return False
         EndIf
+        FileDelete($sFile)
         _HumanSleep(500, 800)
 
         ; 6. Выбираем раздел "Разведка"
-        $aArea[0] = $aCPos[0] + 5
-        $aArea[1] = $aCPos[1] + 295
-        $aArea[2] = $aCPos[0] + 200
-        $aArea[3] = $aCPos[1] + 595
-        If Not _FindAndClick("imgIntelligence.bmp", $sResourceDir, $aArea) Then 
-            _Log("_AlliChatMessage [" & $sCurrentClient & "]: Ошибка - раздел 'imgIntelligence.bmp' не найден.")
+        $sFile = _Get_Screenshot_By_ID($sDeviceID)
+        Local $aArea[4] = [5, 295, 200, 595]
+        If Not _FindAndClick("imgIntelligence.bmp", $sResourceDir, $aArea, $sDeviceID, $sFile) Then 
+            _CW("_AlliChatMessage: Раздел 'imgIntelligence.bmp' не найден.")
+            FileDelete($sFile)
             Return False
         EndIf
+        FileDelete($sFile)
         _HumanSleep(500, 800)
 
         ; 7. Выбираем сообщение угрозы
-        $aArea[0] = $aCPos[0] + 190
-        $aArea[1] = $aCPos[1] + 400
-        $aArea[2] = $aCPos[0] + 490
-        $aArea[3] = $aCPos[1] + 550
-        If Not _FindAndClick("imgWarningMessage.bmp", $sResourceDir, $aArea) Then 
-            _Log("_AlliChatMessage [" & $sCurrentClient & "]: Ошибка - сообщение 'imgWarningMessage.bmp' не найдено.")
+        $sFile = _Get_Screenshot_By_ID($sDeviceID)
+        Local $aArea[4] = [190, 400, 490, 550]
+        If Not _FindAndClick("imgWarningMessage.bmp", $sResourceDir, $aArea, $sDeviceID, $sFile) Then 
+            _CW("_AlliChatMessage: Сообщение 'imgWarningMessage.bmp' не найдено.")
+            FileDelete($sFile)
             Return False
-        EndIf
+        Endif
+        FileDelete($sFile)
         _HumanSleep(500, 800)
 
         ; 8. Нажимаем кнопку "Отправить"
-        $aArea[0] = $aCPos[0] + 360
-        $aArea[1] = $aCPos[1] + 200
-        $aArea[2] = $aCPos[0] + 560
-        $aArea[3] = $aCPos[1] + 300
-        If Not _FindAndClick("imgSendButton.bmp", $sResourceDir, $aArea) Then 
-            _Log("_AlliChatMessage [" & $sCurrentClient & "]: Ошибка - кнопка 'imgSendButton.bmp' не найдена.")
+        $sFile = _Get_Screenshot_By_ID($sDeviceID)
+        Local $aArea[4] = [360, 200, 560, 300]
+        If Not _FindAndClick("imgSendButton.bmp", $sResourceDir, $aArea, $sDeviceID, $sFile) Then 
+            _CW("_AlliChatMessage: Кнопка 'imgSendButton.bmp' не найдена.")
+            FileDelete($sFile)
             Return False
         EndIf
+        FileDelete($sFile)
         
-        _Log("_AlliChatMessage [" & $sCurrentClient & "]: Отчет успешно отправлен.")
+        _CW("_AlliChatMessage [" & $sDeviceID & "]: Отчет успешно отправлен.")
         Return True
     Else
-        _Log("_AlliChatMessage [" & $sCurrentClient & "]: Ошибка - интерфейс чата не открылся.")
+        _CW("_AlliChatMessage [" & $sDeviceID & "]: Ошибка - интерфейс чата не открылся.")
+        FileDelete($sFile)
         Return False
     EndIf
 EndFunc   ;==>_AlliChatMessage
-
 
 
 

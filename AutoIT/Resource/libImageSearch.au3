@@ -170,13 +170,12 @@ Func _MyImageSearch($sImgName, $sResDir, $aRect, ByRef $x, ByRef $y, $iTolerance
         Local $sLogDir = @ScriptDir & "\Logs"
         If Not FileExists($sLogDir) Then DirCreate($sLogDir)
         
-        Local $sTime = @HOUR & @MIN & @SEC
-        Local $sLogFile = $sLogDir & "\ERR_" & $sTime & "_" & $sImgName
+        ; Добавляем в имя лога ID устройства (из пути к скриншоту), чтобы логи разных окон не перемешались
+        Local $sDeviceName = StringRegExpReplace($sSourceBmp, ".*snap_(.*)\.bmp", "$1") 
+        Local $sLogFile = $sLogDir & "\ERR_" & @HOUR & @MIN & @SEC & "_" & $sDeviceName & "_" & $sImgName
         
-        ; Вместо снятия нового скриншота (который может уже измениться),
-        ; просто копируем тот ADB-скрин, на котором не нашли картинку.
         FileCopy($sSourceBmp, $sLogFile, 8) 
-        _CW("[-] Не нашли " & $sImgName & ". Скриншот сохранен в Logs." & @CRLF)
+        _CW("[-] Не нашли " & $sImgName & " на устройстве " & $sDeviceName & @CRLF)
     EndIf
 
     Return $iResult
