@@ -22,40 +22,77 @@
 
 #include <ScreenCapture.au3>
 #include <libUtility.au3>
+#include <Constants.au3>
+#include <GDIPlus.au3>
 
-; #FUNCTION# ====================================================================================================================
-; Name...........: _MyWaitForImageSearch
-; Description....: Ожидает появления изображения в конкретной области (массиве) в течение заданного времени.
-; Syntax.........: _MyWaitForImageSearch($sImgName, $sResDir, $aRect, $iWaitSecs, ByRef $x, ByRef $y, $iTolerance)
-; Parameters ....: $sImgName   - Имя файла изображения.
-;                  $sResDir    - Путь к папке с изображениями.
-;                  $aRect      - Массив координат области поиска [X1, Y1, X2, Y2].
-;                  $iWaitSecs  - Время ожидания в секундах.
-;                  $x          - [ByRef] Переменная для записи найденной координаты X.
-;                  $y          - [ByRef] Переменная для записи найденной координаты Y.
-;                  $iTolerance - Допуск поиска (0-255).
-; Return values .: 1 - Изображение найдено.
-;                  0 - Время ожидания истекло.
-; Updated .......: 2026.04.26
-; Version .......: 1.00
-; Remarks .......: Проверка выполняется каждые 100 мс. Использует TimerInit для точности.
-; ===============================================================================================================================
-Func _MyWaitForImageSearch($sImgName, $sResDir, $aRect, $iWaitSecs, ByRef $x, ByRef $y, $iTolerance)
-    ; Проверка входных данных
+Global $g_adbPath = "C:\Program Files\Microvirt\MEmu\adb.exe"
+
+; ###############################################################################################################################
+; # FUNCTION.......: _Get_Screenshot_By_ID                                                                                      #
+; # PARAMETERS.....: $sDeviceID - ADB адрес ("127.0.0.1:21503")                                                                 #
+; # RETURN.........: String - Путь к BMP, который НУЖНО УДАЛИТЬ после использования, или "" при ошибке                          #
+; ###############################################################################################################################
+Func _Get_Screenshot_By_ID($sDeviceID)
+    Local $sSafeName = StringRegExpReplace($sDeviceID, "[^a-zA-Z0-9]", "_")
+    Local $sWorkDir  = @ScriptDir & "\screenshots"
+    Local $sTempPng  = $sWorkDir & "\~" & $sSafeName & ".png"
+    Local $sFinalBmp = $sWorkDir & "\snap_" & $sSafeName & ".bmp"
+
+    If Not FileExists($sWorkDir) Then DirCreate($sWorkDir)
+
+    ; 1. Захват PNG
+    RunWait('"' & $g_adbPath & '" -s ' & $sDeviceID & ' shell screencap -p /sdcard/screen.png', "", @SW_HIDE)
+    Local $iPull = RunWait('"' & $g_adbPath & '" -s ' & $sDeviceID & ' pull /sdcard/screen.png "' & $sTempPng & '"', "", @SW_HIDE)
+
+    If Not FileExists($sTempPng) Then Return ""
+
+    ; 2. Конвертация в 24-bit BMP
+    _GDIPlus_Startup()
+    Local $hImage = _GDIPlus_ImageLoadFromFile($sTempPng)
+    Local $bSave  = _GDIPlus_ImageSaveToFile($hImage, $sFinalBmp)
+    _GDIPlus_ImageDispose($hImage)
+    _GDIPlus_Shutdown()
+    
+    ; Очистка временного PNG сразу после конвертации
+    FileDelete($sTempPng) 
+
+    Return $bSave ? $sFinalBmp : ""
+EndFunc
+
+; ###############################################################################################################################
+; # FUNCTION.......: _MyWaitForImageSearch
+; # DESCRIPTION....: Ожидает появления изображения, обновляя скриншот ADB в каждом цикле.
+; # PARAMETERS ....: ..., $sDeviceID - ID эмулятора для снятия новых скриншотов.
+; ###############################################################################################################################
+Func _MyWaitForImageSearch($sImgName, $sResDir, $aRect, $iWaitSecs, ByRef $x, ByRef $y, $iTolerance, $sDeviceID)
+    ; 1. Проверка входных данных
     If Not IsArray($aRect) Or UBound($aRect) < 4 Then Return 0
     
     Local $iWaitMs = $iWaitSecs * 1000
     Local $hTimer = TimerInit()
+    Local $sCurrentScreen = ""
     
-    _Log("Ожидание появления '" & $sImgName & "' (" & $iWaitSecs & " сек.)")
+    _Log("Ожидание '" & $sImgName & "' на устройстве " & $sDeviceID & " (" & $iWaitSecs & " сек.)")
 
     While TimerDiff($hTimer) < $iWaitMs
-        ; Используем нашу основную функцию поиска (флаг возврата центра уже вшит в неё)
-        If _MyImageSearch($sImgName, $sResDir, $aRect, $x, $y, $iTolerance) Then
-            Return 1
+        ; ШАГ А: Делаем свежий снимок экрана
+        $sCurrentScreen = _Get_Screenshot_By_ID($sDeviceID)
+        
+        If $sCurrentScreen <> "" Then
+            ; ШАГ Б: Ищем на этом снимке
+            ; (Добавляем параметр $sCurrentScreen в вызов _MyImageSearch)
+            Local $iFound = _MyImageSearch($sImgName, $sResDir, $aRect, $x, $y, $iTolerance, $sCurrentScreen)
+            
+            ; ШАГ В: Сразу удаляем скриншот
+            FileDelete($sCurrentScreen)
+            
+            If $iFound Then 
+                _Log("Изображение '" & $sImgName & "' найдено.")
+                Return 1
+            EndIf
         EndIf
         
-        Sleep(100) ; Пауза между проверками
+        Sleep(200) ; Пауза между попытками (для ADB лучше 200мс+, чтобы не перегружать поток)
     WEnd
 
     _Log("Тайм-аут: '" & $sImgName & "' не появилось.")
@@ -64,290 +101,281 @@ EndFunc   ;==>_MyWaitForImageSearch
 
 
 
-; #FUNCTION# ====================================================================================================================
-; Name...........: _FindAndClick
-; Description....: Ищет изображение в заданной области (массиве) и выполняет клик при обнаружении.
-; Syntax.........: _FindAndClick($sImg, $sResDir, $aRect)
-; Parameters ....: $sImg        - Имя файла изображения (например, "button.png").
-;                  $sResDir     - Путь к папке с изображениями.
-;                  $aRect       - Массив координат области поиска [X1, Y1, X2, Y2].
-; Return values .: True         - Изображение найдено и клик выполнен.
-;                  False        - Изображение не найдено.
-; Updated .......: 2026.04.25
-; Version .......: 1.01
-; Remarks .......: Использует _MyImageSearch для поиска и _HumanSleep перед кликом.
-; ===============================================================================================================================
-Func _FindAndClick($sImg, $sResDir, $aRect)
 
+; ###############################################################################################################################
+; # FUNCTION.......: _FindAndClick
+; # DESCRIPTION....: Ищет изображение в BMP-файле и выполняет ADB-клик при обнаружении.
+; # PARAMETERS ....: ..., $sDeviceID - ID эмулятора для клика, $sSourceBmp - путь к актуальному скриншоту.
+; ###############################################################################################################################
+Func _FindAndClick($sImg, $sResDir, $aRect, $sDeviceID, $sSourceBmp)
     Local $x, $y
     
-    ; Используем нашу основную функцию поиска (она уже умеет работать с массивом и делать скриншот ошибки)
-    If _MyImageSearch($sImg, $sResDir, $aRect, $x, $y, 100) Then
-        _Log("_FindAndClick: Найдено '" & $sImg & "', кликаем.")
+    ; 1. Ищем изображение на конкретном скриншоте
+    ; Используем допуск 10 (как в базовых настройках) или передаем свой
+    If _MyImageSearch($sImg, $sResDir, $aRect, $x, $y, 10, $sSourceBmp) Then
+        _Log("_FindAndClick: Найдено '" & $sImg & "' в " & $sDeviceID & ", выполняем клик.")
         
-        _HumanSleep(100, 300)      ; Небольшая пауза перед кликом
-        MouseClick("left", $x, $y, 1, 1) 
+        _HumanSleep(100, 300) ; Пауза для имитации действий человека
+        
+        ; 2. КЛИК ЧЕРЕЗ ADB (работает в фоне, не трогает курсор Windows)
+        ; Используем глобальный путь к ADB из ScreenshotMaker.au3
+        Local $sCmd = '"' & $g_adbPath & '" -s ' & $sDeviceID & ' shell input tap ' & $x & ' ' & $y
+        RunWait($sCmd, "", @SW_HIDE)
         
         Return True
     EndIf
     
-    _Log("_FindAndClick: Изображение '" & $sImg & "' не найдено.")
+    _Log("_FindAndClick: '" & $sImg & "' не найдено на текущем снимке.")
     Return False
-
 EndFunc   ;==>_FindAndClick
 
 
 
-; #FUNCTION# ====================================================================================================================
-; Name...........: _MyImageSearch
-; Description....: Ищет изображение в заданной области (массиве) с автоматической склейкой пути к ресурсам.
-; Syntax.........: _MyImageSearch($sImgName, $sResDir, $aRect, ByRef $x, ByRef $y, $iTolerance)
-; Parameters ....: $sImgName   - Имя файла (например, "imgMining.bmp").
-;                  $sResDir    - Путь к папке (Global $sResourceDir).
-;                  $aRect      - Массив [X1, Y1, X2, Y2].
-;                  $x, $y      - [ByRef] Переменные для координат результата.
-;                  $iTolerance - Допуск (0-255).
-; Return values .: 1 - Найдено, 0 - Не найдено.
-; Updated .......: 2026.04.26
-; Version .......: 1.05
-; Remarks .......: Если картинка не найдена, сохраняет скриншот области в папку \Logs\.
-; ===============================================================================================================================
-Func _MyImageSearch($sImgName, $sResDir, $aRect, ByRef $x, ByRef $y, $iTolerance)
-    ; 1. Проверка массива координат
+
+; ###############################################################################################################################
+; # FUNCTION.......: _MyImageSearch
+; # DESCRIPTION....: Ищет изображение внутри заранее подготовленного BMP-скриншота (ADB).
+; # PARAMETERS ....: $sImgName   - Имя искомого файла ("button.bmp").
+; #                  $sResDir    - Папка с ресурсами.
+; #                  $aRect      - Область поиска [X1, Y1, X2, Y2].
+; #                  $x, $y      - [ByRef] Координаты результата.
+; #                  $iTolerance - Допуск (0-255).
+; #                  $sSourceBmp - ПУТЬ К СКРИНШОТУ, полученному через ADB.
+; # RETURN.........: 1 - Найдено, 0 - Не найдено.
+; ###############################################################################################################################
+Func _MyImageSearch($sImgName, $sResDir, $aRect, ByRef $x, ByRef $y, $iTolerance, $sSourceBmp)
+    ; 1. Валидация входных данных
     If Not IsArray($aRect) Or UBound($aRect) < 4 Then 
-        _Log("_MyImageSearch: Ошибка - передан неверный массив координат для " & $sImgName)
+        _CW("_MyImageSearch: Ошибка массива координат для " & $sImgName & @CRLF)
+        Return 0
+    EndIf
+    
+    If Not FileExists($sSourceBmp) Then
+        _CW("_MyImageSearch: Ошибка - файл скриншота не найден: " & $sSourceBmp & @CRLF)
         Return 0
     EndIf
 
-    ; 2. Корректировка пути (добавляем слэш, если его нет)
+    ; 2. Формируем путь к эталону
     If $sResDir <> "" And StringRight($sResDir, 1) <> "\" Then $sResDir &= "\"
-    Local $sFullPath = $sResDir & $sImgName
+    Local $sPatternPath = $sResDir & $sImgName
 
-    ; 3. Вызов базовой функции поиска (1 - поиск центра)
-    ; Передаем элементы массива явно: [0], [1], [2], [3]
-    Local $iResult = _ImageSearchArea($sFullPath, 1, $aRect[0], $aRect[1], $aRect[2], $aRect[3], $x, $y, $iTolerance)
+    ; 3. ПОИСК (Используем ImageSearchArea, передавая путь к исходному скриншоту)
+    ; Примечание: В зависимости от вашей версии DLL, путь к источнику ($sSourceBmp) 
+    ; может передаваться последним параметром или через доп. функции.
+    ; Стандартный вызов для поиска в файле:
+    Local $iResult = _ImageSearchArea($sPatternPath, 1, $aRect[0], $aRect[1], $aRect[2], $aRect[3], $x, $y, $iTolerance, $sSourceBmp)
     
-    ; 4. Если НЕ нашли — делаем скриншот для отладки
+    ; 4. Обработка промаха (Логирование)
     If $iResult = 0 Then
         Local $sLogDir = @ScriptDir & "\Logs"
         If Not FileExists($sLogDir) Then DirCreate($sLogDir)
         
-        ; Формируем имя скриншота: ИмяКартинки_Время.jpg
-        Local $sFileErr = $sLogDir & "\" & StringReplace($sImgName, ".", "_") & "_" & @HOUR & @MIN & @SEC & "_err.jpg"
+        ; Добавляем в имя лога ID устройства (из пути к скриншоту), чтобы логи разных окон не перемешались
+        Local $sDeviceName = StringRegExpReplace($sSourceBmp, ".*snap_(.*)\.bmp", "$1") 
+        Local $sLogFile = $sLogDir & "\ERR_" & @HOUR & @MIN & @SEC & "_" & $sDeviceName & "_" & $sImgName
         
-        ; Снимаем именно ту область, где искали
-        _ScreenCapture_Capture($sFileErr, $aRect[0], $aRect[1], $aRect[2], $aRect[3])
+        FileCopy($sSourceBmp, $sLogFile, 8) 
+        _CW("[-] Не нашли " & $sImgName & " на устройстве " & $sDeviceName & @CRLF)
     EndIf
 
     Return $iResult
-EndFunc   ;==>_MyImageSearch
+EndFunc
 
 
 
 
-; #FUNCTION# ====================================================================================================================
-; Name...........: _ImageSearch
-; Description....: Ищет изображение на всем экране (от 0,0 до разрешения рабочего стола).
-; Syntax.........: _ImageSearch($findImage, $resultPosition, ByRef $x, ByRef $y, $tolerance, $hwnd = 0)
-; Parameters ....: $findImage      - Путь к файлу изображения.
-;                  $resultPosition - Где установить координаты: 0 - левый верхний угол, 1 - центр найденного объекта.
-;                  $x              - [ByRef] Переменная для записи найденной координаты X.
-;                  $y              - [ByRef] Переменная для записи найденной координаты Y.
-;                  $tolerance      - Допуск несовпадения цветов (0-255).
-;                  $hwnd           - [Optional] Дескриптор окна для поиска (по умолчанию 0 - весь рабочий стол).
-; Return values .: 1 - Найдено, 0 - Не найдено.
-; Updated .......: 2026.04.25
-; Version .......: 1.00
-; Remarks .......: Является оберткой для _ImageSearchArea, передавая в неё границы всего экрана.
-; ===============================================================================================================================
-Func _ImageSearch($findImage, $resultPosition, ByRef $x, ByRef $y, $tolerance, $hwnd = 0)
 
-	Return _ImageSearchArea($findImage, $resultPosition, 0, 0, @DesktopWidth, @DesktopHeight, $x, $y, $tolerance, $hwnd)
+; ###############################################################################################################################
+; # FUNCTION.......: _ImageSearch
+; # DESCRIPTION....: Ищет изображение во всем файле скриншота (от 0,0 до ширины/высоты BMP).
+; # PARAMETERS ....: $findImage      - Путь к эталону (что ищем).
+; #                  $resultPosition - 0 (угол) или 1 (центр).
+; #                  $x, $y          - [ByRef] Координаты результата.
+; #                  $tolerance      - Допуск (0-255).
+; #                  $sSourceBmp     - ПУТЬ К ФАЙЛУ СКРИНШОТА (из которого ищем).
+; # RETURN.........: 1 - Найдено, 0 - Не найдено.
+; ###############################################################################################################################
+Func _ImageSearch($findImage, $resultPosition, ByRef $x, ByRef $y, $tolerance, $sSourceBmp = "")
+    
+    ; Если путь к скриншоту не передан, функция не сможет работать в режиме ADB
+    If $sSourceBmp = "" Or Not FileExists($sSourceBmp) Then
+        _CW("!!! _ImageSearch ERROR: Не указан файл источника для поиска " & $findImage & @CRLF)
+        Return 0
+    EndIf
+
+    ; Получаем размер скриншота, чтобы знать границы поиска
+    _GDIPlus_Startup()
+    Local $hImg = _GDIPlus_ImageLoadFromFile($sSourceBmp)
+    Local $iW = _GDIPlus_ImageGetWidth($hImg)
+    Local $iH = _GDIPlus_ImageGetHeight($hImg)
+    _GDIPlus_ImageDispose($hImg)
+    _GDIPlus_Shutdown()
+
+    ; Вызываем поиск в области, ограниченной размерами самого скриншота
+    ; Обратите внимание: $sSourceBmp передается в конец функции _ImageSearchArea
+    Return _ImageSearchArea($findImage, $resultPosition, 0, 0, $iW, $iH, $x, $y, $tolerance, $sSourceBmp)
 
 EndFunc   ;==>_ImageSearch
 
 
 
-; #FUNCTION# ====================================================================================================================
-; Name...........: _ImageSearchClientArea
-; Description....: Ищет изображение только внутри клиентской области указанного окна.
-; Syntax.........: _ImageSearchClientArea($findImage, $resultPosition, ByRef $x, ByRef $y, $tolerance, $hwnd)
-; Parameters ....: $findImage      - Путь к файлу изображения.
-;                  $resultPosition - Где установить координаты: 0 - левый верхний угол, 1 - центр найденного объекта.
-;                  $x              - [ByRef] Переменная для записи найденной координаты X.
-;                  $y              - [ByRef] Переменная для записи найденной координаты Y.
-;                  $tolerance      - Допуск несовпадения цветов (0-255).
-;                  $hwnd           - Дескриптор окна, в клиентской области которого производится поиск.
-; Return values .: 1 - Изображение найдено
-;                  0 - Изображение не найдено или произошла ошибка получения координат окна
-; Updated .......: 2026.04.25
-; Version .......: 1.00
-; Remarks .......: Игнорирует заголовки и рамки окна. Требует наличия функции _WinGetClientPos.
-; ===============================================================================================================================
-Func _ImageSearchClientArea($findImage, $resultPosition, ByRef $x, ByRef $y, $tolerance, $hwnd)
 
-	If $hwnd <> 0 Then
-		Local $clientWindowPos = _WinGetClientPos($hwnd)
-		If @error Then Return 0
-		Local $clientWindowSize = WinGetClientSize($hwnd)
-		If @error Then Return 0
-	Else
-		Return 0
-	EndIf
-
-	If $clientWindowSize[0] = 0 Or $clientWindowSize[1] = 0 Then
-		Return 0
-	EndIf
-
-	Return _ImageSearchArea($findImage, $resultPosition, $clientWindowPos[0], $clientWindowPos[1], $clientWindowPos[0] + $clientWindowSize[0], $clientWindowPos[1] + $clientWindowSize[1], $x, $y, $tolerance, $hwnd)
+; ###############################################################################################################################
+; # FUNCTION.......: _ImageSearchClientArea
+; # DESCRIPTION....: В режиме ADB эквивалентна поиску по всему скриншоту, так как рамок Windows нет.
+; # PARAMETERS ....: ..., $sSourceBmp - путь к актуальному скриншоту ADB.
+; ###############################################################################################################################
+Func _ImageSearchClientArea($findImage, $resultPosition, ByRef $x, ByRef $y, $tolerance, $sSourceBmp)
+    
+    ; В ADB скриншоте нет рамок, поэтому клиентская область = весь файл.
+    ; Мы просто вызываем нашу обновленную функцию _ImageSearch.
+    
+    Return _ImageSearch($findImage, $resultPosition, $x, $y, $tolerance, $sSourceBmp)
 
 EndFunc   ;==>_ImageSearchClientArea
 
 
 
-; #FUNCTION# ====================================================================================================================
-; Name...........: _ImageSearchArea
-; Description....: Базовая функция поиска изображения в заданных координатах через ImageSearchDLL.dll.
-; Syntax.........: _ImageSearchArea($findImage, $resultPosition, $x1, $y1, $right, $bottom, ByRef $x, ByRef $y, $tolerance, $hwnd = 0)
-; Parameters ....: $findImage      - Полный путь к файлу изображения.
-;                  $resultPosition - Где установить координаты: 0 - левый верхний угол, 1 - центр найденного объекта.
-;                  $x1             - Координата X левого верхнего угла области.
-;                  $y1             - Координата Y левого верхнего угла области.
-;                  $right          - Координата X правого нижнего угла области.
-;                  $bottom         - Координата Y правого нижнего угла области.
-;                  $x              - [ByRef] Переменная для записи найденной координаты X.
-;                  $y              - [ByRef] Переменная для записи найденной координаты Y.
-;                  $tolerance      - Допуск несовпадения цветов (0-255).
-;                  $hwnd           - [Optional] Дескриптор окна для коррекции координат (по умолчанию 0).
-; Return values .: 1 - Изображение успешно найдено.
-;                  0 - Изображение не найдено или ошибка вызова DLL.
-; Updated .......: 2026.04.26
-; Version .......: 1.18
-; Remarks .......: Динамически определяет путь к DLL, используя Global $sResourceDir или папку скрипта.
-; ===============================================================================================================================
-Func _ImageSearchArea($findImage, $resultPosition, $x1, $y1, $right, $bottom, ByRef $x, ByRef $y, $tolerance, $hwnd = 0)
 
-    ; 1. Пытаемся получить путь к папке ресурсов из глобальной переменной основного скрипта
+; ###############################################################################################################################
+; # FUNCTION.......: _ImageSearchArea
+; # DESCRIPTION....: Базовая функция. Теперь умеет искать как на экране, так и ВНУТРИ BMP-файла (ADB).
+; # PARAMETERS ....: ..., $hSource - [Optional] ПУТЬ К BMP-ФАЙЛУ (скриншоту ADB). Если 0 - ищет на экране.
+; ###############################################################################################################################
+Func _ImageSearchArea($findImage, $resultPosition, $x1, $y1, $right, $bottom, ByRef $x, ByRef $y, $tolerance, $hSource = 0)
+
+    ; 1. Путь к DLL
     Local $sResPath = IsDeclared("sResourceDir") ? Eval("sResourceDir") : @ScriptDir & "\"
     Local $sDllPath = $sResPath & "ImageSearchDLL.dll"
     
-    ; 2. Проверка наличия DLL по указанному пути
     If Not FileExists($sDllPath) Then
-        _Log("КРИТИЧЕСКАЯ ОШИБКА: DLL не найдена по пути: " & $sDllPath)
+        _CW("КРИТИЧЕСКАЯ ОШИБКА: DLL не найдена: " & $sDllPath & @CRLF)
         Return 0
     EndIf
 
-    ; Подготовка строки поиска с допуском
-    If $tolerance > 0 Then $findImage = "*" & $tolerance & " " & $findImage
+    ; 2. Подготовка строки поиска
+    Local $sSearchStr = $findImage
+    If $tolerance > 0 Then $sSearchStr = "*" & $tolerance & " " & $findImage
     
-    ; 3. Вызов внешней DLL
-    Local $result = DllCall($sDllPath, "str", "ImageSearch", "int", $x1, "int", $y1, "int", $right, "int", $bottom, "str", $findImage)
+    ; --- НОВЫЙ БЛОК: Поиск в файле (ADB режим) ---
+    Local $result
+    If $hSource <> 0 And FileExists($hSource) Then
+        ; Если передан путь к файлу, используем вызов "ImageSearchOnImage" 
+        ; (Большинство современных ImageSearchDLL поддерживают этот метод для фонового поиска)
+        $result = DllCall($sDllPath, "str", "ImageSearchOnImage", "str", $hSource, "int", $x1, "int", $y1, "int", $right, "int", $bottom, "str", $sSearchStr)
+    Else
+        ; Стандартный поиск по всему экрану (если файл не передан)
+        $result = DllCall($sDllPath, "str", "ImageSearch", "int", $x1, "int", $y1, "int", $right, "int", $bottom, "str", $sSearchStr)
+    EndIf
+    ; ----------------------------------------------
 
-    ; Проверка на ошибки системного вызова
-    If @error Or Not IsArray($result) Then Return 0
-    
-    ; Если DLL вернула "0" (строка), значит изображение не найдено
-    If $result[0] = "0" Then Return 0
+    If @error Or Not IsArray($result) Or $result[0] = "0" Then Return 0
 
-    ; 4. Разбор результата (формат строки: результат|x|y|ширина|высота)
+    ; 3. Разбор результата
     Local $array = StringSplit($result[0], "|")
     If $array[0] < 3 Then Return 0
 
-    ; Получаем координаты (индексы 2 и 3 в массиве StringSplit)
     $x = Int(Number($array[2]))
     $y = Int(Number($array[3]))
     
-    ; Если запрошен центр (resultPosition = 1), прибавляем половину размеров объекта
     If $resultPosition = 1 Then
         $x = $x + Int(Number($array[4]) / 2)
         $y = $y + Int(Number($array[5]) / 2)
     EndIf
     
-    ; Если передан дескриптор окна, пересчитываем экранные координаты в клиентские
-    If $hwnd <> 0 Then
-        Local $aWPos = _WinGetClientPos($hwnd)
-        If IsArray($aWPos) Then
-            $x = $x - $aWPos[0]
-            $y = $y - $aWPos[1]
-        EndIf
-    EndIf
-
+    ; В ADB режиме ($hSource <> 0) нам НЕ НУЖНО вычитать координаты окна _WinGetClientPos, 
+    ; так как координаты в файле всегда начинаются с 0,0 (это чистый Android).
+    
     Return 1
 EndFunc   ;==>_ImageSearchArea
 
 
 
 
-
-; #FUNCTION# ====================================================================================================================
-; Name...........: _WaitForImageSearch
-; Description....: Ожидает появления изображения в течение заданного времени.
-; Syntax.........: _WaitForImageSearch($findImage, $waitSecs, $resultPosition, ByRef $x, ByRef $y, $tolerance, $hwnd = 0)
-; Parameters ....: $findImage      - Путь к файлу изображения.
-;                  $waitSecs       - Время ожидания в секундах.
-;                  $resultPosition - Где установить координаты: 0 - левый верхний угол, 1 - центр найденного объекта.
-;                  $x              - [ByRef] Переменная для записи найденной координаты X.
-;                  $y              - [ByRef] Переменная для записи найденной координаты Y.
-;                  $tolerance      - Допуск несовпадения цветов (0-255).
-;                  $hwnd           - [Optional] Дескриптор окна для поиска (по умолчанию 0).
-; Return values .: 1 - Изображение найдено в течение заданного времени
-;                  0 - Время ожидания истекло, изображение не найдено
-; Updated .......: 2026.04.25
-; Version .......: 1.00
-; Remarks .......: Проверка выполняется каждые 100 мс. Использует TimerInit и TimerDiff для точности.
-; ===============================================================================================================================
-Func _WaitForImageSearch($findImage, $waitSecs, $resultPosition, ByRef $x, ByRef $y, $tolerance, $hwnd = 0)
+; ###############################################################################################################################
+; # FUNCTION.......: _WaitForImageSearch
+; # DESCRIPTION....: Ожидает появления изображения, обновляя скриншот ADB в каждом цикле.
+; # PARAMETERS ....: ..., $sDeviceID - ID эмулятора (напр. "127.0.0.1:21503")
+; ###############################################################################################################################
+Func _WaitForImageSearch($findImage, $waitSecs, $resultPosition, ByRef $x, ByRef $y, $tolerance, $sDeviceID)
 
 	Local $iWaitMs = $waitSecs * 1000
 	Local $hTimer = TimerInit()
+    Local $sCurrentFile = ""
     
+    _CW("--> Ожидание появления: " & $findImage & " (" & $waitSecs & " сек)" & @CRLF)
+
 	While TimerDiff($hTimer) < $iWaitMs
-		Local $iResult = _ImageSearch($findImage, $resultPosition, $x, $y, $tolerance, $hwnd)
-		If $iResult > 0 Then Return 1
-		Sleep(100)
+        ; 1. Получаем СВЕЖИЙ скриншот в каждом цикле
+        $sCurrentFile = _Get_Screenshot_By_ID($sDeviceID)
+        
+        If $sCurrentFile <> "" Then
+            ; 2. Ищем на этом скриншоте (передаем путь к файлу вместо hwnd)
+            Local $iResult = _ImageSearch($findImage, $resultPosition, $x, $y, $tolerance, $sCurrentFile)
+            
+            ; 3. УДАЛЯЕМ скриншот сразу после поиска
+            FileDelete($sCurrentFile)
+            
+            ; 4. Если нашли - выходим из функции с успехом
+            If $iResult > 0 Then 
+                _CW("--- Найдено! ---" & @CRLF)
+                Return 1
+            EndIf
+        EndIf
+        
+		Sleep(250) ; Пауза между попытками (чуть больше для ADB, чтобы не "забить" канал связи)
 	WEnd
 
+    _CW("!!! Тайм-аут: " & $findImage & " не обнаружено." & @CRLF)
 	Return 0
     
 EndFunc   ;==>_WaitForImageSearch
 
 
 
-; #FUNCTION# ====================================================================================================================
-; Name...........: _WaitForImagesSearch
-; Description....: Ожидает появления одного из нескольких изображений (массива) в течение заданного времени.
-; Syntax.........: _WaitForImagesSearch($findImage, $waitSecs, $resultPosition, ByRef $x, ByRef $y, $tolerance, $hwnd = 0)
-; Parameters ....: $findImage      - Массив путей к файлам изображений (индекс [0] должен содержать количество элементов).
-;                  $waitSecs       - Время ожидания в секундах.
-;                  $resultPosition - Где установить координаты: 0 - левый верхний угол, 1 - центр найденного объекта.
-;                  $x              - [ByRef] Переменная для записи найденной координаты X.
-;                  $y              - [ByRef] Переменная для записи найденной координаты Y.
-;                  $tolerance      - Допуск несовпадения цветов (0-255).
-;                  $hwnd           - [Optional] Дескриптор окна для поиска (по умолчанию 0).
-; Return values .: Индекс найденного изображения (1, 2, 3...)
-;                  0 - Время ожидания истекло, ни одно изображение не найдено
-; Updated .......: 2026.04.25
-; Version .......: 1.00
-; Remarks .......: Полезно, когда одна и та же кнопка может иметь разные состояния или скины.
-; ===============================================================================================================================
-Func _WaitForImagesSearch($findImage, $waitSecs, $resultPosition, ByRef $x, ByRef $y, $tolerance, $hwnd = 0)
-    
-	Local $iWaitMs = $waitSecs * 1000
-	Local $hTimer = TimerInit()
-	
-	While TimerDiff($hTimer) < $iWaitMs
-		For $i = 1 To $findImage[0]
-			Local $iResult = _ImageSearch($findImage[$i], $resultPosition, $x, $y, $tolerance, $hwnd)
-			If $iResult > 0 Then
-				Return $i
-			EndIf
-		Next
-		Sleep(100) ; Пауза между полными циклами проверки всех картинок
-	WEnd
 
-	Return 0
+; ###############################################################################################################################
+; # FUNCTION.......: _WaitForImagesSearch
+; # DESCRIPTION....: Ожидает появления одного из нескольких изображений на одном ADB-скриншоте.
+; # PARAMETERS ....: ..., $sDeviceID - ID эмулятора.
+; # RETURN.........: Индекс найденной картинки (1, 2...) или 0 (тайм-аут).
+; ###############################################################################################################################
+Func _WaitForImagesSearch($findImage, $waitSecs, $resultPosition, ByRef $x, ByRef $y, $tolerance, $sDeviceID)
+    
+    Local $iWaitMs = $waitSecs * 1000
+    Local $hTimer = TimerInit()
+    Local $sCurrentFile = ""
+    
+    _CW("--> Ожидание группы изображений (" & $findImage[0] & " шт.) на " & $sDeviceID & @CRLF)
+
+    While TimerDiff($hTimer) < $iWaitMs
+        ; 1. ДЕЛАЕМ ОДИН СКРИНШОТ ДЛЯ ВСЕГО МАССИВА КАРТИНОК
+        $sCurrentFile = _Get_Screenshot_By_ID($sDeviceID)
+        
+        If $sCurrentFile <> "" Then
+            ; 2. ПЕРЕБИРАЕМ КАРТИНКИ, ИСПОЛЬЗУЯ ЭТОТ ЖЕ ФАЙЛ
+            For $i = 1 To $findImage[0]
+                Local $iResult = _ImageSearch($findImage[$i], $resultPosition, $x, $y, $tolerance, $sCurrentFile)
+                
+                If $iResult > 0 Then
+                    _CW("--- Найдено изображение индекс: [" & $i & "] ---" & @CRLF)
+                    FileDelete($sCurrentFile) ; Удаляем перед выходом
+                    Return $i
+                EndIf
+            Next
+            
+            ; 3. ЕСЛИ НИЧЕГО НЕ НАШЛИ - УДАЛЯЕМ СКРИН И ИДЕМ НА НОВЫЙ КРУГ
+            FileDelete($sCurrentFile)
+        EndIf
+        
+        Sleep(200) ; Пауза между обновлениями экрана
+    WEnd
+
+    _CW("!!! Тайм-аут ожидания группы изображений." & @CRLF)
+    Return 0
 
 EndFunc   ;==>_WaitForImagesSearch
+
 
 
 
