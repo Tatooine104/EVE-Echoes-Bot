@@ -143,24 +143,39 @@ EndFunc   ;==>_FindAndClick
 ; #                  $sSourceBmp - ПУТЬ К СКРИНШОТУ, полученному через ADB.
 ; # RETURN.........: 1 - Найдено, 0 - Не найдено.
 ; ###############################################################################################################################
-; ###############################################################################################################################
-; # FUNCTION.......: _MyImageSearch
-; # DESCRIPTION....: Ищет изображение внутри BMP-файла (ADB) с корректной передачей всех 10 параметров.
-; ###############################################################################################################################
-Func _MyImageSearch($sImgName, $sResDir, $aRect, ByRef $x, ByRef $y, $iTolerance, $sSourceBmp)
-    If $sResDir <> "" And StringRight($sResDir, 1) <> "\" Then $sResDir &= "\"
-    Local $sPattern = $sResDir & $sImgName
-
-    ; Вызываем базовую функцию. Считаем запятые: их должно быть ровно 9 перед $sSourceBmp
-    Local $iRes = _ImageSearchArea($sPattern, 1, $aRect[0], $aRect[1], $aRect[2], $aRect[3], $x, $y, $iTolerance, $sSourceBmp)
+Func _MyImageSearch($sImage, $sFolder, $aArea, ByRef $x, ByRef $y, $iTolerance, $sScreenshot)
+    Global $sDllDir
+    Local $sDllPath = FileGetShortName(StringRegExpReplace($sDllDir, "[\\/]+$", "") & "\ImageSearch.dll")
     
-    If $iRes = 0 Then
-        Local $sErrFile = @ScriptDir & "\Logs\ERR_" & @HOUR & @MON & @MDAY & "_" & @HOUR & @MIN & @SEC & "_" & $sImgName
-        If FileExists($sSourceBmp) Then FileCopy($sSourceBmp, $sErrFile, 8)
-        _Log("[-] Не найдено: " & $sImgName)
+    Local $sFullPath = FileGetShortName($sFolder & "\" & $sImage)
+    Local $sOptions = "*" & $iTolerance & " " & $sFullPath
+
+    ; Вызываем DLL (используем 5 параметров, так как они работают стабильно)
+    Local $aRet = DllCall($sDllPath, "str", "ImageSearch", _
+            "int", $aArea[0], "int", $aArea[1], "int", $aArea[2], "int", $aArea[3], _
+            "str", $sOptions)
+
+    If @error Then
+        _CW("!!! Ошибка DllCall: " & @error & @CRLF)
+        Return False
     EndIf
-    Return $iRes
+
+    ; Проверяем результат (в $aRet[0] лежит строка ответа)
+    If Not IsArray($aRet) Or $aRet[0] = "0" Then 
+        Return False
+    EndIf
+
+    ; Ответ обычно в формате "status|x|y" (например "1|450|380")
+    Local $aRes = StringSplit($aRet[0], "|")
+    If $aRes[0] >= 3 Then
+        $x = Int($aRes[2])
+        $y = Int($aRes[3])
+        Return True
+    EndIf
+
+    Return False
 EndFunc
+
 
 
 ; ###############################################################################################################################
@@ -173,6 +188,7 @@ EndFunc
 ; #                  $sSourceBmp     - ПУТЬ К ФАЙЛУ СКРИНШОТА (из которого ищем).
 ; # RETURN.........: 1 - Найдено, 0 - Не найдено.
 ; ###############################################################################################################################
+
 Func _ImageSearch($findImage, $resultPosition, ByRef $x, ByRef $y, $tolerance, $sSourceBmp = "")
     
     ; Если путь к скриншоту не передан, функция не сможет работать в режиме ADB
@@ -194,8 +210,6 @@ Func _ImageSearch($findImage, $resultPosition, ByRef $x, ByRef $y, $tolerance, $
     Return _ImageSearchArea($findImage, $resultPosition, 0, 0, $iW, $iH, $x, $y, $tolerance, $sSourceBmp)
 
 EndFunc   ;==>_ImageSearch
-
-
 
 
 ; ###############################################################################################################################

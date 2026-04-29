@@ -18,37 +18,46 @@ EndIf
 ; FUNCTION.......: _IsSafe
 ; ===============================================================================================================================
 Func _IsSafe($sDeviceID, $iClientIdx)
+
+    _CW("Разрядность AutoIt: " & (@AutoItX64 ? "x64" : "x86") & @CRLF)
+
     ; Подключаем глобальные пути
     Global $sResourceDir, $sImagesDir, $aIsSave
 
-    ; 1. Получаем скриншот
-    Local $sFile = _Get_Screenshot_By_ID($sDeviceID)
-    If $sFile = "" Then Return False
+    ; 1. Получаем скриншот и сразу конвертируем путь в "короткий" (без пробелов)
+    Local $sFileRaw = _Get_Screenshot_By_ID($sDeviceID)
+    If $sFileRaw = "" Then Return False
+    Local $sFile = FileGetShortName($sFileRaw)
 
     ; 2. Настройки
-    Local $aArea[4] = [0, 330, 400, 720] ; Область локала
-    ; Маркеры УГРОЗ
+    ; Local $aArea[4] = [0, 330, 400, 720] ; Область локала
+    Local $aArea[4] = [0, 0, 0, 0]
     Local $aMarkers[3] = ["imgLocalStatCriminal.bmp", "imgLocalStatMinus.bmp", "imgLocalStatNeitral.bmp"]
     Local $x, $y
-    Local $iTolerance = 255
-    Local $bDangerFound = False ; Флаг обнаружения опасности
+    
+    ; ВАЖНО: 80-100 — это максимум для корректной работы ImageSearch.dll
+    Local $iTolerance = 80 
+    Local $bDangerFound = False 
+
+    ; Подготавливаем короткий путь к папке с картинками
+    Local $sShortImagesDir = FileGetShortName($sImagesDir)
 
     _CW("--> [" & $sDeviceID & "] Проверка локала на угрозы..." & @CRLF)
 
     ; 3. Проверка маркеров
     For $i = 0 To 2
-        ; Передаем координаты элементами массива!
-        If _MyImageSearch($aMarkers[$i], $sImagesDir, $aArea, $x, $y, $iTolerance, $sFile) Then
-            _CW("!!! НАЙДЕНА УГРОЗА: " & $aMarkers[$i] & @CRLF)
+        ; Используем $sShortImagesDir и $sFile (пути без пробелов)
+        If _MyImageSearch($aMarkers[$i], $sShortImagesDir, $aArea, $x, $y, $iTolerance, $sFile) Then
+            _CW("!!! НАЙДЕНА УГРОЗА: " & $aMarkers[$i] & " в координатах [" & $x & "," & $y & "]" & @CRLF)
             $bDangerFound = True
-            ExitLoop ; Если нашли хоть одного врага, дальше можно не искать
+            ExitLoop 
         EndIf
     Next
 
-    ; 4. Чистим скриншот
-    FileDelete($sFile)
+    ; 4. Чистим скриншот (удаляем по оригинальному пути)
+    FileDelete($sFileRaw)
 
-    ; 5. Результат: Безопасно, если НЕ нашли ни одного врага
+    ; 5. Результат
     Local $bStatus = Not $bDangerFound
 
     If IsDeclared("aIsSave") Then

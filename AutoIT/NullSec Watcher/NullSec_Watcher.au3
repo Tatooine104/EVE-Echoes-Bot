@@ -11,6 +11,8 @@
 #include <WinAPIFiles.au3>
 #include <WinAPISys.au3>
 
+#AutoIt3Wrapper_UseX64=n
+
 ; --- [ВАЖНО] СНАЧАЛА ОБЪЯВЛЯЕМ ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ---
 Global $iClientCount = 2
 Global $aIsSave[$iClientCount]
@@ -22,8 +24,9 @@ Global $aDeviceIDs[$iClientCount] = ["127.0.0.1:21503", "127.0.0.1:21513"]
 #include <WinAPIFiles.au3>
 
 ; Создаем чистый путь без всяких ".."
-Global $sResourceDir = _WinAPI_GetFullPathName(@ScriptDir & "\..\Images") & "\"
-Global $sDllDir = "C:\Users\Tatooine\GitHub\EVE Echoes Bot\AutoIT\Resource\"
+Global $sResourceDir = FileGetShortName(_WinAPI_GetFullPathName(@ScriptDir & "\..\Images")) & "\"
+Global $sImagesDir = $sResourceDir ; если вы используете обе переменные
+Global $sDllDir = FileGetShortName("C:\Users\Tatooine\GitHub\EVE Echoes Bot\AutoIT\Resource\") & "\"
 
 ; Убираем возможные двойные слеши, которые ломают проверку
 $sResourceDir = StringReplace($sResourceDir, "\\", "\")
@@ -63,7 +66,7 @@ While 1
             Local $sID = $aDeviceIDs[$i]
 
             ; ШАГ 1: Проверка безопасности
-            If Not _IsSafe($sID, $i) Then
+            If _IsSafe($sID, $i) Then
                 _Log("!!! [" & $sID & "] ОБНАРУЖЕН ВРАГ!")
 
                 ; ШАГ 2: Отправка доклада (флаг $aIntelSent проверяется внутри функции)
