@@ -148,7 +148,7 @@ Func _MyImageSearch($sImage, $sFolder, $aArea, ByRef $x, ByRef $y, $iTolerance, 
     Local $sDllPath = FileGetShortName(StringRegExpReplace($sDllDir, "[\\/]+$", "") & "\ImageSearch.dll")
     
     Local $sFullPath = FileGetShortName($sFolder & "\" & $sImage)
-    Local $sOptions = "*" & $iTolerance & " " & $sFullPath
+    Local $sOptions = "*" & $iTolerance & " *Trans0x000000 " & $sFullPath
 
     ; Вызываем DLL (используем 5 параметров, так как они работают стабильно)
     Local $aRet = DllCall($sDllPath, "str", "ImageSearch", _

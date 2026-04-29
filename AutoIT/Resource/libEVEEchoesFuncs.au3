@@ -18,60 +18,66 @@ EndIf
 ; FUNCTION.......: _IsSafe
 ; ===============================================================================================================================
 Func _IsSafe($sDeviceID, $iClientIdx)
+    ; Подключаем глобальные переменные
+    Global $sResourceDir, $sImagesDir, $aIsSave, $Debug
 
-    _CW("Разрядность AutoIt: " & (@AutoItX64 ? "x64" : "x86") & @CRLF)
-
-    ; Подключаем глобальные пути
-    Global $sResourceDir, $sImagesDir, $aIsSave
-
-    ; 1. Получаем скриншот и сразу конвертируем путь в "короткий" (без пробелов)
+    ; 1. Получаем скриншот
     Local $sFileRaw = _Get_Screenshot_By_ID($sDeviceID)
     If $sFileRaw = "" Then Return False
-    Local $sFile = FileGetShortName($sFileRaw)
-
-    ; 2. Настройки
-    ; Local $aArea[4] = [0, 330, 400, 720] ; Область локала
-    Local $aArea[4] = [0, 0, 0, 0]
-    Local $aMarkers[3] = ["imgLocalStatCriminal.bmp", "imgLocalStatMinus.bmp", "imgLocalStatNeitral.bmp"]
-    Local $x, $y
     
-    ; ВАЖНО: 80-100 — это максимум для корректной работы ImageSearch.dll
-    Local $iTolerance = 80 
-    Local $bDangerFound = False 
-
-    ; Подготавливаем короткий путь к папке с картинками
+    ; Подготавливаем пути без пробелов для DLL
+    Local $sFile = FileGetShortName($sFileRaw)
     Local $sShortImagesDir = FileGetShortName($sImagesDir)
 
-    _CW("--> [" & $sDeviceID & "] Проверка локала на угрозы..." & @CRLF)
+    ; 2. Настройки поиска
+    Local $aArea[4] = [0, 330, 400, 720]
+    Local $aMarkers[3] = ["imgLocalStatCriminal.bmp", "imgLocalStatMinus.bmp", "imgLocalStatNeitral.bmp"]
+    Local $x, $y
+    Local $iTolerance = 180
+    Local $bAnyMarkerFound = False ; Флаг: нашли ли мы хоть кого-то знакомого
 
-    ; 3. Проверка маркеров
+    If $Debug Then _CW("--> [DEBUG] Старт проверки локала: " & $sDeviceID & @CRLF)
+
+    ; 3. Проверка маркеров (ищем признаки "знакомых" статусов)
     For $i = 0 To 2
-        ; Используем $sShortImagesDir и $sFile (пути без пробелов)
         If _MyImageSearch($aMarkers[$i], $sShortImagesDir, $aArea, $x, $y, $iTolerance, $sFile) Then
-            _CW("!!! НАЙДЕНА УГРОЗА: " & $aMarkers[$i] & " в координатах [" & $x & "," & $y & "]" & @CRLF)
-            $bDangerFound = True
+            If $Debug Then _CW("[+] OK: Найден статус " & $aMarkers[$i] & " в [" & $x & "," & $y & "]" & @CRLF)
+            $bAnyMarkerFound = True
+            ; Если нашли хотя бы один из разрешенных маркеров — считаем проверку успешной
             ExitLoop 
+        Else
+            If $Debug Then _CW("... " & $aMarkers[$i] & " не обнаружен" & @CRLF)
         EndIf
     Next
 
-    ; 4. Чистим скриншот (удаляем по оригинальному пути)
-    FileDelete($sFileRaw)
+    ; 4. Определение безопасности
+    ; Логика: Если ни один маркер НЕ найден = СИСТЕМА ОПАСНА (Danger)
+    Local $bDangerFound = Not $bAnyMarkerFound
 
-    ; 5. Результат
-    Local $bStatus = Not $bDangerFound
+    ; 5. Чистим скриншот (только если НЕ режим отладки)
+    If Not $Debug Then
+        FileDelete($sFileRaw)
+    Else
+        _CW("--> [DEBUG] Скриншот для анализа: " & $sFileRaw & @CRLF)
+    EndIf
 
+    ; 6. Сохранение результата и вывод в лог
+    Local $bStatus = Not $bDangerFound ; True = Безопасно, False = Опасно
+    
     If IsDeclared("aIsSave") Then
         $aIsSave[$iClientIdx] = $bStatus
     EndIf
 
     If Not $bStatus Then
-        _CW("!!! ВНИМАНИЕ: Система НЕБЕЗОПАСНА !!!" & @CRLF)
+        _CW("!!! ВНИМАНИЕ: Система НЕБЕЗОПАСНА (маркеры не найдены) !!!" & @CRLF)
     Else
-        _CW("+++ В системе чисто." & @CRLF)
+        _CW("+++ В системе всё в порядке." & @CRLF)
     EndIf
 
     Return $bStatus
 EndFunc
+
+
 
 
 ; ===============================================================================================================================
