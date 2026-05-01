@@ -18,7 +18,207 @@
 
 #include-once ; Добавить в первую строку файла библиотеки
 
-#include-once
+; #FUNCTION# ====================================================================================================================
+; Name...........: _SaveToIni
+; Description....: Записывает значение в INI-файл конфигурации.
+; Syntax.........: _SaveToIni($sSection, $sKey, $vValue[, $sFilePath = Default])
+; Parameters ....: $sSection    - Название секции INI-файла.
+;                  $sKey        - Название ключа.
+;                  $vValue      - Значение для записи.
+;                  $sFilePath   - [Optional] Путь к INI-файлу. Если Default, ищется глобальная $sIniPath 
+;                                 или создается файл с именем скрипта в корне.
+; Return values .: 1 - Успешно.
+;                  0 - Ошибка записи (например, файл защищен от записи).
+; Updated .......: 2026.04.25
+; Version .......: 1.01
+; Remarks .......: Автоматически определяет путь к конфигу, если он не передан явно.
+; ===============================================================================================================================
+Func _SaveToIni($sSection, $sKey, $vValue, $sFilePath = "data.ini")
+    ; 1. Определяем путь к файлу
+    If $sFilePath = Default Then
+        ; Если есть глобальная переменная $sIniPath — берем её, иначе создаем рядом со скриптом
+        If IsDeclared("sIniPath") Then
+            $sFilePath = Eval("sIniPath")
+        Else
+            $sFilePath = @ScriptDir & "\" & StringTrimRight(@ScriptName, 4) & ".ini"
+        EndIf
+    EndIf
+
+    ; 2. Запись данных
+    Local $iResult = IniWrite($sFilePath, $sSection, $sKey, $vValue)
+    
+    Return $iResult
+EndFunc   ;==>_SaveToIni
+
+; #FUNCTION# ====================================================================================================================
+; Name...........: _HumanSleep
+; Description....: Выполняет рандомизированную паузу для имитации естественного поведения человека.
+; Syntax.........: _HumanSleep($iMin = 100, $iMax = 800)
+; Parameters ....: $iMin       - [Optional] Минимальное время ожидания в миллисекундах (по умолчанию 100).
+;                  $iMax       - [Optional] Максимальное время ожидания в миллисекундах (по умолчанию 800).
+; Return values .: Время выдержанной паузы в мс.
+; Updated .......: 2026.04.25
+; Version .......: 1.01
+; Remarks .......: Если пауза превышает 1000 мс, автоматически отправляет запись в лог.
+; ===============================================================================================================================
+Func _HumanSleep($iMin = 100, $iMax = 800)
+
+    ; Гарантируем, что входные данные — числа
+    $iMin = Int($iMin)
+    $iMax = Int($iMax)
+
+    ; Генерируем случайное целое число в заданном диапазоне
+    Local $iWait = Random($iMin, $iMax, 1)
+    
+    ; Логируем только значительные паузы (более 1 секунды)
+    If $iWait > 1000 Then 
+        _Log(StringFormat("Пауза: сек.", $iWait / 1000))
+    EndIf
+    
+    Sleep($iWait)
+    
+    Return $iWait
+
+EndFunc   ;==>_HumanSleep
+
+
+; #FUNCTION# ====================================================================================================================
+; Name ..........: _MEmu_SetSize
+; Description ...: Устанавливает указанное разрешение для окна эмулятора по его хендлу.
+; Syntax ........: _MEmu_SetSize($hWnd, $iWidth, $iHeight)
+; Parameters ....: $hWnd   - Хендл (HWND) целевого окна.
+;                  $iWidth  - Желаемая ширина окна.
+;                  $iHeight - Желаемая высота окна.
+; Return values .: Success: True. Failure: False, Sets @error = 1 (окно не найдено).
+; Author ........: [Твое Имя]
+; Remarks .......: Окно будет перемещено в координаты 0,0 для удобства, если нужно просто изменить размер — убери 0, 0.
+; ===============================================================================================================================
+Func _MEmu_SetSize($hWnd, $iWidth, $iHeight)
+
+    If Not WinExists($hWnd) Then 
+        _CW("_MEmu_SetSize Ошибка: Не найдено окно эмулятора")
+        Return SetError(1, 0, False)
+    EndIf
+
+    If _SetInnerSize($hWnd, $iWidth, $iHeight) Then
+        Return True
+    Else
+        _CW("_MEmu_SetSize Ошибка: Не удалось изменить размер окна")
+        Return False
+    EndIf
+
+EndFunc   ;==>_MEmu_SetSize
+
+
+; #FUNCTION# ====================================================================================================================
+; Name ..........: _SetInnerSize
+; Description ...: Устанавливает размер ВНУТРЕННЕЙ области окна (без учета рамок и заголовка).
+; ===============================================================================================================================
+Func _SetInnerSize($hWnd, $iWidth, $iHeight)
+
+    Local $aPos, $aClient, $iDiffW, $iDiffH
+
+    $aPos = WinGetPos($hWnd)      ; Получаем внешний размер окна
+    $aClient = WinGetClientSize($hWnd) ; Получаем внутренний размер окна
+
+    If Not IsArray($aPos) Or Not IsArray($aClient) Then 
+        _CW("_SetInnerSize Ошибка: Не удалось изменить размер окна")
+        Return False
+    Else
+        ; Считаем разницу (сколько занимают рамки и заголовок)
+        $iDiffW = $aPos[2] - $aClient[0]
+        $iDiffH = $aPos[3] - $aClient[1]
+        
+        ; Изменяем размер окна так, чтобы внутри получилось ровно $iWidth x $iHeight
+        WinMove($hWnd, "", $aPos[0], $aPos[1], $iWidth + $iDiffW, $iHeight + $iDiffH)
+
+        Return True
+    EndIf
+
+EndFunc
+
+; #FUNCTION# ====================================================================================================================
+; Name ..........: _Log
+; Description ...: Логирует сообщение с меткой времени в консоль или в файл.
+; Syntax ........: _Log($sText[, $lDebug = True[, $sFilePath = "log.txt"]])
+; Parameters ....: $sText       - Текст сообщения для записи в лог.
+;                  $lDebug      - [Опционально] Определяет способ вывода: True (по умолчанию) - консоль, False - файл.
+;                  $sFilePath   - [Опционально] Путь к файлу лога. По умолчанию "log.txt" в папке скрипта.
+; Return values .: None
+; Author ........: [Твое Имя]
+; Remarks .......: Для вывода в консоль используется вспомогательная функция _CW для корректной поддержки UTF-8.
+; ===============================================================================================================================
+Func _Log($sText, $lDebug = True, $sFilePath = "log.txt")
+    ; Формируем строку лога: [ГГГГ.ММ.ДД ЧЧ:ММ:СС] Текст
+    Local $sMsg = StringFormat("[%s.%s.%s %s:%s:%s] %s", @YEAR, @MON, @MDAY, @HOUR, @MIN, @SEC, $sText)
+
+    If $lDebug Then
+        ; Вывод в консоль (используем твою _CW, передаем строку как есть)
+        _CW($sMsg)
+    Else
+        ; Запись в файл (1 = Append, 256 = Force UTF-8)
+        Local $hFile = FileOpen($sFilePath, 1 + 256)
+        If $hFile <> -1 Then
+            FileWriteLine($hFile, $sMsg)
+            FileClose($hFile)
+        EndIf
+    EndIf
+EndFunc   ;==>_Log
+
+; #FUNCTION# ====================================================================================================================
+; Name ..........: _GetHandleByTitle
+; Description ...: Возвращает хендл конкретного окна по его точному названию.
+; Syntax ........: _GetHandleByTitle($sTitle)
+; Parameters ....: $sTitle - Полное или частичное имя окна (зависит от WinTitleMatchMode).
+; Return values .: Success: hWnd окна. Failure: Sets @error = 1 и возвращает 0.
+; ===============================================================================================================================
+Func _GetHandleByTitle($sTitle)
+    Local $hWnd = WinGetHandle($sTitle)
+    
+    If @error Then 
+        _CW("_GetHandleByTitle Ошибка: Эмулятор не найден!")
+        Return SetError(1, 0, 0)
+    EndIf
+    
+    Return $hWnd
+EndFunc   ;==>_GetHandleByTitle
+
+; #FUNCTION# ====================================================================================================================
+; Name ..........: _CW
+; Description ...: Выводит текст в консоль с принудительной перекодировкой в UTF-8.
+; Syntax ........: _CW($sText)
+; Parameters ....: $sText - Строка текста для вывода.
+; Return values .: None
+; Author ........: Tatooine104
+; Modified ......: 
+; Remarks .......: Помогает избежать проблем с кодировкой (кракозябр) в консоли SciTE.
+; Related .......: 
+; Example .......: _CW("Привет, MEmu!")
+; ===============================================================================================================================
+Func _CW($sText)
+
+    ; Преобразуем строку в бинарный вид (UTF-8) и обратно в строку для корректного вывода
+    ConsoleWrite(BinaryToString(StringToBinary($sText & @CRLF, 4), 1))
+
+EndFunc   ;==>_CW
+
+
+
+
+; - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+; - + - + - + - + -  |  Старые функции, требующие актуализации  | - + - + - + - + - + - + - + - + - + - + - 
+; - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+
+
+
+
+#cs
+
+
+
+
+
 #include <WinAPIProc.au3>
 #include <WinAPIFiles.au3>
 #include <WinAPISys.au3>
@@ -165,37 +365,6 @@ Func _CheckAndActivateClient($sTitle)
 EndFunc   ;==>_CheckAndActivateClient
 
 
-; #FUNCTION# ====================================================================================================================
-; Name...........: _HumanSleep
-; Description....: Выполняет рандомизированную паузу для имитации естественного поведения человека.
-; Syntax.........: _HumanSleep($iMin = 100, $iMax = 800)
-; Parameters ....: $iMin       - [Optional] Минимальное время ожидания в миллисекундах (по умолчанию 100).
-;                  $iMax       - [Optional] Максимальное время ожидания в миллисекундах (по умолчанию 800).
-; Return values .: Время выдержанной паузы в мс.
-; Updated .......: 2026.04.25
-; Version .......: 1.01
-; Remarks .......: Если пауза превышает 1000 мс, автоматически отправляет запись в лог.
-; ===============================================================================================================================
-Func _HumanSleep($iMin = 100, $iMax = 800)
-
-    ; Гарантируем, что входные данные — числа
-    $iMin = Int($iMin)
-    $iMax = Int($iMax)
-
-    ; Генерируем случайное целое число в заданном диапазоне
-    Local $iWait = Random($iMin, $iMax, 1)
-    
-    ; Логируем только значительные паузы (более 1 секунды)
-    If $iWait > 1000 Then 
-        _Log(StringFormat("Пауза: сек.", $iWait / 1000))
-    EndIf
-    
-    Sleep($iWait)
-    
-    Return $iWait
-
-EndFunc   ;==>_HumanSleep
-
 
 
 ; #FUNCTION# ====================================================================================================================
@@ -210,40 +379,51 @@ EndFunc   ;==>_HumanSleep
 ; Version .......: 1.06
 ; Remarks .......: Интегрирована функция _GUI_AddLog для циклического отображения событий в интерфейсе.
 ; ===============================================================================================================================
-Func _Log($sText, $bDebug = Default, $hControlID = Default)
+Func _Log($sText, $sDeviceID = "", $bDebug = Default, $hControlID = Default)
+    ; 1. Подготовка глобальных ссылок
+    Global $Debug, $hStatusLabel, $hGUI_Log
 
-    ; 1. Определяем режим отладки
+    ; 2. Определяем режим отладки
     If $bDebug = Default Then
-        $bDebug = IsDeclared("Debug") ? Eval("Debug") : False
+        $bDebug = IsDeclared("Debug") ? $Debug : False
     EndIf
 
-    ; 2. Подготовка путей
+    ; 3. Формирование префикса устройства
+    Local $sDevPrefix = ($sDeviceID <> "" ? "[" & $sDeviceID & "] " : "")
+    
+    ; 4. Подготовка путей
     Local $sLogDir = @ScriptDir & "\Logs"
     If Not FileExists($sLogDir) Then DirCreate($sLogDir)
-
     Local $sLogFileName = StringTrimRight(@ScriptName, 4) & ".log"
     Local $sFullPath = $sLogDir & "\" & $sLogFileName
 
-    ; 3. Формирование строки записи [ГГГГ.ММ.ДД ЧЧ:ММ:СС]
-    Local $sLogEntry = StringFormat("[%s.%s.%s %s:%s:%s] -> %s", @YEAR, @MON, @MDAY, @HOUR, @MIN, @SEC, $sText)
+    ; 5. Формирование строки записи [ЧЧ:ММ:СС]
+    Local $sTime = StringFormat("%s:%s:%s", @HOUR, @MIN, @SEC)
+    Local $sLogEntry = StringFormat("[%s] %s%s", $sTime, $sDevPrefix, $sText)
 
-    ; 4. Вывод в консоль Scite
-    If $bDebug Then _CW($sLogEntry)
+    ; 6. Вывод в консоль (через библиотечную функцию _CW)
+    If $bDebug Then _CW($sLogEntry & @CRLF)
 
-    ; 5. Обновление GUI
-    ; Обновляем основной статус (одна строка)
+    ; 7. Обновление GUI
+    ; Обновляем основной статус-бар (если передан ID или есть глобальный ярлык)
     If $hControlID <> Default And $hControlID <> 0 Then
         GUICtrlSetData($hControlID, $sText)
     ElseIf IsDeclared("hStatusLabel") Then
-        GUICtrlSetData(Eval("hStatusLabel"), $sText)
+        GUICtrlSetData($hStatusLabel, $sText)
     EndIf
 
-    ; Обновляем список последних 5 событий в GUI
+    ; Добавляем строку в список логов GUI (если библиотека GUI подключена)
     If IsDeclared("hGUI_Log") Then
-        _GUI_AddLog($sText)
+        ; Используем внутреннюю функцию GUI для добавления строки в List/Edit
+        ; Обновляем список последних 5 событий в GUI
+        If IsDeclared("hGUI_Log") Then
+            ; Проверяем, существует ли функция _GUI_AddLog
+            Local $hFunc = IsFunc("_GUI_AddLog")
+            If $hFunc Then _GUI_AddLog($sLogEntry)
+        EndIf
     EndIf
 
-    ; 6. Запись в файл
+    ; 8. Запись в файл (режим 1 + 8: Append + Create Dir)
     Local $hFile = FileOpen($sFullPath, 1 + 8) 
     If $hFile = -1 Then Return 0
     
@@ -251,58 +431,5 @@ Func _Log($sText, $bDebug = Default, $hControlID = Default)
     FileClose($hFile)
 
     Return 1
-
 EndFunc   ;==>_Log
-
-
-
-; #FUNCTION# ====================================================================================================================
-; Name...........: _SaveToIni
-; Description....: Записывает значение в INI-файл конфигурации.
-; Syntax.........: _SaveToIni($sSection, $sKey, $vValue[, $sFilePath = Default])
-; Parameters ....: $sSection    - Название секции INI-файла.
-;                  $sKey        - Название ключа.
-;                  $vValue      - Значение для записи.
-;                  $sFilePath   - [Optional] Путь к INI-файлу. Если Default, ищется глобальная $sIniPath 
-;                                 или создается файл с именем скрипта в корне.
-; Return values .: 1 - Успешно.
-;                  0 - Ошибка записи (например, файл защищен от записи).
-; Updated .......: 2026.04.25
-; Version .......: 1.01
-; Remarks .......: Автоматически определяет путь к конфигу, если он не передан явно.
-; ===============================================================================================================================
-Func _SaveToIni($sSection, $sKey, $vValue, $sFilePath = Default)
-    ; 1. Определяем путь к файлу
-    If $sFilePath = Default Then
-        ; Если есть глобальная переменная $sIniPath — берем её, иначе создаем рядом со скриптом
-        If IsDeclared("sIniPath") Then
-            $sFilePath = Eval("sIniPath")
-        Else
-            $sFilePath = @ScriptDir & "\" & StringTrimRight(@ScriptName, 4) & ".ini"
-        EndIf
-    EndIf
-
-    ; 2. Запись данных
-    Local $iResult = IniWrite($sFilePath, $sSection, $sKey, $vValue)
-    
-    Return $iResult
-EndFunc   ;==>_SaveToIni
-
-
-
-; #FUNCTION# ====================================================================================================================
-; Name...........: _CW
-; Description....: Выводит текст в консоль с принудительной перекодировкой в UTF-8.
-; Syntax.........: _CW($sText)
-; Parameters ....: $sText       - Текст для вывода в консоль.
-; Return values .: Нет.
-; Updated .......: 2026.04.25
-; Version .......: 1.01
-; Remarks .......: Используется для корректного отображения русских символов в консоли SciTE.
-; ===============================================================================================================================
-Func _CW($sText)
-
-    ; Преобразуем строку в бинарный вид (UTF-8) и обратно в строку для корректного вывода
-    ConsoleWrite(BinaryToString(StringToBinary($sText & @CRLF, 4), 1))
-
-EndFunc   ;==>_CW
+#ce

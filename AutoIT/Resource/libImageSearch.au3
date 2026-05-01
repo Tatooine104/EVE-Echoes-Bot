@@ -19,9 +19,84 @@
 ; ###############################################################################################################################
 
 #include-once ; Добавить в первую строку файла библиотеки
+#include "..\Resource\libUtility.au3"
+
+; #FUNCTION# ====================================================================================================================
+; Name ..........: _FindImage
+; Description ...: Ищет изображение на экране в заданных координатах.
+; Syntax ........: _FindImage($iX1, $iY1, $iX2, $iY2, $sImage)
+; Parameters ....: $iX1, $iY1 - Левый верхний угол поиска
+;                  $iX2, $iY2 - Правый нижний угол поиска
+;                  $sImage    - Путь к картинке (BMP или PNG)
+; Return values .: Success: Массив [x, y]. Failure: False.
+; ===============================================================================================================================
+Func _FindImage($iX1, $iY1, $iX2, $iY2, $sImage, $iTolerance = 50, $lDebug = False)
+    
+    Local $x, $y
+    Local $result = _ImageSearchArea($sImage, 1, $iX1, $iY1, $iX2, $iY2, $x, $y, $iTolerance)
+    
+    If $result = 1 Then
+        Local $aCoord[2] = [$x, $y]
+        ; _Log("Картинка найдена в координатах: " & $x & "x" & $y, $lDebug)
+        Return $aCoord
+    EndIf
+    
+    _Log("_FindImage Ошибка: Картинка не найдена в координатах: " & $x & "x" & $y, $lDebug)
+    Return False
+
+EndFunc
+
+; #FUNCTION# ====================================================================================================================
+; Name ..........: _ImageSearchArea
+; Description ...: Ищет изображение в заданной области экрана.
+; Syntax ........: _ImageSearchArea($findImage, $resultPosition, $x1, $y1, $x2, $y2, ByRef $x, ByRef $y, $tolerance)
+; Parameters ....: $findImage     - Путь к файлу картинки (BMP/PNG).
+;                  $resultPosition - 1: вернуть координаты центра, 0: вернуть левый верхний угол.
+;                  $x1, $y1, $x2, $y2 - Границы области поиска.
+;                  $x, $y         - Переменные, куда запишутся найденные координаты (ByRef).
+;                  $tolerance     - Погрешность (0-255). 0 — точное совпадение.
+; ===============================================================================================================================
+Func _ImageSearchArea($findImage, $resultPosition, $x1, $y1, $x2, $y2, ByRef $x, ByRef $y, $tolerance)
+    
+    Local $res = DllCall("ImageSearchDLL_x64.dll", "str", "ImageSearch", "int", $x1, "int", $y1, "int", $x2, "int", $y2, "str", "*" & $tolerance & " " & $findImage)
+    
+    If @error Then
+        _Log("ОШИБКА DLL: Файл ImageSearchDLL.dll не найден или несовместим!", True)
+        Return 0
+    EndIf
+
+    _Log("Ответ от DLL: " & $res[0], True) ; Посмотрим, что пишет библиотека
+    
+    If Not FileExists($findImage) Then Return "Image File not found"
+    
+    ; Формируем строку параметров для DLL. 
+    ; *24 — это стандартный префикс для поиска, далее идет допуск и путь.
+    Local $res = DllCall("ImageSearchDLL_x64.dll", "str", "ImageSearch", "int", $x1, "int", $y1, "int", $x2, "int", $y2, "str", "*" & $tolerance & " " & $findImage)
+
+    If Not IsArray($res) Or $res[0] = "0" Then Return 0 ; Не нашли
+
+    ; Разбираем ответ DLL (она возвращает строку типа "1|x|y|width|height")
+    Local $array = StringSplit($res[0], "|")
+    $x = Int($array[2])
+    $y = Int($array[3])
+    
+    ; Если нужно вернуть центр картинки
+    If $resultPosition = 1 Then
+        $x = $x + Int($array[4] / 2)
+        $y = $y + Int($array[5] / 2)
+    EndIf
+    
+    Return 1
+EndFunc
+
+
+; - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+; - + - + - + - + -  |  Старые функции, требующие актуализации  | - + - + - + - + - + - + - + - + - + - + - 
+; - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+#cs
 
 #include <ScreenCapture.au3>
-#include <libUtility.au3>
 #include <Constants.au3>
 #include <GDIPlus.au3>
 
@@ -143,45 +218,38 @@ EndFunc   ;==>_FindAndClick
 ; #                  $sSourceBmp - ПУТЬ К СКРИНШОТУ, полученному через ADB.
 ; # RETURN.........: 1 - Найдено, 0 - Не найдено.
 ; ###############################################################################################################################
-Func _MyImageSearch($sImgName, $sResDir, $aRect, ByRef $x, ByRef $y, $iTolerance, $sSourceBmp)
-    ; 1. Валидация входных данных
-    If Not IsArray($aRect) Or UBound($aRect) < 4 Then 
-        _CW("_MyImageSearch: Ошибка массива координат для " & $sImgName & @CRLF)
-        Return 0
-    EndIf
+Func _MyImageSearch($sImage, $sFolder, $aArea, ByRef $x, ByRef $y, $iTolerance, $sScreenshot)
+    Global $sDllDir
+    Local $sDllPath = FileGetShortName(StringRegExpReplace($sDllDir, "[\\/]+$", "") & "\ImageSearch.dll")
     
-    If Not FileExists($sSourceBmp) Then
-        _CW("_MyImageSearch: Ошибка - файл скриншота не найден: " & $sSourceBmp & @CRLF)
-        Return 0
+    Local $sFullPath = FileGetShortName($sFolder & "\" & $sImage)
+    Local $sOptions = "*" & $iTolerance & " *Trans0x000000 " & $sFullPath
+
+    ; Вызываем DLL (используем 5 параметров, так как они работают стабильно)
+    Local $aRet = DllCall($sDllPath, "str", "ImageSearch", _
+            "int", $aArea[0], "int", $aArea[1], "int", $aArea[2], "int", $aArea[3], _
+            "str", $sOptions)
+
+    If @error Then
+        _CW("!!! Ошибка DllCall: " & @error & @CRLF)
+        Return False
     EndIf
 
-    ; 2. Формируем путь к эталону
-    If $sResDir <> "" And StringRight($sResDir, 1) <> "\" Then $sResDir &= "\"
-    Local $sPatternPath = $sResDir & $sImgName
-
-    ; 3. ПОИСК (Используем ImageSearchArea, передавая путь к исходному скриншоту)
-    ; Примечание: В зависимости от вашей версии DLL, путь к источнику ($sSourceBmp) 
-    ; может передаваться последним параметром или через доп. функции.
-    ; Стандартный вызов для поиска в файле:
-    Local $iResult = _ImageSearchArea($sPatternPath, 1, $aRect[0], $aRect[1], $aRect[2], $aRect[3], $x, $y, $iTolerance, $sSourceBmp)
-    
-    ; 4. Обработка промаха (Логирование)
-    If $iResult = 0 Then
-        Local $sLogDir = @ScriptDir & "\Logs"
-        If Not FileExists($sLogDir) Then DirCreate($sLogDir)
-        
-        ; Добавляем в имя лога ID устройства (из пути к скриншоту), чтобы логи разных окон не перемешались
-        Local $sDeviceName = StringRegExpReplace($sSourceBmp, ".*snap_(.*)\.bmp", "$1") 
-        Local $sLogFile = $sLogDir & "\ERR_" & @HOUR & @MIN & @SEC & "_" & $sDeviceName & "_" & $sImgName
-        
-        FileCopy($sSourceBmp, $sLogFile, 8) 
-        _CW("[-] Не нашли " & $sImgName & " на устройстве " & $sDeviceName & @CRLF)
+    ; Проверяем результат (в $aRet[0] лежит строка ответа)
+    If Not IsArray($aRet) Or $aRet[0] = "0" Then 
+        Return False
     EndIf
 
-    Return $iResult
+    ; Ответ обычно в формате "status|x|y" (например "1|450|380")
+    Local $aRes = StringSplit($aRet[0], "|")
+    If $aRes[0] >= 3 Then
+        $x = Int($aRes[2])
+        $y = Int($aRes[3])
+        Return True
+    EndIf
+
+    Return False
 EndFunc
-
-
 
 
 
@@ -195,6 +263,7 @@ EndFunc
 ; #                  $sSourceBmp     - ПУТЬ К ФАЙЛУ СКРИНШОТА (из которого ищем).
 ; # RETURN.........: 1 - Найдено, 0 - Не найдено.
 ; ###############################################################################################################################
+
 Func _ImageSearch($findImage, $resultPosition, ByRef $x, ByRef $y, $tolerance, $sSourceBmp = "")
     
     ; Если путь к скриншоту не передан, функция не сможет работать в режиме ADB
@@ -216,8 +285,6 @@ Func _ImageSearch($findImage, $resultPosition, ByRef $x, ByRef $y, $tolerance, $
     Return _ImageSearchArea($findImage, $resultPosition, 0, 0, $iW, $iH, $x, $y, $tolerance, $sSourceBmp)
 
 EndFunc   ;==>_ImageSearch
-
-
 
 
 ; ###############################################################################################################################
@@ -243,52 +310,41 @@ EndFunc   ;==>_ImageSearchClientArea
 ; # PARAMETERS ....: ..., $hSource - [Optional] ПУТЬ К BMP-ФАЙЛУ (скриншоту ADB). Если 0 - ищет на экране.
 ; ###############################################################################################################################
 Func _ImageSearchArea($findImage, $resultPosition, $x1, $y1, $right, $bottom, ByRef $x, ByRef $y, $tolerance, $hSource = 0)
-
-    ; 1. Путь к DLL
-    Local $sResPath = IsDeclared("sResourceDir") ? Eval("sResourceDir") : @ScriptDir & "\"
-    Local $sDllPath = $sResPath & "ImageSearchDLL.dll"
+    Global $sResourceDir, $sDllDir
+    Local $sCurrentDllDir = IsDeclared("sDllDir") ? $sDllDir : $sResourceDir
+    Local $sDllPath = $sCurrentDllDir & "ImageSearchDLL.dll"
     
-    If Not FileExists($sDllPath) Then
-        _CW("КРИТИЧЕСКАЯ ОШИБКА: DLL не найдена: " & $sDllPath & @CRLF)
-        Return 0
-    EndIf
-
-    ; 2. Подготовка строки поиска
-    Local $sSearchStr = $findImage
-    If $tolerance > 0 Then $sSearchStr = "*" & $tolerance & " " & $findImage
+    ; Подготовка строки допуска
+    Local $sSearchStr = ($tolerance > 0) ? ("*" & $tolerance & " " & $findImage) : $findImage
     
-    ; --- НОВЫЙ БЛОК: Поиск в файле (ADB режим) ---
-    Local $result
-    If $hSource <> 0 And FileExists($hSource) Then
-        ; Если передан путь к файлу, используем вызов "ImageSearchOnImage" 
-        ; (Большинство современных ImageSearchDLL поддерживают этот метод для фонового поиска)
-        $result = DllCall($sDllPath, "str", "ImageSearchOnImage", "str", $hSource, "int", $x1, "int", $y1, "int", $right, "int", $bottom, "str", $sSearchStr)
+    Local $aRet, $sMode = "SCREEN"
+
+    ; ПРОВЕРКА: Если $hSource это строка и файл существует
+    If IsString($hSource) And FileExists($hSource) Then
+        $sMode = "FILE"
+        $aRet = DllCall($sDllPath, "str", "ImageSearchOnImage", "str", $hSource, "int", $x1, "int", $y1, "int", $right, "int", $bottom, "str", $sSearchStr)
     Else
-        ; Стандартный поиск по всему экрану (если файл не передан)
-        $result = DllCall($sDllPath, "str", "ImageSearch", "int", $x1, "int", $y1, "int", $right, "int", $bottom, "str", $sSearchStr)
+        $aRet = DllCall($sDllPath, "str", "ImageSearch", "int", $x1, "int", $y1, "int", $right, "int", $bottom, "str", $sSearchStr)
     EndIf
-    ; ----------------------------------------------
 
-    If @error Or Not IsArray($result) Or $result[0] = "0" Then Return 0
+    ; ВЫВОД ДЛЯ ОТЛАДКИ (Смотрим, что попало в $hSource)
+    _CW(StringFormat("DEBUG DLL: Mode=%s | hSourceVal=%s | Find=%s\n", $sMode, $hSource, $findImage))
 
-    ; 3. Разбор результата
-    Local $array = StringSplit($result[0], "|")
+    If @error Or Not IsArray($aRet) Or $aRet[0] = "0" Then Return 0
+
+    Local $array = StringSplit($aRet[0], "|")
     If $array[0] < 3 Then Return 0
 
     $x = Int(Number($array[2]))
     $y = Int(Number($array[3]))
     
     If $resultPosition = 1 Then
-        $x = $x + Int(Number($array[4]) / 2)
-        $y = $y + Int(Number($array[5]) / 2)
+        $x += Int(Number($array[4]) / 2)
+        $y += Int(Number($array[5]) / 2)
     EndIf
     
-    ; В ADB режиме ($hSource <> 0) нам НЕ НУЖНО вычитать координаты окна _WinGetClientPos, 
-    ; так как координаты в файле всегда начинаются с 0,0 (это чистый Android).
-    
     Return 1
-EndFunc   ;==>_ImageSearchArea
-
+EndFunc
 
 
 
@@ -419,3 +475,5 @@ Func _WinGetClientPos($hwnd)
     Return $aPos
 
 EndFunc   ;==>_WinGetClientPos
+
+#ce

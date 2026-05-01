@@ -141,27 +141,34 @@ EndFunc   ;==>_GUI_Update
 ; Remarks .......: Использует глобальную переменную $sLogBuffer для хранения истории строк.
 ; ===============================================================================================================================
 Func _GUI_AddLog($sNewText)
+    ; 1. Объявляем буфер как Global, чтобы он сохранялся между вызовами функции
+    Global $sLogBuffer 
+    Global $hGUI_Log
 
-    ; Добавляем метку времени (ЧЧ:ММ) для компактности в GUI
+    ; 2. Метка времени
     Local $sTimePrefix = StringFormat("[%02d:%02d] ", @HOUR, @MIN)
     
-    ; Добавляем новую строку в начало буфера
+    ; 3. Добавляем НОВУЮ строку В НАЧАЛО
     $sLogBuffer = $sTimePrefix & $sNewText & @CRLF & $sLogBuffer
     
-    ; Разбиваем буфер на строки для фильтрации
-    Local $aCurrentLines = StringSplit($sLogBuffer, @CRLF, 1)
+    ; 4. Очищаем от лишних пустых строк и разбиваем
+    Local $aLines = StringSplit(StringStripWS($sLogBuffer, 3), @CRLF, 1)
     
-    ; Очищаем буфер и собираем заново только первые 5 строк
-    $sLogBuffer = ""
-    Local $iMax = $aCurrentLines[0] > 5 ? 5 : $aCurrentLines[0]
+    ; 5. Собираем обратно не более 5 строк
+    Local $sNewBuffer = ""
+    Local $iCount = ($aLines[0] > 5) ? 5 : $aLines[0]
     
-    For $i = 1 To $iMax
-        $sLogBuffer &= $aCurrentLines[$i] & @CRLF
+    For $i = 1 To $iCount
+        $sNewBuffer &= $aLines[$i] & @CRLF
     Next
     
-    ; Обновляем элемент в GUI, если он существует
-    If IsDeclared("hGUI_Log") Then GUICtrlSetData(Eval("hGUI_Log"), $sLogBuffer)
-        
+    ; Обновляем глобальный буфер
+    $sLogBuffer = $sNewBuffer
+    
+    ; 6. Вывод в GUI
+    If IsDeclared("hGUI_Log") Then 
+        GUICtrlSetData($hGUI_Log, $sLogBuffer)
+    EndIf
 EndFunc   ;==>_GUI_AddLog
 
 
