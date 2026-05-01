@@ -17,7 +17,7 @@
 ; ###############################################################################################################################
 
 #include-once ; Добавить в первую строку файла библиотеки
-
+; #include <WinAPISysWin.au3> ; Библиотека для подгона окна под размер
 
 ; #FUNCTION# ====================================================================================================================
 ; Name ..........: _MEmu_SetSize
@@ -31,17 +31,48 @@
 ; Remarks .......: Окно будет перемещено в координаты 0,0 для удобства, если нужно просто изменить размер — убери 0, 0.
 ; ===============================================================================================================================
 Func _MEmu_SetSize($hWnd, $iWidth, $iHeight)
+
     If Not WinExists($hWnd) Then 
-        _CW("_MEmu_SetSize Ошибка: Не удалось изменить размер")
+        _CW("_MEmu_SetSize Ошибка: Не найдено окно эмулятора")
         Return SetError(1, 0, False)
     EndIf
 
-    ; WinMove($hWnd, "текст", x, y, width, height)
-    WinMove($hWnd, "", Default, Default, $iWidth, $iHeight)
-    
-    Return True
+    If _SetInnerSize($hWnd, $iWidth, $iHeight) Then
+        Return True
+    Else
+        _CW("_MEmu_SetSize Ошибка: Не удалось изменить размер окна")
+        Return False
+    EndIf
+
 EndFunc   ;==>_MEmu_SetSize
 
+
+; #FUNCTION# ====================================================================================================================
+; Name ..........: _SetInnerSize
+; Description ...: Устанавливает размер ВНУТРЕННЕЙ области окна (без учета рамок и заголовка).
+; ===============================================================================================================================
+Func _SetInnerSize($hWnd, $iWidth, $iHeight)
+
+    Local $aPos, $aClient, $iDiffW, $iDiffH
+
+    $aPos = WinGetPos($hWnd)      ; Получаем внешний размер окна
+    $aClient = WinGetClientSize($hWnd) ; Получаем внутренний размер окна
+
+    If Not IsArray($aPos) Or Not IsArray($aClient) Then 
+        _CW("_SetInnerSize Ошибка: Не удалось изменить размер окна")
+        Return False
+    Else
+        ; Считаем разницу (сколько занимают рамки и заголовок)
+        $iDiffW = $aPos[2] - $aClient[0]
+        $iDiffH = $aPos[3] - $aClient[1]
+        
+        ; Изменяем размер окна так, чтобы внутри получилось ровно $iWidth x $iHeight
+        WinMove($hWnd, "", $aPos[0], $aPos[1], $iWidth + $iDiffW, $iHeight + $iDiffH)
+
+        Return True
+    EndIf
+
+EndFunc
 
 ; #FUNCTION# ====================================================================================================================
 ; Name ..........: _Log

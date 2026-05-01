@@ -6,7 +6,7 @@ Global $lDebug = True
 
 $hWindow = _GetHandleByTitle("MEmu W.01")
 
-If _MEmu_SetSize($hWindow, 1320, 760) Then
+If _MEmu_SetSize($hWindow, 1280, 720) Then
     _CW("Размер изменен успешно")
 Else
     _CW("Ошибка: Не удалось изменить размер")
