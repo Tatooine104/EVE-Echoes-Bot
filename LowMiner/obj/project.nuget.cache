@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "dgSpecHash": "0q2YyfEq+BQ=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\Tatooine\\GitHub\\EVE Echoes Bot\\LowMiner\\LowMiner.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\Tatooine\\.nuget\\packages\\opencvsharp4\\4.13.0.20260427\\opencvsharp4.4.13.0.20260427.nupkg.sha512",
+    "C:\\Users\\Tatooine\\.nuget\\packages\\opencvsharp4.runtime.win\\4.13.0.20260302\\opencvsharp4.runtime.win.4.13.0.20260302.nupkg.sha512"
+  ],
+  "logs": []
+}

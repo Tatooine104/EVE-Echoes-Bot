@@ -104,7 +104,7 @@ Func _AlliChatMessage($sDeviceID, $iClientIdx)
     Local $sFile, $x, $y
 
     ; Открываем чат
-    _ADB_Click($sDeviceID, 25, 625) 
+    ; _ADB_Click($sDeviceID, 25, 625) 
     _HumanSleep(800, 1200)
 
     $sFile = _Get_Screenshot_By_ID($sDeviceID)

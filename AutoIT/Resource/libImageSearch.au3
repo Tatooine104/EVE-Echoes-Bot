@@ -19,9 +19,84 @@
 ; ###############################################################################################################################
 
 #include-once ; Добавить в первую строку файла библиотеки
+#include "..\Resource\libUtility.au3"
+
+; #FUNCTION# ====================================================================================================================
+; Name ..........: _FindImage
+; Description ...: Ищет изображение на экране в заданных координатах.
+; Syntax ........: _FindImage($iX1, $iY1, $iX2, $iY2, $sImage)
+; Parameters ....: $iX1, $iY1 - Левый верхний угол поиска
+;                  $iX2, $iY2 - Правый нижний угол поиска
+;                  $sImage    - Путь к картинке (BMP или PNG)
+; Return values .: Success: Массив [x, y]. Failure: False.
+; ===============================================================================================================================
+Func _FindImage($iX1, $iY1, $iX2, $iY2, $sImage, $iTolerance = 50, $lDebug = False)
+    
+    Local $x, $y
+    Local $result = _ImageSearchArea($sImage, 1, $iX1, $iY1, $iX2, $iY2, $x, $y, $iTolerance)
+    
+    If $result = 1 Then
+        Local $aCoord[2] = [$x, $y]
+        ; _Log("Картинка найдена в координатах: " & $x & "x" & $y, $lDebug)
+        Return $aCoord
+    EndIf
+    
+    _Log("_FindImage Ошибка: Картинка не найдена в координатах: " & $x & "x" & $y, $lDebug)
+    Return False
+
+EndFunc
+
+; #FUNCTION# ====================================================================================================================
+; Name ..........: _ImageSearchArea
+; Description ...: Ищет изображение в заданной области экрана.
+; Syntax ........: _ImageSearchArea($findImage, $resultPosition, $x1, $y1, $x2, $y2, ByRef $x, ByRef $y, $tolerance)
+; Parameters ....: $findImage     - Путь к файлу картинки (BMP/PNG).
+;                  $resultPosition - 1: вернуть координаты центра, 0: вернуть левый верхний угол.
+;                  $x1, $y1, $x2, $y2 - Границы области поиска.
+;                  $x, $y         - Переменные, куда запишутся найденные координаты (ByRef).
+;                  $tolerance     - Погрешность (0-255). 0 — точное совпадение.
+; ===============================================================================================================================
+Func _ImageSearchArea($findImage, $resultPosition, $x1, $y1, $x2, $y2, ByRef $x, ByRef $y, $tolerance)
+    
+    Local $res = DllCall("ImageSearchDLL_x64.dll", "str", "ImageSearch", "int", $x1, "int", $y1, "int", $x2, "int", $y2, "str", "*" & $tolerance & " " & $findImage)
+    
+    If @error Then
+        _Log("ОШИБКА DLL: Файл ImageSearchDLL.dll не найден или несовместим!", True)
+        Return 0
+    EndIf
+
+    _Log("Ответ от DLL: " & $res[0], True) ; Посмотрим, что пишет библиотека
+    
+    If Not FileExists($findImage) Then Return "Image File not found"
+    
+    ; Формируем строку параметров для DLL. 
+    ; *24 — это стандартный префикс для поиска, далее идет допуск и путь.
+    Local $res = DllCall("ImageSearchDLL_x64.dll", "str", "ImageSearch", "int", $x1, "int", $y1, "int", $x2, "int", $y2, "str", "*" & $tolerance & " " & $findImage)
+
+    If Not IsArray($res) Or $res[0] = "0" Then Return 0 ; Не нашли
+
+    ; Разбираем ответ DLL (она возвращает строку типа "1|x|y|width|height")
+    Local $array = StringSplit($res[0], "|")
+    $x = Int($array[2])
+    $y = Int($array[3])
+    
+    ; Если нужно вернуть центр картинки
+    If $resultPosition = 1 Then
+        $x = $x + Int($array[4] / 2)
+        $y = $y + Int($array[5] / 2)
+    EndIf
+    
+    Return 1
+EndFunc
+
+
+; - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+; - + - + - + - + -  |  Старые функции, требующие актуализации  | - + - + - + - + - + - + - + - + - + - + - 
+; - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+#cs
 
 #include <ScreenCapture.au3>
-#include <libUtility.au3>
 #include <Constants.au3>
 #include <GDIPlus.au3>
 
@@ -400,3 +475,5 @@ Func _WinGetClientPos($hwnd)
     Return $aPos
 
 EndFunc   ;==>_WinGetClientPos
+
+#ce

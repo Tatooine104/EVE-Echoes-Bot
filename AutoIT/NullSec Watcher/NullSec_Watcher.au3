@@ -37,7 +37,6 @@ If Not FileExists($sResourceDir & "imgLocalStatCriminal.bmp") Then
     Exit
 EndIf
 
-
 Global $Debug = True
 
 ; Заполняем начальные значения
