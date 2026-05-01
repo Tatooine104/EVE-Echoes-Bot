@@ -18,6 +18,31 @@
 
 #include-once ; Добавить в первую строку файла библиотеки
 
+
+; #FUNCTION# ====================================================================================================================
+; Name ..........: _MEmu_SetSize
+; Description ...: Устанавливает указанное разрешение для окна эмулятора по его хендлу.
+; Syntax ........: _MEmu_SetSize($hWnd, $iWidth, $iHeight)
+; Parameters ....: $hWnd   - Хендл (HWND) целевого окна.
+;                  $iWidth  - Желаемая ширина окна.
+;                  $iHeight - Желаемая высота окна.
+; Return values .: Success: True. Failure: False, Sets @error = 1 (окно не найдено).
+; Author ........: [Твое Имя]
+; Remarks .......: Окно будет перемещено в координаты 0,0 для удобства, если нужно просто изменить размер — убери 0, 0.
+; ===============================================================================================================================
+Func _MEmu_SetSize($hWnd, $iWidth, $iHeight)
+    If Not WinExists($hWnd) Then 
+        _CW("_MEmu_SetSize Ошибка: Не удалось изменить размер")
+        Return SetError(1, 0, False)
+    EndIf
+
+    ; WinMove($hWnd, "текст", x, y, width, height)
+    WinMove($hWnd, "", Default, Default, $iWidth, $iHeight)
+    
+    Return True
+EndFunc   ;==>_MEmu_SetSize
+
+
 ; #FUNCTION# ====================================================================================================================
 ; Name ..........: _Log
 ; Description ...: Логирует сообщение с меткой времени в консоль или в файл.
@@ -57,6 +82,7 @@ Func _GetHandleByTitle($sTitle)
     Local $hWnd = WinGetHandle($sTitle)
     
     If @error Then 
+        _CW("_GetHandleByTitle Ошибка: Эмулятор не найден!")
         Return SetError(1, 0, 0)
     EndIf
     

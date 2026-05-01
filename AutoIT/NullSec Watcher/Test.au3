@@ -6,9 +6,8 @@ Global $lDebug = True
 
 $hWindow = _GetHandleByTitle("MEmu W.01")
 
-If @error Then
-    ; Сюда мы попадем, потому что функция выполнила SetError(1, ...)
-    _CW("Ошибка! Окно не найдено. Код ошибки: " & @error)
+If _MEmu_SetSize($hWindow, 1320, 760) Then
+    _CW("Размер изменен успешно")
 Else
-    _CW("Окно найдено, хендл: " & $hWindow)
+    _CW("Ошибка: Не удалось изменить размер")
 EndIf
