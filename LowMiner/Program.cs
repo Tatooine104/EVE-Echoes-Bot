@@ -60,22 +60,32 @@ namespace LowMiner
             Console.ReadKey();
         }
 
+        /// <summary>
+        /// Находит дескриптор окна по его заголовку и выводит информацию о его размерах.
+        /// </summary>
+        /// <param name="windowName">Точное имя заголовка окна.</param>
+        /// <returns>Дескриптор окна (IntPtr.Zero, если окно не найдено).</returns>
         static IntPtr GetWindow(string windowName)
         {
-            // Теперь вызываем сгенерированный метод
+            // Поиск дескриптора окна через WinAPI
             IntPtr hWnd = FindWindow(null, windowName);
 
-            if (hWnd != IntPtr.Zero && GetWindowRect(hWnd, out RECT rect))
+            if (hWnd != IntPtr.Zero)
             {
-                // Упрощенная интерполяция
-                Console.ForegroundColor = ConsoleColor.Green;
-                Console.WriteLine($"[Успех] {TargetWindow} ({rect.Right - rect.Left}x{rect.Bottom - rect.Top})");
-                Console.ResetColor();
+                if (GetWindowRect(hWnd, out RECT rect))
+                {
+                    int width = rect.Right - rect.Left;
+                    int height = rect.Bottom - rect.Top;
+
+                    Console.ForegroundColor = ConsoleColor.Green;
+                    Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] [GetWindow] Успех: Найдено окно {windowName} ({width}x{height})");
+                    Console.ResetColor();
+                }
             }
             else
             {
                 Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine($"[Ошибка] {TargetWindow} не найдено.");
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] [GetWindow] Ошибка: Окно '{windowName}' не найдено.");
                 Console.ResetColor();
             }
 
@@ -99,7 +109,9 @@ namespace LowMiner
             PostMessage(hWnd, WM_LBUTTONUP, IntPtr.Zero, lParam);
 
 #if DEBUG
-            Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] [Действие] Клик в координаты: {x}, {y}");
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] [ClickAt] Действие: Клик в координаты: {x}, {y}");
+            Console.ResetColor();
 #endif
         }
 
@@ -116,7 +128,7 @@ namespace LowMiner
         }
 
         /// <summary>
-        /// Выполняет имитацию человеческого клика: выдерживает паузу, 
+        /// Выполняет имитацию человеческого клика: выдерживает паузу,
         /// добавляет случайное смещение к координатам и нажимает кнопку мыши.
         /// </summary>
         /// <param name="hWnd">Дескриптор окна для отправки сообщения.</param>
@@ -129,9 +141,9 @@ namespace LowMiner
         {
             // 1. Рандомная задержка перед действием
             int initialDelay = GetRandomDelayMs(minSec, maxSec);
-        #if DEBUG
-            Console.WriteLine($"[SmartClick] Ожидание перед кликом: {initialDelay} мс...");
-        #endif
+#if DEBUG
+            Console.WriteLine($"[SmartClick] Действие: Ожидание перед кликом: {initialDelay} мс...");
+#endif
             Thread.Sleep(initialDelay);
 
             // 2. Расчет координат с плавающим смещением
@@ -151,9 +163,23 @@ namespace LowMiner
             // Отпускание
             PostMessage(hWnd, WM_LBUTTONUP, IntPtr.Zero, lParam);
 
-        #if DEBUG
-            Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] [Действие] Клик в ({finalX}, {finalY}) со смещением {offset}");
-        #endif
+#if DEBUG
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] [SmartClick] Действие: Клик в ({finalX}, {finalY}) со смещением {offset}");
+            Console.ResetColor();
+#endif
+        }
+
+        /// <summary>
+        /// Выводит форматированное сообщение в консоль с указанным цветом.
+        /// </summary>
+        /// <param name="message">Текст сообщения.</param>
+        /// <param name="color">Цвет текста (по умолчанию серый).</param>
+        static void ConsolePrint(string message, ConsoleColor color = ConsoleColor.Gray)
+        {
+            Console.ForegroundColor = color;
+            Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] {message}");
+            Console.ResetColor();
         }
 
     }
