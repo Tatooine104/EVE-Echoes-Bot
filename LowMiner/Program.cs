@@ -38,6 +38,10 @@ namespace LowMiner
 
         private static readonly Random _random = new();
 
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+// - + - + - + - + - |  Основная программа   | - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
         static void Main()
         {
             Console.Title = "EVE Echoes Bot Controller";
@@ -49,16 +53,21 @@ namespace LowMiner
 
             if (hWnd != IntPtr.Zero)
             {
+                ConsolePrint("Бот готов. Выполняю тестовый клик через 2 секунды...");
                 Console.WriteLine("Бот готов. Выполняю тестовый клик через 2 секунды...");
                 System.Threading.Thread.Sleep(2000); // Пауза, чтобы вы успели переключиться на эмулятор
 
                 // Пример: клик в точку 100x100 внутри окна эмулятора
-                ClickAt(hWnd, 40, 600);
+                SmartClick(hWnd, 40, 600);
             }
 
-            Console.WriteLine("\nНажми любую клавишу для завершения...");
+            ConsolePrint("\nНажми любую клавишу для завершения...");
             Console.ReadKey();
         }
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+// - + - + - + - + - | Остальные методы и функции, используемые в основной программе | - + - + - + - + -
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
         /// <summary>
         /// Находит дескриптор окна по его заголовку и выводит информацию о его размерах.
@@ -76,22 +85,18 @@ namespace LowMiner
                 {
                     int width = rect.Right - rect.Left;
                     int height = rect.Bottom - rect.Top;
-
-                    Console.ForegroundColor = ConsoleColor.Green;
-                    Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] [GetWindow] Успех: Найдено окно {windowName} ({width}x{height})");
-                    Console.ResetColor();
+                    ConsolePrint($"GetWindow | Успех: Найдено окно {windowName} ({width}x{height})", ConsoleColor.Green);
                 }
             }
             else
             {
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] [GetWindow] Ошибка: Окно '{windowName}' не найдено.");
-                Console.ResetColor();
+                ConsolePrint($"GetWindow | Ошибка: Окно '{windowName}' не найдено.", ConsoleColor.Red);
             }
 
             return hWnd;
         }
 
+/*
         /// <summary>
         /// Имитирует клик левой кнопкой мыши по заданным координатам в конкретном окне.
         /// </summary>
@@ -109,11 +114,10 @@ namespace LowMiner
             PostMessage(hWnd, WM_LBUTTONUP, IntPtr.Zero, lParam);
 
 #if DEBUG
-            Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] [ClickAt] Действие: Клик в координаты: {x}, {y}");
-            Console.ResetColor();
+            ConsolePrint($"ClickAt | Действие: Клик в координаты: {x}, {y}", ConsoleColor.Yellow);
 #endif
         }
+*/
 
         /// <summary>
         /// Генерирует случайную задержку в миллисекундах на основе заданного диапазона секунд.
@@ -142,7 +146,7 @@ namespace LowMiner
             // 1. Рандомная задержка перед действием
             int initialDelay = GetRandomDelayMs(minSec, maxSec);
 #if DEBUG
-            Console.WriteLine($"[SmartClick] Действие: Ожидание перед кликом: {initialDelay} мс...");
+            ConsolePrint($"SmartClick | Действие: Ожидание перед кликом: {initialDelay} мс...", ConsoleColor.Cyan);
 #endif
             Thread.Sleep(initialDelay);
 
@@ -164,9 +168,7 @@ namespace LowMiner
             PostMessage(hWnd, WM_LBUTTONUP, IntPtr.Zero, lParam);
 
 #if DEBUG
-            Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] [SmartClick] Действие: Клик в ({finalX}, {finalY}) со смещением {offset}");
-            Console.ResetColor();
+            ConsolePrint($"SmartClick | Действие: Клик в ({finalX}, {finalY}) со смещением {offset}", ConsoleColor.Yellow);
 #endif
         }
 
