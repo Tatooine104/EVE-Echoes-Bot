@@ -4,6 +4,11 @@ using System.Text.Json;
 namespace LowMiner
 {
 
+    #region WinAPI Structures
+
+    /// <summary>
+    /// Определяет координаты левого верхнего и правого нижнего углов прямоугольника.
+    /// </summary>
     [StructLayout(LayoutKind.Sequential)]
     public struct RECT
     {
@@ -13,57 +18,71 @@ namespace LowMiner
         public int Bottom;
     }
 
+    /// <summary>
+    /// Содержит информацию о размерах и цветовом формате независимого от устройства растрового изображения (DIB).
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    private struct BITMAPINFOHEADER
+    {
+        public uint biSize;
+        public int biWidth;
+        public int biHeight;
+        public ushort biPlanes;
+        public ushort biBitCount;
+        public uint biCompression;
+        public uint biSizeImage;
+        public int biXPelsPerMeter;
+        public int biYPelsPerMeter;
+        public uint biClrUsed;
+        public uint biClrImportant;
+    }
+
+    #endregion
+
     static partial class Program
     {
+        #region WinAPI Imports
 
+    static partial class Program
+    {
+        #region WinAPI Structures
+
+        /// <summary>
+        /// Определяет координаты левого верхнего и правого нижнего углов прямоугольника.
+        /// </summary>
+        [StructLayout(LayoutKind.Sequential)]
+        private struct RECT
+        {
+            public int Left;
+            public int Top;
+            public int Right;
+            public int Bottom;
+        }
+
+        /// <summary>
+        /// Содержит информацию о размерах и цветовом формате независимого от устройства растрового изображения (DIB).
+        /// </summary>
+        [StructLayout(LayoutKind.Sequential)]
+        private struct BITMAPINFOHEADER
+        {
+            public uint biSize;
+            public int biWidth;
+            public int biHeight;
+            public ushort biPlanes;
+            public ushort biBitCount;
+            public uint biCompression;
+            public uint biSizeImage;
+            public int biXPelsPerMeter;
+            public int biYPelsPerMeter;
+            public uint biClrUsed;
+            public uint biClrImportant;
+        }
+
+        #endregion
 
         #region WinAPI Imports
 
-[StructLayout(LayoutKind.Sequential)]
-private struct BITMAPINFOHEADER
-{
-    public uint biSize;
-    public int biWidth;
-    public int biHeight;
-    public ushort biPlanes;
-    public ushort biBitCount;
-    public uint biCompression;
-    public uint biSizeImage;
-    public int biXPelsPerMeter;
-    public int biYPelsPerMeter;
-    public uint biClrUsed;
-    public uint biClrImportant;
-}
-
-// Импорты для работы с контекстом устройства Windows (GDI)
-[LibraryImport("gdi32.dll", EntryPoint = "CreateCompatibleDC")]
-private static partial IntPtr CreateCompatibleDC(IntPtr hdc);
-
-[LibraryImport("gdi32.dll", EntryPoint = "CreateCompatibleBitmap")]
-private static partial IntPtr CreateCompatibleBitmap(IntPtr hdc, int cx, int cy);
-
-[LibraryImport("gdi32.dll", EntryPoint = "SelectObject")]
-private static partial IntPtr SelectObject(IntPtr hdc, IntPtr hgdiobj);
-
-[LibraryImport("gdi32.dll", EntryPoint = "DeleteObject")]
-[return: MarshalAs(UnmanagedType.Bool)]
-private static partial bool DeleteObject(IntPtr ho);
-
-[LibraryImport("gdi32.dll", EntryPoint = "DeleteDC")]
-[return: MarshalAs(UnmanagedType.Bool)]
-private static partial bool DeleteDC(IntPtr hdc);
-
-[LibraryImport("user32.dll", EntryPoint = "GetDC")]
-private static partial IntPtr GetDC(IntPtr hWnd);
-
-[LibraryImport("user32.dll", EntryPoint = "ReleaseDC")]
-private static partial int ReleaseDC(IntPtr hWnd, IntPtr hDC);
-
-[LibraryImport("gdi32.dll", EntryPoint = "GetDIBits")]
-private static partial int GetDIBits(IntPtr hdc, IntPtr hbm, uint start, uint cLines, byte[] lpvBits, ref BITMAPINFOHEADER lpbmi, uint usage);
-
-
-        // --- Поиск и управление окнами ---
+        // === Поиск и управление окнами ===
 
         /// <summary>
         /// Находит дескриптор окна по имени класса или заголовку.
@@ -92,7 +111,37 @@ private static partial int GetDIBits(IntPtr hdc, IntPtr hbm, uint start, uint cL
         private static partial int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out RECT pvAttribute, int cbAttribute);
 
 
-        // --- Захват экрана и рендеринг ---
+        // === Захват экрана и рендеринг (GDI / Контекст устройства) ===
+
+        /// <summary>
+        /// Получает контекст устройства (HDC) для всего экрана или конкретного окна.
+        /// </summary>
+        [LibraryImport("user32.dll", EntryPoint = "GetDC")]
+        private static partial IntPtr GetDC(IntPtr hWnd);
+
+        /// <summary>
+        /// Освобождает контекст устройства (HDC), возвращая память операционной системе.
+        /// </summary>
+        [LibraryImport("user32.dll", EntryPoint = "ReleaseDC")]
+        private static partial int ReleaseDC(IntPtr hWnd, IntPtr hDC);
+
+        /// <summary>
+        /// Создает контекст устройства в памяти (DC), совместимый с указанным устройством.
+        /// </summary>
+        [LibraryImport("gdi32.dll", EntryPoint = "CreateCompatibleDC")]
+        private static partial IntPtr CreateCompatibleDC(IntPtr hdc);
+
+        /// <summary>
+        /// Создает растровое изображение (Bitmap), совместимое с указанным контекстом устройства.
+        /// </summary>
+        [LibraryImport("gdi32.dll", EntryPoint = "CreateCompatibleBitmap")]
+        private static partial IntPtr CreateCompatibleBitmap(IntPtr hdc, int cx, int cy);
+
+        /// <summary>
+        /// Выбирает объект в указанный контекст устройства (HDC). Новый объект заменяет старый.
+        /// </summary>
+        [LibraryImport("gdi32.dll", EntryPoint = "SelectObject")]
+        private static partial IntPtr SelectObject(IntPtr hdc, IntPtr hgdiobj);
 
         /// <summary>
         /// Копирует визуальное содержимое окна в указанный контекст устройства (HDC).
@@ -101,8 +150,28 @@ private static partial int GetDIBits(IntPtr hdc, IntPtr hbm, uint start, uint cL
         [return: MarshalAs(UnmanagedType.Bool)]
         private static partial bool PrintWindow(IntPtr hwnd, IntPtr hdcBlt, uint nFlags);
 
+        /// <summary>
+        /// Получает биты указанного совместимого растрового изображения и копирует их в буфер.
+        /// </summary>
+        [LibraryImport("gdi32.dll", EntryPoint = "GetDIBits")]
+        private static partial int GetDIBits(IntPtr hdc, IntPtr hbm, uint start, uint cLines, byte[] lpvBits, ref BITMAPINFOHEADER lpbmi, uint usage);
 
-        // --- Фоновая отправка событий (Клик/Ввод) ---
+        /// <summary>
+        /// Удаляет логическое перо, кисть, шрифт, растровое изображение или палитру, освобождая ресурсы.
+        /// </summary>
+        [LibraryImport("gdi32.dll", EntryPoint = "DeleteObject")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static partial bool DeleteObject(IntPtr ho);
+
+        /// <summary>
+        /// Удаляет указанный контекст устройства (DC) из памяти.
+        /// </summary>
+        [LibraryImport("gdi32.dll", EntryPoint = "DeleteDC")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static partial bool DeleteDC(IntPtr hdc);
+
+
+        // === Фоновая отправка событий (Клик/Ввод) ===
 
         /// <summary>
         /// Помещает сообщение в очередь сообщений связанного с окном потока без ожидания ответа.
@@ -113,18 +182,17 @@ private static partial int GetDIBits(IntPtr hdc, IntPtr hbm, uint start, uint cL
 
         #endregion
 
-
         #region Constants & Fields
 
-        // Константы для Windows сообщений (мышь)
+        // --- Константы мыши (Windows Messages) ---
         private const uint WM_LBUTTONDOWN = 0x0201; // Нажатие левой кнопки мыши
         private const uint WM_LBUTTONUP = 0x0202;   // Отпускание левой кнопки мыши
 
-        // Константы для Desktop Window Manager (DWM) и рендеринга
+        // --- Константы графического интерфейса и DWM ---
         private const int DWMWA_EXTENDED_FRAME_BOUNDS = 9; // Флаг получения реальных границ окна в Win 10/11
         private const uint PW_RENDERFULLCONTENT = 2;       // Флаг полного рендеринга содержимого (DirectX/OpenGL эмуляторы)
 
-        // Глобальные утилиты
+        // --- Глобальные утилиты ---
         private static readonly Random _random = new();
 
         #endregion
@@ -221,12 +289,12 @@ private static partial int GetDIBits(IntPtr hdc, IntPtr hbm, uint start, uint cL
         using var croppedScreen = searchArea.HasValue ? new Mat(screen!, searchArea.Value) : screen!.Clone();
         using Mat matTemplate = Cv2.ImRead(templatePath, ImreadModes.Color);
 
-        if (matTemplate.Empty()) 
+        if (matTemplate.Empty())
         {
             Console.WriteLine($"[Ошибка] Не удалось загрузить шаблон: {templatePath}");
             return null;
         }
-        
+
         if (matTemplate.Width > croppedScreen.Width || matTemplate.Height > croppedScreen.Height)
         {
             Console.WriteLine($"[Ошибка] Шаблон {templatePath} ({matTemplate.Width}x{matTemplate.Height}) больше области поиска ({croppedScreen.Width}x{croppedScreen.Height})!");
