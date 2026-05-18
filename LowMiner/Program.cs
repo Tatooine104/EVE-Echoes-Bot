@@ -4,54 +4,15 @@ using System.Text.Json;
 namespace LowMiner
 {
 
-    #region WinAPI Structures
-
-    /// <summary>
-    /// Определяет координаты левого верхнего и правого нижнего углов прямоугольника.
-    /// </summary>
-    [StructLayout(LayoutKind.Sequential)]
-    public struct RECT
-    {
-        public int Left;
-        public int Top;
-        public int Right;
-        public int Bottom;
-    }
-
-    /// <summary>
-    /// Содержит информацию о размерах и цветовом формате независимого от устройства растрового изображения (DIB).
-    /// </summary>
-    [StructLayout(LayoutKind.Sequential)]
-    private struct BITMAPINFOHEADER
-    {
-        public uint biSize;
-        public int biWidth;
-        public int biHeight;
-        public ushort biPlanes;
-        public ushort biBitCount;
-        public uint biCompression;
-        public uint biSizeImage;
-        public int biXPelsPerMeter;
-        public int biYPelsPerMeter;
-        public uint biClrUsed;
-        public uint biClrImportant;
-    }
-
-    #endregion
-
     static partial class Program
     {
         #region WinAPI Imports
-
-    static partial class Program
-    {
-        #region WinAPI Structures
 
         /// <summary>
         /// Определяет координаты левого верхнего и правого нижнего углов прямоугольника.
         /// </summary>
         [StructLayout(LayoutKind.Sequential)]
-        private struct RECT
+        private struct RECT // ТЕПЕРЬ ЭТО КОРРЕКТНО, ТАК КАК МЫ ВНУТРИ КЛАССА
         {
             public int Left;
             public int Top;
@@ -195,200 +156,199 @@ namespace LowMiner
         // --- Глобальные утилиты ---
         private static readonly Random _random = new();
 
-            #endregion
+        #endregion
 
-            #region Bot params
+        #region Bot params
 
-            private static bool IsSave = true;
+        private static bool IsSave = true;
 
-            #endregion
+        #endregion
 
-            // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-            // - + - + - + - + - |  Основная программа   | - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-            // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+        // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+        // - + - + - + - + - |  Основная программа   | - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+        // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
-            #region Main
+        #region Main
 
 
-            static void Main()
+        static void Main()
+        {
+            // Фиктивная строка для предотвращения автоудаления using в VS Code
+            _ = typeof(OpenCvSharp.Mat);
+
+            Console.Title = "Тестирование статуса безопасности (IsSave)";
+            ConsolePrint("Запуск теста комплексного поиска шаблонов...", ConsoleColor.Cyan);
+
+            // 1. Загружаем настройки из файла
+            BotConfig config = ConfigManager.Load();
+
+            // Берем первый доступный аккаунт для теста
+            WindowSettings? testAccount = config.Accounts.FirstOrDefault();
+
+            if (testAccount == null)
             {
-                _ = typeof(OpenCvSharp.Mat);
-                Console.Title = "Диагностика поиска";
-                ConsolePrint("Запуск диагностики...", ConsoleColor.Cyan);
-
-                BotConfig config = ConfigManager.Load();
-                WindowSettings? testAccount = config.Accounts.FirstOrDefault();
-
-                if (testAccount == null) return;
-
-                IntPtr hWnd = GetWindow(testAccount);
-
-                if (hWnd != IntPtr.Zero)
-                {
-                    System.Threading.Thread.Sleep(1000); // Даем окну время перерисоваться
-                    using OpenCvSharp.Mat? screenshot = CaptureWindow(hWnd);
-
-                    if (screenshot?.Empty() is false)
-                    {
-                        // Сохраняем текущий скриншот для ручного анализа рамок
-                        string debugCapturePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "current_screen.png");
-                        OpenCvSharp.Cv2.ImWrite(debugCapturePath, screenshot);
-                        ConsolePrint($"[Инфо] Снимок экрана сохранен в: {debugCapturePath}", ConsoleColor.DarkGray);
-
-                        string[] templates = ["imgLocalCriminal.png", "imgLocalMinus.png", "imgLocalNeutral.png"];
-
-                        foreach (string templateName in templates)
-                        {
-                            // ПРАВКА: Собираем путь с учетом подпапки "images"
-                            string fullTemplatePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", templateName);
-
-                            if (!File.Exists(fullTemplatePath))
-                            {
-                                ConsolePrint($"[-] {templateName}: Файл не найден по пути: {fullTemplatePath}", ConsoleColor.DarkYellow);
-                                continue;
-                            }
-
-                            // Передаем правильный полный путь в поисковик
-                            OpenCvSharp.Point? foundPoint = FindTemplateInRegion(screenshot, fullTemplatePath, null, 0.85);
-
-                            if (foundPoint.HasValue)
-                            {
-                                ConsolePrint($"[+] {templateName}: Да ({foundPoint.Value.X}x{foundPoint.Value.Y})", ConsoleColor.Green);
-                            }
-                            else
-                            {
-                                ConsolePrint($"[-] {templateName}: Нет", ConsoleColor.Red);
-                            }
-                        }
-                    }
-                }
+                ConsolePrint("[Ошибка] В конфигурации нет доступных аккаунтов!", ConsoleColor.Red);
                 Console.ReadKey();
+                return;
             }
 
+            // 2. Находим и масштабируем окно под 1280x720
+            IntPtr hWnd = GetWindow(testAccount);
+
+            if (hWnd != IntPtr.Zero)
+            {
+                ConsolePrint($"Окно '{testAccount.WindowTitle}' успешно найдено и подготовлено.", ConsoleColor.Gray);
+                ConsolePrint("Ожидание 1 секунды для стабильной перерисовки...", ConsoleColor.DarkGray);
+                System.Threading.Thread.Sleep(1000);
+
+                // 3. Делаем кроссплатформенный скриншот окна
+                ConsolePrint("Выполняю захват экрана...", ConsoleColor.Gray);
+                using OpenCvSharp.Mat? screenshot = CaptureWindow(hWnd);
+
+                if (screenshot?.Empty() is false)
+                {
+                    ConsolePrint("\n--- Запуск анализа экрана ---", ConsoleColor.Gray);
+
+                    // 4. Вызываем новый метод проверки
+                    CheckSecurityStatus(screenshot);
+
+                    // 5. Финальная визуальная проверка глобальной переменной
+                    ConsolePrint("\n--- Проверка глобального состояния бота ---", ConsoleColor.Gray);
+                    if (IsSave)
+                    {
+                        ConsolePrint($"[СТАТУС ИЗ ГЛОБАЛЬНОЙ ПЕРЕМЕННОЙ] IsSave = {IsSave}. Все элементы найдены. Бот может продолжать работу.", ConsoleColor.Green);
+                    }
+                    else
+                    {
+                        ConsolePrint($"[СТАТУС ИЗ ГЛОБАЛЬНОЙ ПЕРЕМЕННОЙ] IsSave = {IsSave}. Обнаружен дефицит элементов! Бот должен среагировать.", ConsoleColor.Magenta);
+                    }
+                }
+                else
+                {
+                    ConsolePrint("[Ошибка] Метод CaptureWindow вернул пустую матрицу. Проверьте эмулятор.", ConsoleColor.Red);
+                }
+            }
+
+            //ConsolePrint("\nТест завершен. Нажми любую клавишу...");
+            //Console.ReadKey();
+        }
 
 
-            #endregion
 
-            #region EVE Echoes Methods 
+
+        #endregion
+
+        #region EVE Echoes Methods 
 
         /// <summary>
-        /// Проверяет экран на наличие враждебных пилотов и обновляет глобальный статус безопасности.
+        /// Проверяет экран на наличие обязательных элементов интерфейса.
+        /// Устанавливает IsSave = true только если найдены все три шаблона.
         /// </summary>
         /// <param name="screenshot">Текущий снимок экрана эмулятора.</param>
         static void CheckSecurityStatus(OpenCvSharp.Mat screenshot)
         {
-            // Имена файлов шаблонов угроз
             string[] templates = ["imgLocalCriminal.png", "imgLocalMinus.png", "imgLocalNeutral.png"];
-
-            // Предполагаем, что всё безопасно, пока не доказано обратное
             bool currentStatus = true;
 
             foreach (string templateName in templates)
             {
                 string fullTemplatePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", templateName);
 
+                // Если файла шаблона физически нет на диске, мы гарантированно не сможем его найти
                 if (!File.Exists(fullTemplatePath))
                 {
-                    ConsolePrint($"[-] {templateName}: Файл не найден по пути: {fullTemplatePath}", ConsoleColor.DarkYellow);
+                    currentStatus = false;
                     continue;
                 }
 
-                // Ищем шаблон с надежным порогом 0.85
+                // Ищем шаблон в фоновом режиме без вывода логов
                 OpenCvSharp.Point? foundPoint = FindTemplateInRegion(screenshot, fullTemplatePath, null, 0.85);
 
-                if (foundPoint.HasValue)
+                // Если хотя бы один обязательный шаблон отсутствует — система не в безопасности
+                if (!foundPoint.HasValue)
                 {
-                    ConsolePrint($"[УГРОЗА] {templateName}: Обнаружен на ({foundPoint.Value.X}x{foundPoint.Value.Y})", ConsoleColor.Red);
-
-                    // Если нашли ХОТЯ БЫ ОДИН шаблон угрозы — система больше НЕ безопасна
                     currentStatus = false;
                 }
-                else
-                {
-                    ConsolePrint($"[ОК] {templateName}: Не обнаружен", ConsoleColor.DarkGreen);
-                }
             }
 
-            // Записываем результат в глобальную переменную
+            // Записываем итоговый результат проверки в глобальную переменную
             IsSave = currentStatus;
 
-            // Выводим итоговый статус в консоль
-            if (IsSave)
+            // Выводим сообщение в консоль только в случае обнаружения опасности
+            if (!IsSave)
             {
-                ConsolePrint("=== СИСТЕМА БЕЗОПАСНА (IsSave = True) ===", ConsoleColor.Green);
-            }
-            else
-            {
-                ConsolePrint("=== ВНИМАНИЕ! ОБНАРУЖЕНА УГРОЗА (IsSave = False) ===", ConsoleColor.Magenta);
+                ConsolePrint("=== ВНИМАНИЕ! Обнаружена опасность!", ConsoleColor.Magenta);
             }
         }
 
 
-            #endregion
 
-            // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-            // - + - + - + - + - | Остальные методы и функции, используемые в основной программе | - + - + - + - + -
-            // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+        #endregion
 
-
-
-            #region Others Methods 
+        // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+        // - + - + - + - + - | Остальные методы и функции, используемые в основной программе | - + - + - + - + -
+        // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
 
-            /// <summary>
-            /// Кросплатформенный метод поиска шаблона на кадре по форме.
-            /// </summary>
-            /// <param name="screen">Матрица полного скриншота эмулятора.</param>
-            /// <param name="templatePath">Путь к файлу-шаблону.</param>
-            /// <param name="searchArea">Область поиска. Если null — поиск по всему кадру.</param>
-            /// <param name="threshold">Порог точности (0.0 - 1.0).</param>
-            /// <returns>Точка центра или null.</returns>
-            public static OpenCvSharp.Point? FindTemplateInRegion(OpenCvSharp.Mat screen, string templatePath, OpenCvSharp.Rect? searchArea = null, double threshold = 0.55)
+
+        #region Others Methods 
+
+
+        /// <summary>
+        /// Кросплатформенный метод поиска шаблона на кадре по форме.
+        /// </summary>
+        /// <param name="screen">Матрица полного скриншота эмулятора.</param>
+        /// <param name="templatePath">Путь к файлу-шаблону.</param>
+        /// <param name="searchArea">Область поиска. Если null — поиск по всему кадру.</param>
+        /// <param name="threshold">Порог точности (0.0 - 1.0).</param>
+        /// <returns>Точка центра или null.</returns>
+        public static OpenCvSharp.Point? FindTemplateInRegion(OpenCvSharp.Mat screen, string templatePath, OpenCvSharp.Rect? searchArea = null, double threshold = 0.55)
+        {
+            if (screen?.Empty() is not false) return null;
+
+            using var croppedScreen = searchArea.HasValue ? new Mat(screen!, searchArea.Value) : screen!.Clone();
+            using var matTemplate = Cv2.ImRead(templatePath, ImreadModes.Color);
+
+            if (matTemplate.Empty())
             {
-                if (screen?.Empty() is not false) return null;
-
-                using var croppedScreen = searchArea.HasValue ? new Mat(screen!, searchArea.Value) : screen!.Clone();
-                using Mat matTemplate = Cv2.ImRead(templatePath, ImreadModes.Color);
-
-                if (matTemplate.Empty())
-                {
-                    Console.WriteLine($"[Ошибка] Не удалось загрузить шаблон: {templatePath}");
-                    return null;
-                }
-
-                if (matTemplate.Width > croppedScreen.Width || matTemplate.Height > croppedScreen.Height)
-                {
-                    Console.WriteLine($"[Ошибка] Шаблон {templatePath} ({matTemplate.Width}x{matTemplate.Height}) больше области поиска ({croppedScreen.Width}x{croppedScreen.Height})!");
-                    return null;
-                }
-
-                using Mat grayScreen = new();
-                using Mat grayTemplate = new();
-                Cv2.CvtColor(croppedScreen, grayScreen, ColorConversionCodes.BGR2GRAY);
-                Cv2.CvtColor(matTemplate, grayTemplate, ColorConversionCodes.BGR2GRAY);
-
-                using Mat result = new();
-                Cv2.MatchTemplate(grayScreen, grayTemplate, result, TemplateMatchModes.CCoeffNormed);
-                Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out OpenCvSharp.Point maxLoc);
-
-                // ВЫВОД ДИАГНОСТИКИ: Показывает реальную максимальную схожесть в диапазоне от 0.0 до 1.0
-                double matchPercentage = maxVal * 100;
-                Console.WriteLine($"   -> Диагностика {templatePath}: Макс. совпадение = {matchPercentage:F1}%");
-
-                if (maxVal >= threshold)
-                {
-                    int offsetX = searchArea?.X ?? 0;
-                    int offsetY = searchArea?.Y ?? 0;
-
-                    int centerX = offsetX + maxLoc.X + (matTemplate.Width / 2);
-                    int centerY = offsetY + maxLoc.Y + (matTemplate.Height / 2);
-
-                    return new OpenCvSharp.Point(centerX, centerY);
-                }
-
+                Console.WriteLine($"[Ошибка] Не удалось загрузить шаблон: {templatePath}");
                 return null;
             }
 
+            if (matTemplate.Width > croppedScreen.Width || matTemplate.Height > croppedScreen.Height)
+            {
+                Console.WriteLine($"[Ошибка] Шаблон {templatePath} ({matTemplate.Width}x{matTemplate.Height}) больше области поиска ({croppedScreen.Width}x{croppedScreen.Height})!");
+                return null;
+            }
+
+            using Mat grayScreen = new();
+            using Mat grayTemplate = new();
+            Cv2.CvtColor(croppedScreen, grayScreen, ColorConversionCodes.BGR2GRAY);
+            Cv2.CvtColor(matTemplate, grayTemplate, ColorConversionCodes.BGR2GRAY);
+
+            using Mat result = new();
+            Cv2.MatchTemplate(grayScreen, grayTemplate, result, TemplateMatchModes.CCoeffNormed);
+            Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out OpenCvSharp.Point maxLoc);
+
+#if DEBUG
+            // Этот блок выполнится ТОЛЬКО в режиме Debug
+            double matchPercentage = maxVal * 100;
+            Console.WriteLine($"   -> Диагностика {templatePath}: Макс. совпадение = {matchPercentage:F1}%");
+#endif
+
+            if (maxVal >= threshold)
+            {
+                int offsetX = searchArea?.X ?? 0;
+                int offsetY = searchArea?.Y ?? 0;
+
+                int centerX = offsetX + maxLoc.X + (matTemplate.Width / 2);
+                int centerY = offsetY + maxLoc.Y + (matTemplate.Height / 2);
+
+                return new OpenCvSharp.Point(centerX, centerY);
+            }
+
+            return null;
+        }
 
 
         /// <summary>
@@ -642,18 +602,18 @@ namespace LowMiner
                 return defaultConfig;
             }
 
-        try
-        {
-            string json = File.ReadAllText(ConfigPath);
+            try
+            {
+                string json = File.ReadAllText(ConfigPath);
 
-            // ИСПРАВЛЕНО: Добавлен оператор '!' после закрывающей круглой скобки метода Deserialize
-            return JsonSerializer.Deserialize<BotConfig>(json, _options)! ?? new();
-        }
-        catch (Exception ex)
-        {
-            Program.ConsolePrint($"[Ошибка] Не удалось прочитать конфиг: {ex.Message}", ConsoleColor.Red);
-            return new();
-        }
+                // ИСПРАВЛЕНО: Добавлен оператор '!' после закрывающей круглой скобки метода Deserialize
+                return JsonSerializer.Deserialize<BotConfig>(json, _options)! ?? new();
+            }
+            catch (Exception ex)
+            {
+                Program.ConsolePrint($"[Ошибка] Не удалось прочитать конфиг: {ex.Message}", ConsoleColor.Red);
+                return new();
+            }
         }
 
         public static void Save(BotConfig config)
