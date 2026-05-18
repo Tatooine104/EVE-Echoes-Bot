@@ -195,138 +195,199 @@ namespace LowMiner
         // --- Глобальные утилиты ---
         private static readonly Random _random = new();
 
-        #endregion
+            #endregion
 
-        // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-        // - + - + - + - + - |  Основная программа   | - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-        // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+            #region Bot params
 
-        #region Main
+            private static bool IsSave = true;
+
+            #endregion
+
+            // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+            // - + - + - + - + - |  Основная программа   | - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+            // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+            #region Main
 
 
-        static void Main()
-        {
-            _ = typeof(OpenCvSharp.Mat);
-            Console.Title = "Диагностика поиска";
-            ConsolePrint("Запуск диагностики...", ConsoleColor.Cyan);
-
-            BotConfig config = ConfigManager.Load();
-            WindowSettings? testAccount = config.Accounts.FirstOrDefault();
-
-            if (testAccount == null) return;
-
-            IntPtr hWnd = GetWindow(testAccount);
-
-            if (hWnd != IntPtr.Zero)
+            static void Main()
             {
-                System.Threading.Thread.Sleep(1000); // Даем окну время перерисоваться
-                using OpenCvSharp.Mat? screenshot = CaptureWindow(hWnd);
+                _ = typeof(OpenCvSharp.Mat);
+                Console.Title = "Диагностика поиска";
+                ConsolePrint("Запуск диагностики...", ConsoleColor.Cyan);
 
-                if (screenshot?.Empty() is false)
+                BotConfig config = ConfigManager.Load();
+                WindowSettings? testAccount = config.Accounts.FirstOrDefault();
+
+                if (testAccount == null) return;
+
+                IntPtr hWnd = GetWindow(testAccount);
+
+                if (hWnd != IntPtr.Zero)
                 {
-                    // Сохраняем текущий скриншот для ручного анализа рамок
-                    string debugCapturePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "current_screen.png");
-                    OpenCvSharp.Cv2.ImWrite(debugCapturePath, screenshot);
-                    ConsolePrint($"[Инфо] Снимок экрана сохранен в: {debugCapturePath}", ConsoleColor.DarkGray);
+                    System.Threading.Thread.Sleep(1000); // Даем окну время перерисоваться
+                    using OpenCvSharp.Mat? screenshot = CaptureWindow(hWnd);
 
-                    string[] templates = ["imgLocalCriminal.png", "imgLocalMinus.png", "imgLocalNeutral.png"];
-
-                    foreach (string templateName in templates)
+                    if (screenshot?.Empty() is false)
                     {
-                        // ПРАВКА: Собираем путь с учетом подпапки "images"
-                        string fullTemplatePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", templateName);
+                        // Сохраняем текущий скриншот для ручного анализа рамок
+                        string debugCapturePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "current_screen.png");
+                        OpenCvSharp.Cv2.ImWrite(debugCapturePath, screenshot);
+                        ConsolePrint($"[Инфо] Снимок экрана сохранен в: {debugCapturePath}", ConsoleColor.DarkGray);
 
-                        if (!File.Exists(fullTemplatePath))
-                        {
-                            ConsolePrint($"[-] {templateName}: Файл не найден по пути: {fullTemplatePath}", ConsoleColor.DarkYellow);
-                            continue;
-                        }
+                        string[] templates = ["imgLocalCriminal.png", "imgLocalMinus.png", "imgLocalNeutral.png"];
 
-                        // Передаем правильный полный путь в поисковик
-                        OpenCvSharp.Point? foundPoint = FindTemplateInRegion(screenshot, fullTemplatePath, null, 0.85);
+                        foreach (string templateName in templates)
+                        {
+                            // ПРАВКА: Собираем путь с учетом подпапки "images"
+                            string fullTemplatePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", templateName);
 
-                        if (foundPoint.HasValue)
-                        {
-                            ConsolePrint($"[+] {templateName}: Да ({foundPoint.Value.X}x{foundPoint.Value.Y})", ConsoleColor.Green);
-                        }
-                        else
-                        {
-                            ConsolePrint($"[-] {templateName}: Нет", ConsoleColor.Red);
+                            if (!File.Exists(fullTemplatePath))
+                            {
+                                ConsolePrint($"[-] {templateName}: Файл не найден по пути: {fullTemplatePath}", ConsoleColor.DarkYellow);
+                                continue;
+                            }
+
+                            // Передаем правильный полный путь в поисковик
+                            OpenCvSharp.Point? foundPoint = FindTemplateInRegion(screenshot, fullTemplatePath, null, 0.85);
+
+                            if (foundPoint.HasValue)
+                            {
+                                ConsolePrint($"[+] {templateName}: Да ({foundPoint.Value.X}x{foundPoint.Value.Y})", ConsoleColor.Green);
+                            }
+                            else
+                            {
+                                ConsolePrint($"[-] {templateName}: Нет", ConsoleColor.Red);
+                            }
                         }
                     }
                 }
+                Console.ReadKey();
             }
-            Console.ReadKey();
-        }
 
 
 
-        #endregion
+            #endregion
 
+            #region EVE Echoes Methods 
 
-
-        // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-        // - + - + - + - + - | Остальные методы и функции, используемые в основной программе | - + - + - + - + -
-        // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-
-
-
-        #region Others Methods 
-
-
-    /// <summary>
-    /// Кросплатформенный метод поиска шаблона на кадре по форме.
-    /// </summary>
-    /// <param name="screen">Матрица полного скриншота эмулятора.</param>
-    /// <param name="templatePath">Путь к файлу-шаблону.</param>
-    /// <param name="searchArea">Область поиска. Если null — поиск по всему кадру.</param>
-    /// <param name="threshold">Порог точности (0.0 - 1.0).</param>
-    /// <returns>Точка центра или null.</returns>
-    public static OpenCvSharp.Point? FindTemplateInRegion(OpenCvSharp.Mat screen, string templatePath, OpenCvSharp.Rect? searchArea = null, double threshold = 0.55)
-    {
-        if (screen?.Empty() is not false) return null;
-
-        using var croppedScreen = searchArea.HasValue ? new Mat(screen!, searchArea.Value) : screen!.Clone();
-        using Mat matTemplate = Cv2.ImRead(templatePath, ImreadModes.Color);
-
-        if (matTemplate.Empty())
+        /// <summary>
+        /// Проверяет экран на наличие враждебных пилотов и обновляет глобальный статус безопасности.
+        /// </summary>
+        /// <param name="screenshot">Текущий снимок экрана эмулятора.</param>
+        static void CheckSecurityStatus(OpenCvSharp.Mat screenshot)
         {
-            Console.WriteLine($"[Ошибка] Не удалось загрузить шаблон: {templatePath}");
-            return null;
+            // Имена файлов шаблонов угроз
+            string[] templates = ["imgLocalCriminal.png", "imgLocalMinus.png", "imgLocalNeutral.png"];
+
+            // Предполагаем, что всё безопасно, пока не доказано обратное
+            bool currentStatus = true;
+
+            foreach (string templateName in templates)
+            {
+                string fullTemplatePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", templateName);
+
+                if (!File.Exists(fullTemplatePath))
+                {
+                    ConsolePrint($"[-] {templateName}: Файл не найден по пути: {fullTemplatePath}", ConsoleColor.DarkYellow);
+                    continue;
+                }
+
+                // Ищем шаблон с надежным порогом 0.85
+                OpenCvSharp.Point? foundPoint = FindTemplateInRegion(screenshot, fullTemplatePath, null, 0.85);
+
+                if (foundPoint.HasValue)
+                {
+                    ConsolePrint($"[УГРОЗА] {templateName}: Обнаружен на ({foundPoint.Value.X}x{foundPoint.Value.Y})", ConsoleColor.Red);
+
+                    // Если нашли ХОТЯ БЫ ОДИН шаблон угрозы — система больше НЕ безопасна
+                    currentStatus = false;
+                }
+                else
+                {
+                    ConsolePrint($"[ОК] {templateName}: Не обнаружен", ConsoleColor.DarkGreen);
+                }
+            }
+
+            // Записываем результат в глобальную переменную
+            IsSave = currentStatus;
+
+            // Выводим итоговый статус в консоль
+            if (IsSave)
+            {
+                ConsolePrint("=== СИСТЕМА БЕЗОПАСНА (IsSave = True) ===", ConsoleColor.Green);
+            }
+            else
+            {
+                ConsolePrint("=== ВНИМАНИЕ! ОБНАРУЖЕНА УГРОЗА (IsSave = False) ===", ConsoleColor.Magenta);
+            }
         }
 
-        if (matTemplate.Width > croppedScreen.Width || matTemplate.Height > croppedScreen.Height)
-        {
-            Console.WriteLine($"[Ошибка] Шаблон {templatePath} ({matTemplate.Width}x{matTemplate.Height}) больше области поиска ({croppedScreen.Width}x{croppedScreen.Height})!");
-            return null;
-        }
 
-        using Mat grayScreen = new();
-        using Mat grayTemplate = new();
-        Cv2.CvtColor(croppedScreen, grayScreen, ColorConversionCodes.BGR2GRAY);
-        Cv2.CvtColor(matTemplate, grayTemplate, ColorConversionCodes.BGR2GRAY);
+            #endregion
 
-        using Mat result = new();
-        Cv2.MatchTemplate(grayScreen, grayTemplate, result, TemplateMatchModes.CCoeffNormed);
-        Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out OpenCvSharp.Point maxLoc);
+            // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+            // - + - + - + - + - | Остальные методы и функции, используемые в основной программе | - + - + - + - + -
+            // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
-        // ВЫВОД ДИАГНОСТИКИ: Показывает реальную максимальную схожесть в диапазоне от 0.0 до 1.0
-        double matchPercentage = maxVal * 100;
-        Console.WriteLine($"   -> Диагностика {templatePath}: Макс. совпадение = {matchPercentage:F1}%");
 
-        if (maxVal >= threshold)
-        {
-            int offsetX = searchArea?.X ?? 0;
-            int offsetY = searchArea?.Y ?? 0;
 
-            int centerX = offsetX + maxLoc.X + (matTemplate.Width / 2);
-            int centerY = offsetY + maxLoc.Y + (matTemplate.Height / 2);
+            #region Others Methods 
 
-            return new OpenCvSharp.Point(centerX, centerY);
-        }
 
-        return null;
-    }
+            /// <summary>
+            /// Кросплатформенный метод поиска шаблона на кадре по форме.
+            /// </summary>
+            /// <param name="screen">Матрица полного скриншота эмулятора.</param>
+            /// <param name="templatePath">Путь к файлу-шаблону.</param>
+            /// <param name="searchArea">Область поиска. Если null — поиск по всему кадру.</param>
+            /// <param name="threshold">Порог точности (0.0 - 1.0).</param>
+            /// <returns>Точка центра или null.</returns>
+            public static OpenCvSharp.Point? FindTemplateInRegion(OpenCvSharp.Mat screen, string templatePath, OpenCvSharp.Rect? searchArea = null, double threshold = 0.55)
+            {
+                if (screen?.Empty() is not false) return null;
+
+                using var croppedScreen = searchArea.HasValue ? new Mat(screen!, searchArea.Value) : screen!.Clone();
+                using Mat matTemplate = Cv2.ImRead(templatePath, ImreadModes.Color);
+
+                if (matTemplate.Empty())
+                {
+                    Console.WriteLine($"[Ошибка] Не удалось загрузить шаблон: {templatePath}");
+                    return null;
+                }
+
+                if (matTemplate.Width > croppedScreen.Width || matTemplate.Height > croppedScreen.Height)
+                {
+                    Console.WriteLine($"[Ошибка] Шаблон {templatePath} ({matTemplate.Width}x{matTemplate.Height}) больше области поиска ({croppedScreen.Width}x{croppedScreen.Height})!");
+                    return null;
+                }
+
+                using Mat grayScreen = new();
+                using Mat grayTemplate = new();
+                Cv2.CvtColor(croppedScreen, grayScreen, ColorConversionCodes.BGR2GRAY);
+                Cv2.CvtColor(matTemplate, grayTemplate, ColorConversionCodes.BGR2GRAY);
+
+                using Mat result = new();
+                Cv2.MatchTemplate(grayScreen, grayTemplate, result, TemplateMatchModes.CCoeffNormed);
+                Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out OpenCvSharp.Point maxLoc);
+
+                // ВЫВОД ДИАГНОСТИКИ: Показывает реальную максимальную схожесть в диапазоне от 0.0 до 1.0
+                double matchPercentage = maxVal * 100;
+                Console.WriteLine($"   -> Диагностика {templatePath}: Макс. совпадение = {matchPercentage:F1}%");
+
+                if (maxVal >= threshold)
+                {
+                    int offsetX = searchArea?.X ?? 0;
+                    int offsetY = searchArea?.Y ?? 0;
+
+                    int centerX = offsetX + maxLoc.X + (matTemplate.Width / 2);
+                    int centerY = offsetY + maxLoc.Y + (matTemplate.Height / 2);
+
+                    return new OpenCvSharp.Point(centerX, centerY);
+                }
+
+                return null;
+            }
 
 
 
