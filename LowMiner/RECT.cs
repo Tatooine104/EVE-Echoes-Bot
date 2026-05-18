@@ -1,6 +1,5 @@
 ﻿using System.Runtime.InteropServices;
 using System.Text.Json;
-using System.Drawing;
 
 namespace LowMiner
 {
@@ -19,6 +18,50 @@ namespace LowMiner
 
 
         #region WinAPI Imports
+
+[StructLayout(LayoutKind.Sequential)]
+private struct BITMAPINFOHEADER
+{
+    public uint biSize;
+    public int biWidth;
+    public int biHeight;
+    public ushort biPlanes;
+    public ushort biBitCount;
+    public uint biCompression;
+    public uint biSizeImage;
+    public int biXPelsPerMeter;
+    public int biYPelsPerMeter;
+    public uint biClrUsed;
+    public uint biClrImportant;
+}
+
+// Импорты для работы с контекстом устройства Windows (GDI)
+[LibraryImport("gdi32.dll", EntryPoint = "CreateCompatibleDC")]
+private static partial IntPtr CreateCompatibleDC(IntPtr hdc);
+
+[LibraryImport("gdi32.dll", EntryPoint = "CreateCompatibleBitmap")]
+private static partial IntPtr CreateCompatibleBitmap(IntPtr hdc, int cx, int cy);
+
+[LibraryImport("gdi32.dll", EntryPoint = "SelectObject")]
+private static partial IntPtr SelectObject(IntPtr hdc, IntPtr hgdiobj);
+
+[LibraryImport("gdi32.dll", EntryPoint = "DeleteObject")]
+[return: MarshalAs(UnmanagedType.Bool)]
+private static partial bool DeleteObject(IntPtr ho);
+
+[LibraryImport("gdi32.dll", EntryPoint = "DeleteDC")]
+[return: MarshalAs(UnmanagedType.Bool)]
+private static partial bool DeleteDC(IntPtr hdc);
+
+[LibraryImport("user32.dll", EntryPoint = "GetDC")]
+private static partial IntPtr GetDC(IntPtr hWnd);
+
+[LibraryImport("user32.dll", EntryPoint = "ReleaseDC")]
+private static partial int ReleaseDC(IntPtr hWnd, IntPtr hDC);
+
+[LibraryImport("gdi32.dll", EntryPoint = "GetDIBits")]
+private static partial int GetDIBits(IntPtr hdc, IntPtr hbm, uint start, uint cLines, byte[] lpvBits, ref BITMAPINFOHEADER lpbmi, uint usage);
+
 
         // --- Поиск и управление окнами ---
 
@@ -50,7 +93,7 @@ namespace LowMiner
 
 
         // --- Захват экрана и рендеринг ---
-        
+
         /// <summary>
         /// Копирует визуальное содержимое окна в указанный контекст устройства (HDC).
         /// </summary>
@@ -60,7 +103,7 @@ namespace LowMiner
 
 
         // --- Фоновая отправка событий (Клик/Ввод) ---
-        
+
         /// <summary>
         /// Помещает сообщение в очередь сообщений связанного с окном потока без ожидания ответа.
         /// </summary>
@@ -93,31 +136,62 @@ namespace LowMiner
         #region Main
 
 
-
         static void Main()
         {
-            Console.Title = "EVE Echoes Bot Controller";
-            ConsolePrint("Запуск LowMiner...", ConsoleColor.Cyan);
+            _ = typeof(OpenCvSharp.Mat);
+            Console.Title = "Диагностика поиска";
+            ConsolePrint("Запуск диагностики...", ConsoleColor.Cyan);
 
-            // 1. Загружаем настройки из файла
             BotConfig config = ConfigManager.Load();
+            WindowSettings? testAccount = config.Accounts.FirstOrDefault();
 
-            // 2. Работаем с прочитанными данными
-            foreach (var account in config.Accounts)
+            if (testAccount == null) return;
+
+            IntPtr hWnd = GetWindow(testAccount);
+
+            if (hWnd != IntPtr.Zero)
             {
-                // ПРАВКА: Передаем объект аккаунта целиком, а не только строку заголовка
-                IntPtr hWnd = GetWindow(account);
+                System.Threading.Thread.Sleep(1000); // Даем окну время перерисоваться
+                using OpenCvSharp.Mat? screenshot = CaptureWindow(hWnd);
 
-                if (hWnd != IntPtr.Zero)
+                if (screenshot?.Empty() is false)
                 {
-                    ConsolePrint($"Аккаунт '{account.AccountName}' готов к работе.", ConsoleColor.Green);
-                    // Теперь можно использовать account.MinDelay, account.MaxDelay и т.д.
+                    // Сохраняем текущий скриншот для ручного анализа рамок
+                    string debugCapturePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "current_screen.png");
+                    OpenCvSharp.Cv2.ImWrite(debugCapturePath, screenshot);
+                    ConsolePrint($"[Инфо] Снимок экрана сохранен в: {debugCapturePath}", ConsoleColor.DarkGray);
+
+                    string[] templates = ["imgLocalCriminal.png", "imgLocalMinus.png", "imgLocalNeutral.png"];
+
+                    foreach (string templateName in templates)
+                    {
+                        // ПРАВКА: Собираем путь с учетом подпапки "images"
+                        string fullTemplatePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", templateName);
+
+                        if (!File.Exists(fullTemplatePath))
+                        {
+                            ConsolePrint($"[-] {templateName}: Файл не найден по пути: {fullTemplatePath}", ConsoleColor.DarkYellow);
+                            continue;
+                        }
+
+                        // Передаем правильный полный путь в поисковик
+                        OpenCvSharp.Point? foundPoint = FindTemplateInRegion(screenshot, fullTemplatePath, null, 0.85);
+
+                        if (foundPoint.HasValue)
+                        {
+                            ConsolePrint($"[+] {templateName}: Да ({foundPoint.Value.X}x{foundPoint.Value.Y})", ConsoleColor.Green);
+                        }
+                        else
+                        {
+                            ConsolePrint($"[-] {templateName}: Нет", ConsoleColor.Red);
+                        }
+                    }
                 }
             }
-
-            ConsolePrint("\nНажми любую клавишу для завершения...");
             Console.ReadKey();
         }
+
+
 
         #endregion
 
@@ -132,45 +206,115 @@ namespace LowMiner
         #region Others Methods 
 
 
+    /// <summary>
+    /// Кросплатформенный метод поиска шаблона на кадре по форме.
+    /// </summary>
+    /// <param name="screen">Матрица полного скриншота эмулятора.</param>
+    /// <param name="templatePath">Путь к файлу-шаблону.</param>
+    /// <param name="searchArea">Область поиска. Если null — поиск по всему кадру.</param>
+    /// <param name="threshold">Порог точности (0.0 - 1.0).</param>
+    /// <returns>Точка центра или null.</returns>
+    public static OpenCvSharp.Point? FindTemplateInRegion(OpenCvSharp.Mat screen, string templatePath, OpenCvSharp.Rect? searchArea = null, double threshold = 0.55)
+    {
+        if (screen?.Empty() is not false) return null;
+
+        using var croppedScreen = searchArea.HasValue ? new Mat(screen!, searchArea.Value) : screen!.Clone();
+        using Mat matTemplate = Cv2.ImRead(templatePath, ImreadModes.Color);
+
+        if (matTemplate.Empty()) 
+        {
+            Console.WriteLine($"[Ошибка] Не удалось загрузить шаблон: {templatePath}");
+            return null;
+        }
+        
+        if (matTemplate.Width > croppedScreen.Width || matTemplate.Height > croppedScreen.Height)
+        {
+            Console.WriteLine($"[Ошибка] Шаблон {templatePath} ({matTemplate.Width}x{matTemplate.Height}) больше области поиска ({croppedScreen.Width}x{croppedScreen.Height})!");
+            return null;
+        }
+
+        using Mat grayScreen = new();
+        using Mat grayTemplate = new();
+        Cv2.CvtColor(croppedScreen, grayScreen, ColorConversionCodes.BGR2GRAY);
+        Cv2.CvtColor(matTemplate, grayTemplate, ColorConversionCodes.BGR2GRAY);
+
+        using Mat result = new();
+        Cv2.MatchTemplate(grayScreen, grayTemplate, result, TemplateMatchModes.CCoeffNormed);
+        Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out OpenCvSharp.Point maxLoc);
+
+        // ВЫВОД ДИАГНОСТИКИ: Показывает реальную максимальную схожесть в диапазоне от 0.0 до 1.0
+        double matchPercentage = maxVal * 100;
+        Console.WriteLine($"   -> Диагностика {templatePath}: Макс. совпадение = {matchPercentage:F1}%");
+
+        if (maxVal >= threshold)
+        {
+            int offsetX = searchArea?.X ?? 0;
+            int offsetY = searchArea?.Y ?? 0;
+
+            int centerX = offsetX + maxLoc.X + (matTemplate.Width / 2);
+            int centerY = offsetY + maxLoc.Y + (matTemplate.Height / 2);
+
+            return new OpenCvSharp.Point(centerX, centerY);
+        }
+
+        return null;
+    }
+
+
 
         /// <summary>
-        /// Делает скриншот целевого окна по его дескриптору, даже если оно перекрыто другими окнами.
+        /// Делает скриншот целевого окна и возвращает его напрямую в формате матрицы OpenCV (Mat).
         /// </summary>
-        /// <param name="hWnd">Дескриптор окна.</param>
-        /// <returns>Объект <see cref="Bitmap"/> с изображением окна, или null в случае ошибки.</returns>
-        static Bitmap CaptureWindow(IntPtr hWnd)
+        /// <param name="hWnd">Дескриптор окна эмулятора.</param>
+        /// <returns>Матрица <see cref="OpenCvSharp.Mat"/> с изображением, или null в случае ошибки.</returns>
+        static OpenCvSharp.Mat? CaptureWindow(IntPtr hWnd) // <--- ДОБАВЛЕН ЗНАК '?'
         {
             if (hWnd == IntPtr.Zero) return null;
 
-            // 1. Получаем размеры окна
             if (!GetWindowRect(hWnd, out RECT rect)) return null;
 
             int width = rect.Right - rect.Left;
             int height = rect.Bottom - rect.Top;
 
-            // Защита от свернутых окон (у них размеры могут быть нулевыми или отрицательными)
             if (width <= 0 || height <= 0) return null;
 
-            // 2. Создаем пустой Bitmap нужного размера
-            Bitmap bmp = new Bitmap(width, height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            IntPtr hdcWindow = GetDC(hWnd);
+            IntPtr hdcMem = CreateCompatibleDC(hdcWindow);
+            IntPtr hBitmap = CreateCompatibleBitmap(hdcWindow, width, height);
+            IntPtr hOldBmp = SelectObject(hdcMem, hBitmap);
 
-            // 3. Используем контекст рисования (Graphics) для захвата изображения окна
-            using (Graphics gfx = Graphics.FromImage(bmp))
+            try
             {
-                IntPtr hdc = gfx.GetHdc();
-                try
-                {
-                    // Вызываем PrintWindow. Флаг PW_RENDERFULLCONTENT (2) корректно захватывает DirectX/OpenGL окна
-                    PrintWindow(hWnd, hdc, PW_RENDERFULLCONTENT);
-                }
-                finally
-                {
-                    gfx.ReleaseHdc(hdc);
-                }
-            }
+                PrintWindow(hWnd, hdcMem, PW_RENDERFULLCONTENT);
 
-            return bmp;
+                BITMAPINFOHEADER bmi = new()
+                {
+                    biSize = (uint)Marshal.SizeOf<BITMAPINFOHEADER>(),
+                    biWidth = width,
+                    biHeight = -height,
+                    biPlanes = 1,
+                    biBitCount = 32,
+                    biCompression = 0
+                };
+
+                byte[] rawPixels = new byte[width * height * 4];
+                GetDIBits(hdcMem, hBitmap, 0, (uint)height, rawPixels, ref bmi, 0);
+
+                OpenCvSharp.Mat mat = new(height, width, OpenCvSharp.MatType.CV_8UC4);
+                Marshal.Copy(rawPixels, 0, mat.Data, rawPixels.Length);
+
+                return mat;
+            }
+            finally
+            {
+                SelectObject(hdcMem, hOldBmp);
+                DeleteObject(hBitmap);
+                DeleteDC(hdcMem);
+                _ = ReleaseDC(hWnd, hdcWindow);
+            }
         }
+
+
 
 
 
@@ -181,16 +325,16 @@ namespace LowMiner
         {
             if (hWnd == IntPtr.Zero) return false;
 
-            int structSize = Marshal.SizeOf(typeof(RECT));
+            int structSize = Marshal.SizeOf<RECT>();
             if (DwmGetWindowAttribute(hWnd, DWMWA_EXTENDED_FRAME_BOUNDS, out RECT realWindowRect, structSize) == 0)
             {
                 // Панели BlueStacks (верхний заголовок и правое тулбар-меню)
-                int bluestacksToolbarWidth = 33;
-                int bluestacksHeaderHeight = 33;
+                const int bluestacksToolbarWidth = 33;
+                const int bluestacksHeaderHeight = 33;
 
                 // Обычные тонкие рамки изменения размера Windows 10/11
-                int windowsFrameWidth = 2;
-                int windowsFrameHeight = 2;
+                const int windowsFrameWidth = 2;
+                const int windowsFrameHeight = 2;
 
                 // Рассчитываем итоговый полный габарит окна
                 int finalWindowWidth = targetWidth + bluestacksToolbarWidth + windowsFrameWidth;
@@ -303,83 +447,11 @@ namespace LowMiner
             Console.ResetColor();
         }
 
-        class ImageSearcher
-        {
-            /// <summary>
-            /// Ищет шаблон на скриншоте в заданных координатах с максимальной точностью по форме.
-            /// </summary>
-            /// <param name="screen">Полный скриншот окна эмулятора.</param>
-            /// <param name="templatePath">Путь к файлу-шаблону (маленькая картинка, которую ищем).</param>
-            /// <param name="searchArea">Область (X, Y, Ширина, Высота) внутри скриншота, где искать. Если поиск по всему экрану — передайте Rectangle.Empty.</param>
-            /// <param name="threshold">Порог точности от 0.0 до 1.0 (0.85-0.90 — оптимально для поиска форм).</param>
-            /// <returns>Точка (Point) центра найденного объекта или null, если объект не найден.</returns>
-            public static System.Drawing.Point? FindTemplateInRegion(Bitmap screen, string templatePath, Rectangle searchArea, double threshold = 0.85)
-            {
-                // 1. Ограничиваем область поиска для ускорения работы и исключения ложных срабатываний
-                Bitmap croppedScreen;
-                if (searchArea != Rectangle.Empty)
-                {
-                    croppedScreen = screen.Clone(searchArea, screen.PixelFormat);
-                }
-                else
-                {
-                    croppedScreen = screen;
-                    searchArea = new Rectangle(0, 0, screen.Width, screen.Height);
-                }
-
-                // 2. Конвертируем Bitmap из C# в формат Mat для OpenCV
-                using Mat matScreen = BitmapConverter.ToMat(croppedScreen);
-                using Mat matTemplate = Cv2.ImRead(templatePath, ImreadModes.Color);
-
-                if (matTemplate.Empty())
-                {
-                    Console.WriteLine($"[Ошибка] Не удалось загрузить шаблон по пути: {templatePath}");
-                    return null;
-                }
-
-                // Проверяем, что шаблон не больше области поиска
-                if (matTemplate.Width > matScreen.Width || matTemplate.Height > matScreen.Height)
-                    return null;
-
-                // 3. Переводим в оттенки серого (Grayscale). 
-                // Это убирает чувствительность к изменению цвета и фокусирует алгоритм строго на градиентах и формах!
-                using Mat grayScreen = new Mat();
-                using Mat grayTemplate = new Mat();
-                Cv2.CvtColor(matScreen, grayScreen, ColorConversionCodes.BGR2GRAY);
-                Cv2.CvtColor(matTemplate, grayTemplate, ColorConversionCodes.BGR2GRAY);
-
-                // 4. Создаем матрицу для сохранения результатов совпадения
-                using Mat result = new Mat();
-
-                // TM_CCOEFF_NORMED — лучший алгоритм для поиска форм, устойчивый к перепадам яркости
-                Cv2.MatchTemplate(grayScreen, grayTemplate, result, TemplateMatchModes.CCoeffNormed);
-
-                // 5. Находим координаты с максимальным совпадением
-                Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out OpenCvSharp.Point maxLoc);
-
-                // Освобождаем память от вырезанного фрагмента, если он создавался
-                if (searchArea != Rectangle.Empty && croppedScreen != screen)
-                    croppedScreen.Dispose();
-
-                // 6. Проверяем, прошел ли объект порог точности
-                if (maxVal >= threshold)
-                {
-                    // Вычисляем центр найденного объекта с учетом смещения области поиска (searchArea.X, searchArea.Y)
-                    int centerX = searchArea.X + maxLoc.X + (matTemplate.Width / 2);
-                    int centerY = searchArea.Y + maxLoc.Y + (matTemplate.Height / 2);
-
-                    // Возвращаем координаты для клика мышкой
-                    return new System.Drawing.Point(centerX, centerY);
-                }
-
-                return null; // Ничего не найдено с заданной точностью
-            }
-        }
 
 
     }
 
-#endregion
+        #endregion
 
     public class BotConfig
     {
@@ -430,7 +502,7 @@ namespace LowMiner
                         new WindowSettings
                     {
                         AccountName = "Miner_V04K0",
-                        WindowTitle = "(BlueStacks_EVE.01)",
+                        WindowTitle = "BlueStacks_EVE.01",
                         TargetWidth = 1280,
                         TargetHeight = 720
                     }
@@ -441,17 +513,18 @@ namespace LowMiner
                 return defaultConfig;
             }
 
-            try
-            {
-                string json = File.ReadAllText(ConfigPath);
-                // Десериализуем JSON, новые поля подтянутся автоматически
-                return JsonSerializer.Deserialize<BotConfig>(json, _options) ?? new();
-            }
-            catch (Exception ex)
-            {
-                Program.ConsolePrint($"[Ошибка] Не удалось прочитать конфиг: {ex.Message}", ConsoleColor.Red);
-                return new();
-            }
+        try
+        {
+            string json = File.ReadAllText(ConfigPath);
+
+            // ИСПРАВЛЕНО: Добавлен оператор '!' после закрывающей круглой скобки метода Deserialize
+            return JsonSerializer.Deserialize<BotConfig>(json, _options)! ?? new();
+        }
+        catch (Exception ex)
+        {
+            Program.ConsolePrint($"[Ошибка] Не удалось прочитать конфиг: {ex.Message}", ConsoleColor.Red);
+            return new();
+        }
         }
 
         public static void Save(BotConfig config)
