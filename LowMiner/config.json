@@ -2,7 +2,11 @@
   "Accounts": [
     {
       "AccountName": "Miner_V04K0",
-      "WindowTitle": "BlueStacks_EVE.01"
+      "WindowTitle": "BlueStacks_EVE.01",
+      "WindowSettings": {
+        "TargetWidth": 1280,
+        "TargetHeight": 720
+      }
     }
   ]
 }

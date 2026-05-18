@@ -34,7 +34,7 @@ namespace LowMiner
         const uint WM_LBUTTONDOWN = 0x0201; // Нажатие левой кнопки мыши
         const uint WM_LBUTTONUP = 0x0202;   // Отпускание левой кнопки мыши
 
-        const string TargetWindow = "(MEmu W.01)";
+        //const string TargetWindow = "(MEmu W.01)";
 
         private static readonly Random _random = new();
 
@@ -46,15 +46,15 @@ namespace LowMiner
         {
             Console.Title = "EVE Echoes Bot Controller";
             ConsolePrint("Запуск LowMiner...", ConsoleColor.Cyan);
-            // const string TargetWindow = "(MEmu W.01)";
 
             // 1. Загружаем настройки из файла
             BotConfig config = ConfigManager.Load();
 
-            // 3. Работаем с прочитанными данными
+            // 2. Работаем с прочитанными данными
             foreach (var account in config.Accounts)
             {
-                IntPtr hWnd = GetWindow(account.WindowTitle);
+                // ПРАВКА: Передаем объект аккаунта целиком, а не только строку заголовка
+                IntPtr hWnd = GetWindow(account);
 
                 if (hWnd != IntPtr.Zero)
                 {
@@ -63,22 +63,10 @@ namespace LowMiner
                 }
             }
 
-            /*
-                        IntPtr hWnd = GetWindow(TargetWindow);
-
-                        if (hWnd != IntPtr.Zero)
-                        {
-                            ConsolePrint("Бот готов. Выполняю тестовый клик через 2 секунды...");
-                            Console.WriteLine("Бот готов. Выполняю тестовый клик через 2 секунды...");
-                            System.Threading.Thread.Sleep(2000); // Пауза, чтобы вы успели переключиться на эмулятор
-
-                            // Пример: клик в точку 100x100 внутри окна эмулятора
-                            SmartClick(hWnd, 40, 600);
-                        }
-            */
             ConsolePrint("\nНажми любую клавишу для завершения...");
             Console.ReadKey();
         }
+
 
         // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
         // - + - + - + - + - | Остальные методы и функции, используемые в основной программе | - + - + - + - + -
@@ -96,10 +84,6 @@ namespace LowMiner
         /// <summary>
         /// Изменяет размер окна BlueStacks так, чтобы его рабочая область стала заданной ширины и высоты.
         /// </summary>
-        /// <param name="hWnd">Дескриптор окна.</param>
-        /// <param name="targetWidth">Желаемая ширина видимой области.</param>
-        /// <param name="targetHeight">Желаемая высота видимой области.</param>
-        /// <returns>True, если размер успешно изменен.</returns>
         static bool ResizeWindow(IntPtr hWnd, int targetWidth, int targetHeight)
         {
             if (hWnd == IntPtr.Zero) return false;
@@ -127,37 +111,38 @@ namespace LowMiner
         }
 
 
+
         /// <summary>
-        /// Находит дескриптор окна по его заголовку и подгоняет его видимую область под 1280x720.
+        /// Находит окно по настройкам из конфигурации и подгоняет его видимую область под указанные размеры.
         /// </summary>
-        /// <param name="windowName">Точное имя заголовка окна.</param>
+        /// <param name="settings">Объект настроек окна.</param>
         /// <returns>Дескриптор окна (IntPtr.Zero, если окно не найдено).</returns>
-        static IntPtr GetWindow(string windowName)
+        static IntPtr GetWindow(WindowSettings settings) // <--- ПРОВЕРЬТЕ ЭТУ СТРОКУ
         {
-            // Поиск дескриптора окна через WinAPI
-            IntPtr hWnd = FindWindow(null, windowName);
+            // Поиск дескриптора окна по заголовку из настроек
+            IntPtr hWnd = FindWindow(null, settings.WindowTitle);
 
             if (hWnd != IntPtr.Zero)
             {
-                int targetWidth = 1280;
-                int targetHeight = 720;
-
-                if (ResizeWindow(hWnd, targetWidth, targetHeight))
+                // Изменяем размер, используя свойства переданного объекта settings
+                if (ResizeWindow(hWnd, settings.TargetWidth, settings.TargetHeight))
                 {
-                    ConsolePrint($"GetWindow | Успех: Окно '{windowName}' подогнано под размер {targetWidth}x{targetHeight}", ConsoleColor.Green);
+                    ConsolePrint($"GetWindow | Аккаунт: {settings.AccountName} | Успех: Окно '{settings.WindowTitle}' подогнано под Android-экран {settings.TargetWidth}x{settings.TargetHeight}", ConsoleColor.Green);
                 }
                 else
                 {
-                    ConsolePrint($"GetWindow | Ошибка: Не удалось изменить размер окна '{windowName}'.", ConsoleColor.Red);
+                    ConsolePrint($"GetWindow | Аккаунт: {settings.AccountName} | Ошибка: Не удалось изменить размер окна.", ConsoleColor.Red);
                 }
             }
             else
             {
-                ConsolePrint($"GetWindow | Ошибка: Окно '{windowName}' не найдено.", ConsoleColor.Red);
+                ConsolePrint($"GetWindow | Ошибка: Окно '{settings.WindowTitle}' для аккаунта {settings.AccountName} не найдено.", ConsoleColor.Red);
             }
 
             return hWnd;
         }
+
+
 
 
         /// <summary>
@@ -233,13 +218,22 @@ namespace LowMiner
         public List<WindowSettings> Accounts { get; set; } = [];
     }
 
-    public class WindowSettings
-    {
-        public string AccountName { get; set; } = "Miner_V04K0"; // Для вашего удобства
-        public string WindowTitle { get; set; } = "(BlueStacks_EVE.01)";    // Заголовок окна
-        // Можно добавить специфические координаты для каждого окна, 
-        // если они разного размера
-    }
+
+
+    /// <summary>
+    /// Конфигурационные настройки для управления окном эмулятора.
+    /// </summary>
+public class WindowSettings
+{
+    public string AccountName { get; set; } = "Miner_V04K0"; 
+    public string WindowTitle { get; set; } = "(BlueStacks_EVE.01)";    
+    
+    // ПРОВЕРЬТЕ ЭТИ ДВЕ СТРОКИ: буквы T, W, H должны быть заглавными!
+    public int TargetWidth { get; set; } = 1280;
+    public int TargetHeight { get; set; } = 720;
+}
+
+
 
     public static class ConfigManager
 {
@@ -251,15 +245,30 @@ namespace LowMiner
         WriteIndented = true,
         PropertyNameCaseInsensitive = true // Полезно, если вы вручную правите JSON
     };
-
+    /// <summary>
+    /// Загружает конфигурацию бота из JSON-файла или создает конфигурацию по умолчанию, если файл отсутствует.
+    /// </summary>
+    /// <returns>Объект конфигурации <see cref="BotConfig"/>.</returns>
     public static BotConfig Load()
     {
         if (!File.Exists(ConfigPath))
         {
+            // Создаем дефолтный конфиг, соответствующий вашему новому стандарту
             var defaultConfig = new BotConfig 
             { 
-                Accounts = [ new() { AccountName = "Основной", WindowTitle = "MEmu" } ] 
+                Accounts = 
+                [ 
+                    new WindowSettings 
+                    { 
+                        AccountName = "Miner_V04K0", 
+                        WindowTitle = "(BlueStacks_EVE.01)",
+                        // ИСПРАВЛЕНО: Пишем имена свойств напрямую и с заглавной буквы
+                        TargetWidth = 1280,
+                        TargetHeight = 720
+                    } 
+                ] 
             };
+            
             Save(defaultConfig);
             return defaultConfig;
         }
@@ -267,7 +276,7 @@ namespace LowMiner
         try
         {
             string json = File.ReadAllText(ConfigPath);
-            // Используем кэшированные настройки
+            // Десериализуем JSON, новые поля подтянутся автоматически
             return JsonSerializer.Deserialize<BotConfig>(json, _options) ?? new();
         }
         catch (Exception ex)
@@ -276,6 +285,8 @@ namespace LowMiner
             return new();
         }
     }
+
+
 
     public static void Save(BotConfig config)
     {
