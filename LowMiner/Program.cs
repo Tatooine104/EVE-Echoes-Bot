@@ -45,6 +45,9 @@ namespace LowMiner
 
         // === Поиск и управление окнами ===
 
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        static extern bool GetClientRect(IntPtr hWnd, out RECT lpRect);
+
         /// <summary>
         /// Находит дескриптор окна по имени класса или заголовку.
         /// </summary>
@@ -145,6 +148,9 @@ namespace LowMiner
 
         #region Constants & Fields
 
+        // 1. Создаем глобальный источник токена отмены
+        private static CancellationTokenSource _cts = new CancellationTokenSource();
+
         // --- Константы мыши (Windows Messages) ---
         private const uint WM_LBUTTONDOWN = 0x0201; // Нажатие левой кнопки мыши
         private const uint WM_LBUTTONUP = 0x0202;   // Отпускание левой кнопки мыши
@@ -155,6 +161,10 @@ namespace LowMiner
 
         // --- Глобальные утилиты ---
         private static readonly Random _random = new();
+
+        // Глобальный список аккаунтов, для которых размер окна уже был успешно подогнан
+        private static System.Collections.Generic.HashSet<string> _resizedAccounts = new();
+
 
         #endregion
 
@@ -172,6 +182,7 @@ namespace LowMiner
                 if (_isSave == true && value == false)
                 {
                     _isSave = value; // Обновляем значение на false
+                    ConsolePrint("=== ВНИМАНИЕ! Обнаружена опасность!", ConsoleColor.Magenta);
                     AliChatWarning(); // Вызываем оповещение (сработает 1 раз до возврата в true)
                 }
                 else
@@ -180,6 +191,7 @@ namespace LowMiner
                     // - инициализация (из null в true или false)
                     // - повторные удержания статуса (из false в false, из true в true)
                     // - восстановление системы (из false в true)
+                    ConsolePrint("=== В системе безопастно.", ConsoleColor.Green);
                     _isSave = value;
                 }
             }
@@ -195,87 +207,88 @@ namespace LowMiner
 
 
 static void Main(string[] args)
-{
-    // 1. Загружаем настройки из файла
-    BotConfig config = ConfigManager.Load();
-
-    // Берем первый доступный аккаунт для теста
-    WindowSettings? testAccount = config.Accounts.FirstOrDefault();
-
-    // Проверяем, что аккаунт успешно загружен
-    if (testAccount == null)
     {
-        ConsolePrint("Ошибка: testAccount равен null! В конфиге нет аккаунтов.", ConsoleColor.Red);
-        return;
-    }
+        ConsolePrint("=== Бот успешно запущен ===", ConsoleColor.Cyan);
+        ConsolePrint("--> Нажмите [ESC] в любой момент для остановки скрипта.", ConsoleColor.DarkGray);
 
-    // 2. Получаем дескриптор (hWnd) нужного окна
-    nint hWnd = GetWindow(testAccount);
+        // 2. Запускаем фоновый поток, который слушает клавиатуру
+        Thread inputThread = new Thread(ListenForCancelKey) { IsBackground = true };
+        inputThread.Start();
 
-    // Проверяем, что окно найдено
-    if (hWnd == IntPtr.Zero)
-    {
-        ConsolePrint("Ошибка: Окно целевой программы не найдено.", ConsoleColor.Red);
-        return;
-    }
-
-    // 3. Вызываем метод захвата экрана
-    using Mat? screenshot = CaptureWindow(hWnd);
-
-    // 4. Проверяем, что скриншот успешно получен (не null) и не пустой
-    if (screenshot != null && screenshot.Width > 0 && screenshot.Height > 0)
-    {
-        ConsolePrint($"Скриншот успешно получен! Размер: {screenshot.Width}x{screenshot.Height}", ConsoleColor.Green);
-
-        // ================= НАЧАЛО ПРОВЕРКИ ДВУХ ИЗОБРАЖЕНИЙ =================
-        
-        // Задаем пути к двум картинкам, которые нужно найти
-        string imgPath1 = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", "imgAliChatRUS.png");
-        string imgPath2 = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", "imgAliChatENG.png");
-
-        // Проверяем физическое существование файлов картинок на диске
-        if (!File.Exists(imgPath1) || !File.Exists(imgPath2))
+        // 3. Основной цикл теперь проверяет, не поступил ли сигнал отмены
+        while (!_cts.Token.IsCancellationRequested)
         {
-            ConsolePrint("Ошибка: Один или оба файла шаблонов отсутствуют в папке images!", ConsoleColor.Red);
-            return;
+            try
+            {
+                // Каждый круг заново загружаем настройки из файла
+                BotConfig config = ConfigManager.Load();
+                WindowSettings? testAccount = config.Accounts.FirstOrDefault();
+
+                if (testAccount == null)
+                {
+                    ConsolePrint("Ошибка цикла: В конфигурации нет доступных аккаунтов. Ожидание...", ConsoleColor.Red);
+                    
+                    // Вместо жесткого Thread.Sleep используем безопасную задержку с проверкой токена
+                    if (_cts.Token.WaitHandle.WaitOne(5000)) break;
+                    continue;
+                }
+
+                string scriptMode = testAccount.Script ?? "Default";
+
+                switch (scriptMode)
+                {
+                    case "LocalWatcher":
+                        CheckSecurityStatus();
+                        break;
+
+                    case "AnotherScript":
+                        // RunAnotherScenario();
+                        break;
+
+                    default:
+                        ConsolePrint($"Предупреждение: Неизвестный или пустой режим скрипта '{scriptMode}'.", ConsoleColor.Yellow);
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                ConsolePrint($"Критическая ошибка в главном цикле: {ex.Message}", ConsoleColor.Red);
+            }
+
+            // Безопасное ожидание 15 секунд между кругами.
+            // Если во время этой паузы нажать ESC — программа прервет ожидание МГНОВЕННО, 
+            // а не будет послушно дожидаться окончания 15 секунд.
+            if (_cts.Token.WaitHandle.WaitOne(15000)) 
+            {
+                break; 
+            }
         }
 
-        // Задаем область поиска (координаты, которые использовались ранее)
-        OpenCvSharp.Rect searchRegion = new OpenCvSharp.Rect(0, 20, 500, 700);
-        // Ищем первое изображение
-        OpenCvSharp.Point? found1 = FindTemplateInRegion(screenshot, imgPath1, searchRegion, 0.85);
-        // Ищем второе изображение
-        OpenCvSharp.Point? found2 = FindTemplateInRegion(screenshot, imgPath2, searchRegion, 0.85);
-
-        // Логика проверки: найдены ли ОБА изображения
-        if (found1.HasValue && found2.HasValue)
-        {
-            ConsolePrint("Успех: Оба изображения успешно найдены на скриншоте!", ConsoleColor.Green);
-            ConsolePrint($"Картинка {Path.GetFileName(imgPath1)} в точке: {found1.Value.X}, {found1.Value.Y}", ConsoleColor.Gray);
-            ConsolePrint($"Картинка {Path.GetFileName(imgPath2)} в точке: {found2.Value.X}, {found2.Value.Y}", ConsoleColor.Gray);
-        }
-        else
-        {
-            ConsolePrint("Внимание: Одно или оба изображения отсутствуют на экране.", ConsoleColor.Yellow);
-            
-            // Имена файлов подтягиваются динамически из переменных через интерполяцию строк $""
-            if (!found1.HasValue) 
-                ConsolePrint($"-> Не найдено: {Path.GetFileName(imgPath1)}", ConsoleColor.DarkYellow);
-                
-            if (!found2.HasValue) 
-                ConsolePrint($"-> Не найдено: {Path.GetFileName(imgPath2)}", ConsoleColor.DarkYellow);
-        }
-
-        // ================= КОНЕЦ ПРОВЕРКИ ДВУХ ИЗОБРАЖЕНИЙ =================
-
-        // (Опционально) Для теста сохраняем скриншот на диск
-        Cv2.ImWrite("debug_screenshot.png", screenshot);
+        // Выполняется после выхода из цикла while
+        ConsolePrint("=== Бот успешно остановлен. До свидания! ===", ConsoleColor.Cyan);
     }
-    else
+
+    /// <summary>
+    /// Метод постоянно работает в фоне и ждет нажатия клавиши Escape
+    /// </summary>
+    private static void ListenForCancelKey()
     {
-        ConsolePrint("Ошибка: Не удалось сделать скриншот окна.", ConsoleColor.Red);
+        while (!_cts.Token.IsCancellationRequested)
+        {
+            // Проверяем, нажата ли клавиша на клавиатуре
+            if (Console.KeyAvailable)
+            {
+                var key = Console.ReadKey(intercept: true); // intercept: true прячет символ Esc из консоли
+                if (key.Key == ConsoleKey.Escape)
+                {
+                    ConsolePrint("\n[INFO] Получен сигнал отмены. Завершаем текущий круг и выходим...", ConsoleColor.Yellow);
+                    _cts.Cancel(); // Посылаем сигнал отмены во все методы
+                    break;
+                }
+            }
+            Thread.Sleep(100); // Разгружаем процессор
+        }
     }
-}
         #endregion
 
 // ============================================================================================
@@ -335,7 +348,7 @@ static void CheckSecurityStatus()
             continue;
         }
 
-        OpenCvSharp.Point? foundPoint = FindTemplateInRegion(screenshot, fullTemplatePath, searchRegion, 0.85);
+        OpenCvSharp.Point? foundPoint = FindTemplateInRegion(screenshot, fullTemplatePath, searchRegion, 0.80);
 
         if (!foundPoint.HasValue)
         {
@@ -346,10 +359,10 @@ static void CheckSecurityStatus()
     // При присвоении сработает логика внутри свойства set { ... }
     IsSave = currentStatus;
 
-    if (IsSave == false)
+    /*if (IsSave == false)
     {
         ConsolePrint("=== ВНИМАНИЕ! Обнаружена опасность!", ConsoleColor.Magenta);
-    }
+    }*/
 }
 
 
@@ -648,37 +661,60 @@ public static OpenCvSharp.Point? FindTemplateInRegion(OpenCvSharp.Mat screen, st
         }
 
 
+/// <summary>
+/// Находит окно по настройкам из конфигурации и подгоняет его размеры только один раз за сессию.
+/// </summary>
+/// <param name="settings">Объект настроек окна.</param>
+/// <returns>Дескриптор окна (IntPtr.Zero, если окно не найдено).</returns>
+static IntPtr GetWindow(WindowSettings settings)
+{
+    // Поиск дескриптора окна по заголовку из настроек
+    IntPtr hWnd = FindWindow(null, settings.WindowTitle);
 
-        /// <summary>
-        /// Находит окно по настройкам из конфигурации и подгоняет его видимую область под указанные размеры.
-        /// </summary>
-        /// <param name="settings">Объект настроек окна.</param>
-        /// <returns>Дескриптор окна (IntPtr.Zero, если окно не найдено).</returns>
-        static IntPtr GetWindow(WindowSettings settings) // <--- ПРОВЕРЬТЕ ЭТУ СТРОКУ
+    if (hWnd != IntPtr.Zero)
+    {
+        // 1. Проверяем наш глобальный массив (HashSet)
+        if (_resizedAccounts.Contains(settings.AccountName))
         {
-            // Поиск дескриптора окна по заголовку из настроек
-            IntPtr hWnd = FindWindow(null, settings.WindowTitle);
+#if DEBUG
+            // В режиме отладки пишем, что аккаунт уже подгонялся ранее
+            ConsolePrint($"GetWindow | {settings.AccountName} | Окно уже подгонялось в этой сессии. Шаг пропущен.", ConsoleColor.DarkGray);
+#endif
+            return hWnd; // МГНОВЕННЫЙ ВЫХОД, ПОЛНЫЙ ПРОПУСК ЛЮБЫХ ПРОВЕРОК И РЕСАЙЗОВ
+        }
 
-            if (hWnd != IntPtr.Zero)
-            {
-                // Изменяем размер, используя свойства переданного объекта settings
-                if (ResizeWindow(hWnd, settings.TargetWidth, settings.TargetHeight))
-                {
-                    ConsolePrint($"GetWindow | Аккаунт: {settings.AccountName} | Успех: Окно '{settings.WindowTitle}' подогнано под размер {settings.TargetWidth}x{settings.TargetHeight}", ConsoleColor.Green);
-                }
-                else
-                {
-                    ConsolePrint($"GetWindow | Аккаунт: {settings.AccountName} | Ошибка: Не удалось изменить размер окна.", ConsoleColor.Red);
-                }
-            }
-            else
-            {
-                ConsolePrint($"GetWindow | Ошибка: Окно '{settings.WindowTitle}' для аккаунта {settings.AccountName} не найдено.", ConsoleColor.Red);
-            }
-
+        if (settings.Size == null)
+        {
+            ConsolePrint($"GetWindow | Ошибка: В конфиге аккаунта {settings.AccountName} отсутствует блок WindowSettings!", ConsoleColor.Red);
             return hWnd;
         }
 
+        int targetW = settings.Size.TargetWidth;
+        int targetH = settings.Size.TargetHeight;
+
+        // 2. Если аккаунта нет в списке, выполняем подгонку размера
+        if (ResizeWindow(hWnd, targetW, targetH))
+        {
+            ConsolePrint($"GetWindow | Аккаунт: {settings.AccountName} | Успех: Окно '{settings.WindowTitle}' подогнано под размер {targetW}x{targetH}", ConsoleColor.Green);
+            
+            // Запоминаем аккаунт в глобальный список, чтобы больше никогда его не трогать
+            _resizedAccounts.Add(settings.AccountName);
+            
+            // Даем окну 300 мс на применение изменений в Windows
+            Thread.Sleep(300);
+        }
+        else
+        {
+            ConsolePrint($"GetWindow | Аккаунт: {settings.AccountName} | Ошибка: Не удалось изменить размер окна.", ConsoleColor.Red);
+        }
+    }
+    else
+    {
+        ConsolePrint($"GetWindow | Ошибка: Окно '{settings.WindowTitle}' для аккаунта {settings.AccountName} не найдено.", ConsoleColor.Red);
+    }
+
+    return hWnd;
+}
 
 
 
@@ -753,26 +789,37 @@ public static OpenCvSharp.Point? FindTemplateInRegion(OpenCvSharp.Mat screen, st
 
         #endregion
 
+#region CONFIG
+
     public class BotConfig
     {
         // Список настроек для каждого персонажа/окна
         public List<WindowSettings> Accounts { get; set; } = [];
+
     }
 
 
 
-    /// <summary>
-    /// Конфигурационные настройки для управления окном эмулятора.
-    /// </summary>
-    public class WindowSettings
-    {
-        public string AccountName { get; set; } = "Miner_V04K0";
-        public string WindowTitle { get; set; } = "(BlueStacks_EVE.01)";
+public class WindowSettings
+{
+    public string AccountName { get; set; } = "";
+    public string WindowTitle { get; set; } = "";
+    public string? Script { get; set; }
 
-        // ПРОВЕРЬТЕ ЭТИ ДВЕ СТРОКИ: буквы T, W, H должны быть заглавными!
-        public int TargetWidth { get; set; } = 1280;
-        public int TargetHeight { get; set; } = 720;
-    }
+    // Указываем полный путь к родному атрибуту .NET. 
+    // Он свяжет тег "WindowSettings" из JSON со свойством "Size" в коде без каких-либо using!
+    [System.Text.Json.Serialization.JsonPropertyName("WindowSettings")]
+    public TargetSize? Size { get; set; } 
+}
+
+public class TargetSize
+{
+    // Поля внутри JSON-блока WindowSettings
+    public int TargetWidth { get; set; }
+    public int TargetHeight { get; set; }
+}
+
+
 
 
 
@@ -786,46 +833,55 @@ public static OpenCvSharp.Point? FindTemplateInRegion(OpenCvSharp.Mat screen, st
             WriteIndented = true,
             PropertyNameCaseInsensitive = true // Полезно, если вы вручную правите JSON
         };
-        /// <summary>
-        /// Загружает конфигурацию бота из JSON-файла или создает конфигурацию по умолчанию, если файл отсутствует.
-        /// </summary>
-        /// <returns>Объект конфигурации <see cref="BotConfig"/>.</returns>
-        public static BotConfig Load()
+
+
+/// <summary>
+/// Загружает конфигурацию бота из JSON-файла или создает конфигурацию по умолчанию, если файл отсутствует.
+/// </summary>
+/// <returns>Объект конфигурации <see cref="BotConfig"/>.</returns>
+public static BotConfig Load()
+{
+    if (!File.Exists(ConfigPath))
+    {
+        // Создаем дефолтный конфиг, соответствующий вашей новой вложенной структуре
+        var defaultConfig = new BotConfig
         {
-            if (!File.Exists(ConfigPath))
-            {
-                // Создаем дефолтный конфиг, соответствующий вашему новому стандарту
-                var defaultConfig = new BotConfig
+            Accounts =
+            [
+                new WindowSettings
                 {
-                    Accounts =
-                    [
-                        new WindowSettings
+                    AccountName = "Miner_V04K0",
+                    WindowTitle = "BlueStacks_EVE.01",
+                    Script = "LocalWatcher", // Сразу прописываем сценарий по умолчанию
+                    
+                    // ИСПРАВЛЕНО: Теперь инициализируем вложенный объект Size
+                    Size = new TargetSize
                     {
-                        AccountName = "Miner_V04K0",
-                        WindowTitle = "BlueStacks_EVE.01",
                         TargetWidth = 1280,
                         TargetHeight = 720
                     }
-                    ]
-                };
+                }
+            ]
+        };
 
-                Save(defaultConfig);
-                return defaultConfig;
-            }
+        Save(defaultConfig);
+        return defaultConfig;
+    }
 
-            try
-            {
-                string json = File.ReadAllText(ConfigPath);
+    try
+    {
+        string json = File.ReadAllText(ConfigPath);
 
-                // ИСПРАВЛЕНО: Добавлен оператор '!' после закрывающей круглой скобки метода Deserialize
-                return JsonSerializer.Deserialize<BotConfig>(json, _options)! ?? new();
-            }
-            catch (Exception ex)
-            {
-                Program.ConsolePrint($"[Ошибка] Не удалось прочитать конфиг: {ex.Message}", ConsoleColor.Red);
-                return new();
-            }
-        }
+        // ИСПРАВЛЕНО: Добавлен оператор '!' после закрывающей круглой скобки метода Deserialize
+        return JsonSerializer.Deserialize<BotConfig>(json, _options)! ?? new();
+    }
+    catch (Exception ex)
+    {
+        Program.ConsolePrint($"[Ошибка] Не удалось прочитать конфиг: {ex.Message}", ConsoleColor.Red);
+        return new();
+    }
+}
+
 
         public static void Save(BotConfig config)
         {
@@ -841,5 +897,8 @@ public static OpenCvSharp.Point? FindTemplateInRegion(OpenCvSharp.Mat screen, st
             }
         }
     }
+
+#endregion
+
 
 }
