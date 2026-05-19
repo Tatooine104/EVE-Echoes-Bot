@@ -194,69 +194,6 @@ namespace LowMiner
         #region Main
 
 
-        /*static void Main()
-        {
-            // Фиктивная строка для предотвращения автоудаления using в VS Code
-            _ = typeof(OpenCvSharp.Mat);
-
-            Console.Title = "Тестирование статуса безопасности (IsSave)";
-            ConsolePrint("Запуск теста комплексного поиска шаблонов...", ConsoleColor.Cyan);
-
-            // 1. Загружаем настройки из файла
-            BotConfig config = ConfigManager.Load();
-
-            // Берем первый доступный аккаунт для теста
-            WindowSettings? testAccount = config.Accounts.FirstOrDefault();
-
-            if (testAccount == null)
-            {
-                ConsolePrint("[Ошибка] В конфигурации нет доступных аккаунтов!", ConsoleColor.Red);
-                Console.ReadKey();
-                return;
-            }
-
-            // 2. Находим и масштабируем окно под 1280x720
-            IntPtr hWnd = GetWindow(testAccount);
-
-            if (hWnd != IntPtr.Zero)
-            {
-                ConsolePrint($"Окно '{testAccount.WindowTitle}' успешно найдено и подготовлено.", ConsoleColor.Gray);
-                ConsolePrint("Ожидание 1 секунды для стабильной перерисовки...", ConsoleColor.DarkGray);
-                System.Threading.Thread.Sleep(1000);
-
-                // 3. Делаем кроссплатформенный скриншот окна
-                ConsolePrint("Выполняю захват экрана...", ConsoleColor.Gray);
-                using OpenCvSharp.Mat? screenshot = CaptureWindow(hWnd);
-
-                if (screenshot?.Empty() is false)
-                {
-                    ConsolePrint("\n--- Запуск анализа экрана ---", ConsoleColor.Gray);
-
-                    // 4. Вызываем новый метод проверки
-                    CheckSecurityStatus(screenshot);
-
-                    // 5. Финальная визуальная проверка глобальной переменной
-                    ConsolePrint("\n--- Проверка глобального состояния бота ---", ConsoleColor.Gray);
-                    if (IsSave)
-                    {
-                        ConsolePrint($"[СТАТУС ИЗ ГЛОБАЛЬНОЙ ПЕРЕМЕННОЙ] IsSave = {IsSave}. Все элементы найдены. Бот может продолжать работу.", ConsoleColor.Green);
-                    }
-                    else
-                    {
-                        ConsolePrint($"[СТАТУС ИЗ ГЛОБАЛЬНОЙ ПЕРЕМЕННОЙ] IsSave = {IsSave}. Обнаружен дефицит элементов! Бот должен среагировать.", ConsoleColor.Magenta);
-                    }
-                }
-                else
-                {
-                    ConsolePrint("[Ошибка] Метод CaptureWindow вернул пустую матрицу. Проверьте эмулятор.", ConsoleColor.Red);
-                }
-            }
-
-            //ConsolePrint("\nТест завершен. Нажми любую клавишу...");
-            //Console.ReadKey();
-        }*/
-
-
 static void Main(string[] args)
 {
     // 1. Загружаем настройки из файла
@@ -306,9 +243,9 @@ static void Main(string[] args)
         // Задаем область поиска (координаты, которые использовались ранее)
         OpenCvSharp.Rect searchRegion = new OpenCvSharp.Rect(0, 20, 500, 700);
         // Ищем первое изображение
-        OpenCvSharp.Point? found1 = FindTemplateInRegion(screenshot, imgPath1, searchRegion, 0.75);
+        OpenCvSharp.Point? found1 = FindTemplateInRegion(screenshot, imgPath1, searchRegion, 0.85);
         // Ищем второе изображение
-        OpenCvSharp.Point? found2 = FindTemplateInRegion(screenshot, imgPath2, searchRegion, 0.75);
+        OpenCvSharp.Point? found2 = FindTemplateInRegion(screenshot, imgPath2, searchRegion, 0.85);
 
         // Логика проверки: найдены ли ОБА изображения
         if (found1.HasValue && found2.HasValue)
@@ -339,87 +276,186 @@ static void Main(string[] args)
         ConsolePrint("Ошибка: Не удалось сделать скриншот окна.", ConsoleColor.Red);
     }
 }
-
-
-
-
         #endregion
+
+// ============================================================================================
 
         #region EVE Echoes Methods 
 
-        /// <summary>
-        /// Проверяет экран на наличие обязательных элементов интерфейса.
-        /// Устанавливает IsSave = true только если найдены все три шаблона.
-        /// </summary>
-        /// <param name="screenshot">Текущий снимок экрана эмулятора.</param>
-        static void CheckSecurityStatus(OpenCvSharp.Mat screenshot)
+/// <summary>
+/// Автономно загружает конфиг, находит окно, делает скриншот и проверяет безопасность локала.
+/// </summary>
+static void CheckSecurityStatus()
+{
+    // 1. Самостоятельно загружаем настройки и ищем аккаунт
+    BotConfig config = ConfigManager.Load();
+    WindowSettings? testAccount = config.Accounts.FirstOrDefault();
+
+    if (testAccount == null)
+    {
+        ConsolePrint("Ошибка CheckSecurityStatus: В конфигурации нет доступных аккаунтов.", ConsoleColor.Red);
+        IsSave = false; // Нет настроек — система не может считаться безопасной
+        return;
+    }
+
+    // 2. Получаем дескриптор окна приложения
+    nint hWnd = GetWindow(testAccount);
+
+    if (hWnd == IntPtr.Zero)
+    {
+        ConsolePrint("Ошибка CheckSecurityStatus: Окно целевой программы не найдено.", ConsoleColor.Red);
+        IsSave = false;
+        return;
+    }
+
+    // 3. Делаем снимок экрана и оборачиваем в using для автоматической очистки памяти C++
+    OpenCvSharp.Mat? screenshot = CaptureWindow(hWnd);
+
+    if (screenshot == null || screenshot.Empty() || screenshot.Width <= 0 || screenshot.Height <= 0)
+    {
+        ConsolePrint("Ошибка CheckSecurityStatus: Не удалось сделать скриншот окна.", ConsoleColor.Red);
+        IsSave = false;
+        screenshot?.Dispose(); // Освобождаем память вручную при ошибке
+        return;
+    }
+
+    // 4. Логика проверки шаблонов интерфейса
+    string[] templates = ["imgLocalCriminal.png", "imgLocalMinus.png", "imgLocalNeutral.png"];
+    bool currentStatus = true;
+
+    OpenCvSharp.Rect searchRegion = new OpenCvSharp.Rect(50, 250, 300, 420);
+
+    foreach (string templateName in templates)
+    {
+        string fullTemplatePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", templateName);
+
+        if (!File.Exists(fullTemplatePath))
         {
-            string[] templates = ["imgLocalCriminal.png", "imgLocalMinus.png", "imgLocalNeutral.png"];
-            bool currentStatus = true;
-
-            OpenCvSharp.Rect searchRegion = new OpenCvSharp.Rect(50, 250, 300, 420);
-
-            foreach (string templateName in templates)
-            {
-                string fullTemplatePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", templateName);
-
-                if (!File.Exists(fullTemplatePath))
-                {
-                    currentStatus = false;
-                    continue;
-                }
-
-                OpenCvSharp.Point? foundPoint = FindTemplateInRegion(screenshot, fullTemplatePath, searchRegion, 0.85);
-
-                if (!foundPoint.HasValue)
-                {
-                    currentStatus = false;
-                }
-            }
-
-            // При присвоении сработает логика внутри свойства set { ... }
-            IsSave = currentStatus;
-
-            if (IsSave == false)
-            {
-                ConsolePrint("=== ВНИМАНИЕ! Обнаружена опасность!", ConsoleColor.Magenta);
-            }
+            currentStatus = false;
+            continue;
         }
 
+        OpenCvSharp.Point? foundPoint = FindTemplateInRegion(screenshot, fullTemplatePath, searchRegion, 0.85);
 
+        if (!foundPoint.HasValue)
+        {
+            currentStatus = false;
+        }
+    }
+
+    // При присвоении сработает логика внутри свойства set { ... }
+    IsSave = currentStatus;
+
+    if (IsSave == false)
+    {
+        ConsolePrint("=== ВНИМАНИЕ! Обнаружена опасность!", ConsoleColor.Magenta);
+    }
+}
+
+
+/// <summary>
+/// Выполняет цепочку из 7 кликов для отправки предупреждения в чат.
+/// На втором шаге проверяет, открылось ли меню чатов на русском или английском языке.
+/// </summary>
 static void AliChatWarning()
 {
+    IntPtr targetWindow = IntPtr.Zero;
 
-// TODO: Доделать
-
-    // IntPtr.Zero используется, если клики идут по всему экрану. 
-    // Если нужно кликать в конкретное окно, замените IntPtr.Zero на дескриптор этого окна.
-    IntPtr targetWindow = IntPtr.Zero; 
-
+#if DEBUG
     ConsolePrint("--> Запуск цепочки кликов AliChatWarning...", ConsoleColor.Yellow);
+#endif
 
-    // 1. Первый клик (пример: открытие окна чата)
+    // 1. Первый клик: Открываем меню чатов
     SmartClick(targetWindow, 25, 600);
 
-    // 2. Второй клик (пример: выбор текстового поля)
-    SmartClick(targetWindow, 150, 250);
+    // Пауза 500 мс, чтобы интерфейс игры/эмулятора успел обновиться после клика
+    Thread.Sleep(500);
 
-    // 3. Третий клик
-    SmartClick(targetWindow, 200, 300);
+    // ================= НАЧАЛО АВТОНОМНОЙ ПРОВЕРКИ НА ВТОРОМ ШАГЕ =================
 
-    // 4. Четвертый клик
-    SmartClick(targetWindow, 250, 350);
+    // Получаем настройки и дескриптор окна для создания свежего скриншота
+    BotConfig config = ConfigManager.Load();
+    WindowSettings? testAccount = config.Accounts.FirstOrDefault();
 
-    // 5. Пятый клик
-    SmartClick(targetWindow, 300, 400);
+    if (testAccount == null)
+    {
+        ConsolePrint("Ошибка AliChatWarning: Аккаунты в конфигурации не найдены. Прерывание!", ConsoleColor.Red);
+        return;
+    }
 
-    // 6. Шестой клик
-    SmartClick(targetWindow, 350, 450);
+    nint hWnd = GetWindow(testAccount);
+    if (hWnd == IntPtr.Zero)
+    {
+        ConsolePrint("Ошибка AliChatWarning: Целевое окно программы не найдено. Прерывание!", ConsoleColor.Red);
+        return;
+    }
 
-    // 7. Седьмой клик (пример: кнопка отправки или закрытия)
-    SmartClick(targetWindow, 400, 500);
+    // Делаем актуальный снимок экрана после первого клика (классическое объявление)
+    // ЭТУ СТРОКУ БОЛЬШЕ НЕ УДАЛИТ НИ ОДИН ПЛАГИН:
+    OpenCvSharp.Mat? currentScreenshot = CaptureWindow(hWnd);
 
-    //ConsolePrint("--> Цепочка кликов AliChatWarning успешно завершена.", ConsoleColor.Green);
+    if (currentScreenshot == null || currentScreenshot.Empty())
+    {
+        ConsolePrint("Ошибка AliChatWarning: Не удалось сделать свежий скриншот. Прерывание!", ConsoleColor.Red);
+        currentScreenshot?.Dispose(); // Освобождаем память перед выходом
+        return;
+    }
+
+    // Пути к шаблонам локализации чата
+    string imgPath1 = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", "imgAliChatENG.png");
+    string imgPath2 = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", "imgAliChatRUS.png");
+
+    // Проверяем физическое наличие файлов картинок, чтобы избежать системных ошибок OpenCV
+    if (!File.Exists(imgPath1) || !File.Exists(imgPath2))
+    {
+        ConsolePrint("Ошибка AliChatWarning: Файлы шаблонов чата отсутствуют на диске. Прерывание!", ConsoleColor.Red);
+        currentScreenshot.Dispose(); // Освобождаем память перед выходом
+        return;
+    }
+
+    // Область поиска элементов чата на экране
+    OpenCvSharp.Rect searchRegion = new OpenCvSharp.Rect(5, 220, 300, 500);
+
+    // Ищем шаблоны на обновленном кадре
+    OpenCvSharp.Point? found1 = FindTemplateInRegion(currentScreenshot, imgPath1, searchRegion, 0.85);
+    OpenCvSharp.Point? found2 = FindTemplateInRegion(currentScreenshot, imgPath2, searchRegion, 0.85);
+
+    // Если ОБА изображения НЕ найдены — меню не открылось, прерываем выполнение
+    if (!found1.HasValue && !found2.HasValue)
+    {
+#if DEBUG
+        ConsolePrint($"--> [{Path.GetFileName(imgPath1)}] и [{Path.GetFileName(imgPath2)}] не найдены. Прерывание AliChatWarning!", ConsoleColor.Red);
+#endif
+        currentScreenshot.Dispose(); // Освобождаем память перед выходом
+        return;
+    }
+
+    // Освобождаем память скриншота, так как дальше он нам больше не нужен (идут только клики)
+    currentScreenshot.Dispose();
+
+    // ================= КОНЕЦ АВТОНОМНОЙ ПРОВЕРКИ НА ВТОРОМ ШАГЕ =================
+
+    // 2. Второй клик: Активируем чат альянса
+    SmartClick(targetWindow, 50, 450);
+
+    // 3. Третий клик: Открываем меню чата
+    SmartClick(targetWindow, 365, 700);
+
+    // 4. Четвертый клик: Открываем меню сообщений
+    SmartClick(targetWindow, 1250, 700);
+
+    // 5. Пятый клик: Открываем данные разведки
+    SmartClick(targetWindow, 80, 400);
+
+    // 6. Шестой клик: Выбираем сообщение "Scout"
+    SmartClick(targetWindow, 300, 600);
+
+    // 7. Седьмой клик: Нажимаем кнопку "Отправить"
+    SmartClick(targetWindow, 450, 255);
+
+#if DEBUG
+    ConsolePrint("--> Цепочка кликов AliChatWarning успешно завершена.", ConsoleColor.Green);
+#endif
 }
 
 
@@ -435,61 +471,95 @@ static void AliChatWarning()
         #region Others Methods 
 
 
-        /// <summary>
-        /// Кросплатформенный метод поиска шаблона на кадре по форме.
-        /// </summary>
-        /// <param name="screen">Матрица полного скриншота эмулятора.</param>
-        /// <param name="templatePath">Путь к файлу-шаблону.</param>
-        /// <param name="searchArea">Область поиска. Если null — поиск по всему кадру.</param>
-        /// <param name="threshold">Порог точности (0.0 - 1.0).</param>
-        /// <returns>Точка центра или null.</returns>
-        public static OpenCvSharp.Point? FindTemplateInRegion(OpenCvSharp.Mat screen, string templatePath, OpenCvSharp.Rect? searchArea = null, double threshold = 0.55)
-        {
-            if (screen?.Empty() is not false) return null;
+/// <summary>
+/// Кросплатформенный метод поиска шаблона на кадре по форме.
+/// </summary>
+/// <param name="screen">Матрица полного скриншота эмулятора.</param>
+/// <param name="templatePath">Путь к файлу-шаблону.</param>
+/// <param name="searchArea">Область поиска. Если null — поиск по всему кадру.</param>
+/// <param name="threshold">Порог точности (0.0 - 1.0).</param>
+/// <returns>Точка центра или null.</returns>
+public static OpenCvSharp.Point? FindTemplateInRegion(OpenCvSharp.Mat screen, string templatePath, OpenCvSharp.Rect? searchArea = null, double threshold = 0.55)
+{
+    if (screen?.Empty() is not false) return null;
 
-            using var croppedScreen = searchArea.HasValue ? new Mat(screen!, searchArea.Value) : screen!.Clone();
-            using var matTemplate = Cv2.ImRead(templatePath, ImreadModes.Color);
+    // 1. Объявляем переменную. Этот стиль объявления плагины очистки кода не удаляют.
+    OpenCvSharp.Mat croppedScreen;
 
-            if (matTemplate.Empty())
-            {
-                Console.WriteLine($"[Ошибка] Не удалось загрузить шаблон: {templatePath}");
-                return null;
-            }
+    if (searchArea.HasValue)
+    {
+        // Если область передана, создаем под-матрицу (ссылку на регион)
+        croppedScreen = new OpenCvSharp.Mat(screen, searchArea.Value);
+    }
+    else
+    {
+        // Если область не передана, работаем со всем экраном целиком
+        croppedScreen = screen;
+    }
 
-            if (matTemplate.Width > croppedScreen.Width || matTemplate.Height > croppedScreen.Height)
-            {
-                Console.WriteLine($"[Ошибка] Шаблон {templatePath} ({matTemplate.Width}x{matTemplate.Height}) больше области поиска ({croppedScreen.Width}x{croppedScreen.Height})!");
-                return null;
-            }
+    // 2. Загружаем файл шаблона с диска
+    using var matTemplate = Cv2.ImRead(templatePath, ImreadModes.Color);
 
-            using Mat grayScreen = new();
-            using Mat grayTemplate = new();
-            Cv2.CvtColor(croppedScreen, grayScreen, ColorConversionCodes.BGR2GRAY);
-            Cv2.CvtColor(matTemplate, grayTemplate, ColorConversionCodes.BGR2GRAY);
+    if (matTemplate.Empty())
+    {
+        Console.WriteLine($"[Ошибка] Не удалось загрузить шаблон: {templatePath}");
+        
+        // Освобождаем память под-матрицы перед выходом, если она создавалась
+        if (searchArea.HasValue) croppedScreen.Dispose();
+        return null;
+    }
 
-            using Mat result = new();
-            Cv2.MatchTemplate(grayScreen, grayTemplate, result, TemplateMatchModes.CCoeffNormed);
-            Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out OpenCvSharp.Point maxLoc);
+    // 3. Проверяем, помещается ли шаблон в выбранную область поиска
+    if (matTemplate.Width > croppedScreen.Width || matTemplate.Height > croppedScreen.Height)
+    {
+        Console.WriteLine($"[Ошибка] Шаблон {templatePath} ({matTemplate.Width}x{matTemplate.Height}) больше области поиска ({croppedScreen.Width}x{croppedScreen.Height})!");
+        
+        if (searchArea.HasValue) croppedScreen.Dispose();
+        return null;
+    }
+
+    // 4. Переводим изображения в оттенки серого для повышения скорости и точности поиска
+    using Mat grayScreen = new();
+    using Mat grayTemplate = new();
+    Cv2.CvtColor(croppedScreen, grayScreen, ColorConversionCodes.BGR2GRAY);
+    Cv2.CvtColor(matTemplate, grayTemplate, ColorConversionCodes.BGR2GRAY);
+
+    // 5. Выполняем сопоставление шаблонов (Template Matching)
+    using Mat result = new();
+    Cv2.MatchTemplate(grayScreen, grayTemplate, result, TemplateMatchModes.CCoeffNormed);
+    Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out OpenCvSharp.Point maxLoc);
 
 #if DEBUG
-            // Этот блок выполнится ТОЛЬКО в режиме Debug
-            double matchPercentage = maxVal * 100;
-            Console.WriteLine($"   -> Диагностика {templatePath}: Макс. совпадение = {matchPercentage:F1}%");
+    // Данный блок выводится только при запуске проекта в режиме отладки (Debug)
+    double matchPercentage = maxVal * 100;
+    Console.WriteLine($"   -> Диагностика {Path.GetFileName(templatePath)}: Макс. совпадение = {matchPercentage:F1}%");
 #endif
 
-            if (maxVal >= threshold)
-            {
-                int offsetX = searchArea?.X ?? 0;
-                int offsetY = searchArea?.Y ?? 0;
+    // 6. Проверяем, превысил ли результат установленный порог точности
+    if (maxVal >= threshold)
+    {
+        int offsetX = searchArea?.X ?? 0;
+        int offsetY = searchArea?.Y ?? 0;
 
-                int centerX = offsetX + maxLoc.X + (matTemplate.Width / 2);
-                int centerY = offsetY + maxLoc.Y + (matTemplate.Height / 2);
+        // Вычисляем координаты центра найденного объекта на исходном полном скриншоте
+        int centerX = offsetX + maxLoc.X + (matTemplate.Width / 2);
+        int centerY = offsetY + maxLoc.Y + (matTemplate.Height / 2);
 
-                return new OpenCvSharp.Point(centerX, centerY);
-            }
+        // Корректно освобождаем память региона перед возвратом результата
+        if (searchArea.HasValue) croppedScreen.Dispose();
 
-            return null;
-        }
+        return new OpenCvSharp.Point(centerX, centerY);
+    }
+
+    // Освобождаем память региона перед выходом, если объект не был найден
+    if (searchArea.HasValue) croppedScreen.Dispose();
+
+    return null;
+}
+
+
+
+
 
 
         /// <summary>
