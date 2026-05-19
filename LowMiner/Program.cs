@@ -69,7 +69,7 @@ namespace LowMiner
         /// Получает реальные физические атрибуты окна (например, границы без учета теней).
         /// </summary>
         [LibraryImport("dwmapi.dll", EntryPoint = "DwmGetWindowAttribute")]
-        private static partial int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out RECT pvAttribute, int cbAttribute);
+        private static partial int DwmGetWindowAttribute(IntPtr hWnd, int dwAttribute, out RECT pvAttribute, int cbAttribute);
 
 
         // === Захват экрана и рендеринг (GDI / Контекст устройства) ===
@@ -109,7 +109,7 @@ namespace LowMiner
         /// </summary>
         [LibraryImport("user32.dll", EntryPoint = "PrintWindow")]
         [return: MarshalAs(UnmanagedType.Bool)]
-        private static partial bool PrintWindow(IntPtr hwnd, IntPtr hdcBlt, uint nFlags);
+        private static partial bool PrintWindow(IntPtr hWnd, IntPtr hdcBlt, uint nFlags);
 
         /// <summary>
         /// Получает биты указанного совместимого растрового изображения и копирует их в буфер.
@@ -160,7 +160,30 @@ namespace LowMiner
 
         #region Bot params
 
-        private static bool IsSave = true;
+        // 1. Используем bool? со значением null. Теперь начальное состояние «неизвестно».
+        private static bool? _isSave = null; 
+
+        public static bool? IsSave
+        {
+            get => _isSave;
+            set
+            {
+                // Проверяем строгое изменение: старый статус был ТОЧНО true, а новый стал ТOЧНО false
+                if (_isSave == true && value == false)
+                {
+                    _isSave = value; // Обновляем значение на false
+                    AliChatWarning(); // Вызываем оповещение (сработает 1 раз до возврата в true)
+                }
+                else
+                {
+                    // Сюда попадают случаи: 
+                    // - инициализация (из null в true или false)
+                    // - повторные удержания статуса (из false в false, из true в true)
+                    // - восстановление системы (из false в true)
+                    _isSave = value;
+                }
+            }
+        }
 
         #endregion
 
@@ -171,7 +194,7 @@ namespace LowMiner
         #region Main
 
 
-        static void Main()
+        /*static void Main()
         {
             // Фиктивная строка для предотвращения автоудаления using в VS Code
             _ = typeof(OpenCvSharp.Mat);
@@ -231,7 +254,91 @@ namespace LowMiner
 
             //ConsolePrint("\nТест завершен. Нажми любую клавишу...");
             //Console.ReadKey();
+        }*/
+
+
+static void Main(string[] args)
+{
+    // 1. Загружаем настройки из файла
+    BotConfig config = ConfigManager.Load();
+
+    // Берем первый доступный аккаунт для теста
+    WindowSettings? testAccount = config.Accounts.FirstOrDefault();
+
+    // Проверяем, что аккаунт успешно загружен
+    if (testAccount == null)
+    {
+        ConsolePrint("Ошибка: testAccount равен null! В конфиге нет аккаунтов.", ConsoleColor.Red);
+        return;
+    }
+
+    // 2. Получаем дескриптор (hWnd) нужного окна
+    nint hWnd = GetWindow(testAccount);
+
+    // Проверяем, что окно найдено
+    if (hWnd == IntPtr.Zero)
+    {
+        ConsolePrint("Ошибка: Окно целевой программы не найдено.", ConsoleColor.Red);
+        return;
+    }
+
+    // 3. Вызываем метод захвата экрана
+    using Mat? screenshot = CaptureWindow(hWnd);
+
+    // 4. Проверяем, что скриншот успешно получен (не null) и не пустой
+    if (screenshot != null && screenshot.Width > 0 && screenshot.Height > 0)
+    {
+        ConsolePrint($"Скриншот успешно получен! Размер: {screenshot.Width}x{screenshot.Height}", ConsoleColor.Green);
+
+        // ================= НАЧАЛО ПРОВЕРКИ ДВУХ ИЗОБРАЖЕНИЙ =================
+        
+        // Задаем пути к двум картинкам, которые нужно найти
+        string imgPath1 = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", "imgAliChatRUS.png");
+        string imgPath2 = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", "imgAliChatENG.png");
+
+        // Проверяем физическое существование файлов картинок на диске
+        if (!File.Exists(imgPath1) || !File.Exists(imgPath2))
+        {
+            ConsolePrint("Ошибка: Один или оба файла шаблонов отсутствуют в папке images!", ConsoleColor.Red);
+            return;
         }
+
+        // Задаем область поиска (координаты, которые использовались ранее)
+        OpenCvSharp.Rect searchRegion = new OpenCvSharp.Rect(0, 20, 500, 700);
+        // Ищем первое изображение
+        OpenCvSharp.Point? found1 = FindTemplateInRegion(screenshot, imgPath1, searchRegion, 0.85);
+        // Ищем второе изображение
+        OpenCvSharp.Point? found2 = FindTemplateInRegion(screenshot, imgPath2, searchRegion, 0.85);
+
+        // Логика проверки: найдены ли ОБА изображения
+        if (found1.HasValue && found2.HasValue)
+        {
+            ConsolePrint("Успех: Оба изображения успешно найдены на скриншоте!", ConsoleColor.Green);
+            ConsolePrint($"Картинка {Path.GetFileName(imgPath1)} в точке: {found1.Value.X}, {found1.Value.Y}", ConsoleColor.Gray);
+            ConsolePrint($"Картинка {Path.GetFileName(imgPath2)} в точке: {found2.Value.X}, {found2.Value.Y}", ConsoleColor.Gray);
+        }
+        else
+        {
+            ConsolePrint("Внимание: Одно или оба изображения отсутствуют на экране.", ConsoleColor.Yellow);
+            
+            // Имена файлов подтягиваются динамически из переменных через интерполяцию строк $""
+            if (!found1.HasValue) 
+                ConsolePrint($"-> Не найдено: {Path.GetFileName(imgPath1)}", ConsoleColor.DarkYellow);
+                
+            if (!found2.HasValue) 
+                ConsolePrint($"-> Не найдено: {Path.GetFileName(imgPath2)}", ConsoleColor.DarkYellow);
+        }
+
+        // ================= КОНЕЦ ПРОВЕРКИ ДВУХ ИЗОБРАЖЕНИЙ =================
+
+        // (Опционально) Для теста сохраняем скриншот на диск
+        Cv2.ImWrite("debug_screenshot.png", screenshot);
+    }
+    else
+    {
+        ConsolePrint("Ошибка: Не удалось сделать скриншот окна.", ConsoleColor.Red);
+    }
+}
 
 
 
@@ -250,36 +357,67 @@ namespace LowMiner
             string[] templates = ["imgLocalCriminal.png", "imgLocalMinus.png", "imgLocalNeutral.png"];
             bool currentStatus = true;
 
+            OpenCvSharp.Rect searchRegion = new OpenCvSharp.Rect(50, 250, 300, 420);
+
             foreach (string templateName in templates)
             {
                 string fullTemplatePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", templateName);
 
-                // Если файла шаблона физически нет на диске, мы гарантированно не сможем его найти
                 if (!File.Exists(fullTemplatePath))
                 {
                     currentStatus = false;
                     continue;
                 }
 
-                // Ищем шаблон в фоновом режиме без вывода логов
-                OpenCvSharp.Point? foundPoint = FindTemplateInRegion(screenshot, fullTemplatePath, null, 0.85);
+                OpenCvSharp.Point? foundPoint = FindTemplateInRegion(screenshot, fullTemplatePath, searchRegion, 0.85);
 
-                // Если хотя бы один обязательный шаблон отсутствует — система не в безопасности
                 if (!foundPoint.HasValue)
                 {
                     currentStatus = false;
                 }
             }
 
-            // Записываем итоговый результат проверки в глобальную переменную
+            // При присвоении сработает логика внутри свойства set { ... }
             IsSave = currentStatus;
 
-            // Выводим сообщение в консоль только в случае обнаружения опасности
             if (!IsSave)
             {
                 ConsolePrint("=== ВНИМАНИЕ! Обнаружена опасность!", ConsoleColor.Magenta);
             }
         }
+
+
+static void AliChatWarning()
+{
+    // IntPtr.Zero используется, если клики идут по всему экрану. 
+    // Если нужно кликать в конкретное окно, замените IntPtr.Zero на дескриптор этого окна.
+    IntPtr targetWindow = IntPtr.Zero; 
+
+    ConsolePrint("--> Запуск цепочки кликов AliChatWarning...", ConsoleColor.Yellow);
+
+    // 1. Первый клик (пример: открытие окна чата)
+    SmartClick(targetWindow, 25, 600);
+
+    // 2. Второй клик (пример: выбор текстового поля)
+    SmartClick(targetWindow, 150, 250);
+
+    // 3. Третий клик
+    SmartClick(targetWindow, 200, 300);
+
+    // 4. Четвертый клик
+    SmartClick(targetWindow, 250, 350);
+
+    // 5. Пятый клик
+    SmartClick(targetWindow, 300, 400);
+
+    // 6. Шестой клик
+    SmartClick(targetWindow, 350, 450);
+
+    // 7. Седьмой клик (пример: кнопка отправки или закрытия)
+    SmartClick(targetWindow, 400, 500);
+
+    //ConsolePrint("--> Цепочка кликов AliChatWarning успешно завершена.", ConsoleColor.Green);
+}
 
 
 
