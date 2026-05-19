@@ -306,9 +306,9 @@ static void Main(string[] args)
         // Задаем область поиска (координаты, которые использовались ранее)
         OpenCvSharp.Rect searchRegion = new OpenCvSharp.Rect(0, 20, 500, 700);
         // Ищем первое изображение
-        OpenCvSharp.Point? found1 = FindTemplateInRegion(screenshot, imgPath1, searchRegion, 0.85);
+        OpenCvSharp.Point? found1 = FindTemplateInRegion(screenshot, imgPath1, searchRegion, 0.75);
         // Ищем второе изображение
-        OpenCvSharp.Point? found2 = FindTemplateInRegion(screenshot, imgPath2, searchRegion, 0.85);
+        OpenCvSharp.Point? found2 = FindTemplateInRegion(screenshot, imgPath2, searchRegion, 0.75);
 
         // Логика проверки: найдены ли ОБА изображения
         if (found1.HasValue && found2.HasValue)
@@ -380,7 +380,7 @@ static void Main(string[] args)
             // При присвоении сработает логика внутри свойства set { ... }
             IsSave = currentStatus;
 
-            if (!IsSave)
+            if (IsSave == false)
             {
                 ConsolePrint("=== ВНИМАНИЕ! Обнаружена опасность!", ConsoleColor.Magenta);
             }
@@ -389,6 +389,9 @@ static void Main(string[] args)
 
 static void AliChatWarning()
 {
+
+// TODO: Доделать
+
     // IntPtr.Zero используется, если клики идут по всему экрану. 
     // Если нужно кликать в конкретное окно, замените IntPtr.Zero на дескриптор этого окна.
     IntPtr targetWindow = IntPtr.Zero; 
