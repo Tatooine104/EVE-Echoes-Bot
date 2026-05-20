@@ -33,10 +33,12 @@ namespace EVEEchoesBot
                 if (_isSave is true && value is false)
                 {
                     _isSave = value; // Обновляем значение на false
+                    ConsolePrint($"=== ОПАСТНОСТЬ !!! В системе посторонние", ConsoleColor.Red);
                     AliChatWarning(); // Вызываем оповещение
                 }
                 else
                 {
+                    ConsolePrint($"=== В системе нет посторонних!", ConsoleColor.Green);
                     _isSave = value;
                 }
             }
@@ -50,7 +52,6 @@ namespace EVEEchoesBot
         // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
         #region Main
-
 
 static void Main()
     {
@@ -115,102 +116,155 @@ static void Main()
         ConsolePrint("=== Бот успешно остановлен. До свидания! ===", ConsoleColor.Cyan);
     }
 
-    /// <summary>
-    /// Метод постоянно работает в фоне и ждет нажатия клавиши Escape
-    /// </summary>
-    private static void ListenForCancelKey()
+
+/// <summary>
+/// Метод постоянно работает в фоне: ждет ESC для выхода или F10 для мгновенного теста клика.
+/// </summary>
+private static void ListenForCancelKey()
+{
+    while (!_cts.Token.IsCancellationRequested)
     {
-        while (!_cts.Token.IsCancellationRequested)
+        // Проверяем, нажата ли какая-либо клавиша
+        if (Console.KeyAvailable)
         {
-            // Проверяем, нажата ли клавиша на клавиатуре
-            if (Console.KeyAvailable)
+            // Считываем клавишу и прячем её символ из консоли (intercept: true)
+            ConsoleKeyInfo key = Console.ReadKey(intercept: true);
+
+            // 1. Если нажат ESC — плавно останавливаем бота
+            if (key.Key == ConsoleKey.Escape)
             {
-                var key = Console.ReadKey(intercept: true); // intercept: true прячет символ Esc из консоли
-                if (key.Key == ConsoleKey.Escape)
+                ConsolePrint("\n[INFO] Получен сигнал отмены. Завершаем текущий круг и выходим...", ConsoleColor.Yellow);
+                _cts.Cancel(); // Посылаем сигнал отмены
+                break;
+            }
+
+            // 2. Если нажат F10 — выполняем мгновенный тестовый клик по координатам
+            if (key.Key == ConsoleKey.F10)
+            {
+                ConsolePrint("\n[ТЕСТ] Нажата клавиша F10! Запуск проверки клика...", ConsoleColor.Cyan);
+
+                try
                 {
-                    ConsolePrint("\n[INFO] Получен сигнал отмены. Завершаем текущий круг и выходим...", ConsoleColor.Yellow);
-                    _cts.Cancel(); // Посылаем сигнал отмены во все методы
-                    break;
+                    // Быстро подгружаем настройки текущего аккаунта
+                    BotConfig config = ConfigManager.Load();
+                    WindowSettings? testAccount = config.Accounts.FirstOrDefault();
+
+                    if (testAccount == null)
+                    {
+                        ConsolePrint("[ТЕСТ] Ошибка: Аккаунты в конфигурации не найдены.", ConsoleColor.Red);
+                        continue;
+                    }
+
+                    // Получаем окно (без ресайза, так как кэш в HashSet его пропустит)
+                    nint hWnd = GetWindow(testAccount);
+
+                    if (hWnd == IntPtr.Zero)
+                    {
+                        ConsolePrint($"[ТЕСТ] Ошибка: Окно '{testAccount.WindowTitle}' не найдено.", ConsoleColor.Red);
+                        continue;
+                    }
+
+                    // Находим внутреннее окно ввода эмулятора (SubWin/RenderWindow)
+                    IntPtr inputWindow = WinAPI.GetInputWindow(hWnd);
+
+                    // Укажите здесь ТЕ КООРДИНАТЫ, которые вы хотите проверить
+                    const int testX = 60;
+                    const int testY = 680;
+
+                    ConsolePrint($"[ТЕСТ] Отправляю SmartClick в окно {inputWindow} по координатам ({testX}, {testY})...", ConsoleColor.Yellow);
+
+                    // Вызываем клик. minSec и maxSec ставим в 0, чтобы кликнуло мгновенно без пауз
+                    SmartClick(hWnd, testX, testY, minSec: 0, maxSec: 0, offset: 3);
+
+                    ConsolePrint("[ТЕСТ] Клик успешно отправлен в эмулятор!", ConsoleColor.Green);
+                }
+                catch (Exception ex)
+                {
+                    ConsolePrint($"[ТЕСТ] Ошибка при симуляции клика: {ex.Message}", ConsoleColor.Red);
                 }
             }
-            Thread.Sleep(100); // Разгружаем процессор
         }
+
+        Thread.Sleep(100); // Разгружаем процессор, чтобы поток не ел 100% ядра
     }
+}
+
+
         #endregion
 
-// ============================================================================================
+        // ============================================================================================
 
         #region EVE Echoes Methods 
 
-/// <summary>
-/// Автономно загружает конфиг, находит окно, делает скриншот и проверяет безопасность локала.
-/// </summary>
-static void CheckSecurityStatus()
-{
-    // 1. Самостоятельно загружаем настройки и ищем аккаунт
-    BotConfig config = ConfigManager.Load();
-    WindowSettings? testAccount = config.Accounts.FirstOrDefault();
-
-    if (testAccount == null)
-    {
-        ConsolePrint("Ошибка CheckSecurityStatus: В конфигурации нет доступных аккаунтов.", ConsoleColor.Red);
-        IsSave = false; // Нет настроек — система не может считаться безопасной
-        return;
-    }
-
-    // 2. Получаем дескриптор окна приложения
-    nint hWnd = GetWindow(testAccount);
-
-    if (hWnd == IntPtr.Zero)
-    {
-        ConsolePrint("Ошибка CheckSecurityStatus: Окно целевой программы не найдено.", ConsoleColor.Red);
-        IsSave = false;
-        return;
-    }
-
-    // 3. Делаем снимок экрана и оборачиваем в using для автоматической очистки памяти C++
-    OpenCvSharp.Mat? screenshot = CaptureWindow(hWnd);
-
-    if (screenshot?.Empty() is not false || screenshot.Width <= 0 || screenshot.Height <= 0)
-    {
-        ConsolePrint("Ошибка CheckSecurityStatus: Не удалось сделать скриншот окна.", ConsoleColor.Red);
-        IsSave = false;
-        screenshot?.Dispose(); // Освобождаем память вручную при ошибке
-        return;
-    }
-
-    // 4. Логика проверки шаблонов интерфейса
-    string[] templates = ["imgLocalCriminal.png", "imgLocalMinus.png", "imgLocalNeutral.png"];
-    bool currentStatus = true;
-
-    OpenCvSharp.Rect searchRegion = new(50, 250, 300, 420);
-
-    foreach (string templateName in templates)
-    {
-        string fullTemplatePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", templateName);
-
-        if (!File.Exists(fullTemplatePath))
+        /// <summary>
+        /// Автономно загружает конфиг, находит окно, делает скриншот и проверяет безопасность локала.
+        /// </summary>
+        static void CheckSecurityStatus()
         {
-            currentStatus = false;
-            continue;
+            // 1. Самостоятельно загружаем настройки и ищем аккаунт
+            BotConfig config = ConfigManager.Load();
+            WindowSettings? testAccount = config.Accounts.FirstOrDefault();
+
+            if (testAccount == null)
+            {
+                ConsolePrint("Ошибка CheckSecurityStatus: В конфигурации нет доступных аккаунтов.", ConsoleColor.Red);
+                IsSave = false; // Нет настроек — система не может считаться безопасной
+                return;
+            }
+
+            // 2. Получаем дескриптор окна приложения
+            nint hWnd = GetWindow(testAccount);
+
+            if (hWnd == IntPtr.Zero)
+            {
+                ConsolePrint("Ошибка CheckSecurityStatus: Окно целевой программы не найдено.", ConsoleColor.Red);
+                IsSave = false;
+                return;
+            }
+
+            // 3. Делаем снимок экрана и оборачиваем в using для автоматической очистки памяти C++
+            OpenCvSharp.Mat? screenshot = CaptureWindow(hWnd);
+
+            if (screenshot?.Empty() is not false || screenshot.Width <= 0 || screenshot.Height <= 0)
+            {
+                ConsolePrint("Ошибка CheckSecurityStatus: Не удалось сделать скриншот окна.", ConsoleColor.Red);
+                IsSave = false;
+                screenshot?.Dispose(); // Освобождаем память вручную при ошибке
+                return;
+            }
+
+            // 4. Логика проверки шаблонов интерфейса
+            string[] templates = ["imgLocalCriminal.png", "imgLocalMinus.png", "imgLocalNeutral.png"];
+            bool currentStatus = true;
+
+            OpenCvSharp.Rect searchRegion = new(50, 250, 300, 420);
+
+            foreach (string templateName in templates)
+            {
+                string fullTemplatePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", templateName);
+
+                if (!File.Exists(fullTemplatePath))
+                {
+                    currentStatus = false;
+                    continue;
+                }
+
+                OpenCvSharp.Point? foundPoint = FindTemplateInRegion(screenshot, fullTemplatePath, searchRegion, 0.80);
+
+                if (!foundPoint.HasValue)
+                {
+                    currentStatus = false;
+                }
+            }
+
+            // При присвоении сработает логика внутри свойства set { ... }
+            IsSave = currentStatus;
+
+            /*if (IsSave == false)
+            {
+                ConsolePrint("=== ВНИМАНИЕ! Обнаружена опасность!", ConsoleColor.Magenta);
+            }*/
         }
-
-        OpenCvSharp.Point? foundPoint = FindTemplateInRegion(screenshot, fullTemplatePath, searchRegion, 0.80);
-
-        if (!foundPoint.HasValue)
-        {
-            currentStatus = false;
-        }
-    }
-
-    // При присвоении сработает логика внутри свойства set { ... }
-    IsSave = currentStatus;
-
-    /*if (IsSave == false)
-    {
-        ConsolePrint("=== ВНИМАНИЕ! Обнаружена опасность!", ConsoleColor.Magenta);
-    }*/
-}
 
 
 /// <summary>
@@ -597,46 +651,69 @@ static IntPtr GetWindow(WindowSettings settings)
         }
 
 /// <summary>
-/// Выполняет имитацию человеческого клика: выдерживает паузу,
-/// добавляет случайное смещение к координатам и нажимает кнопку мыши в фоне.
+/// Аппаратно эмулирует клик мыши на уровне драйвера Windows с помощью SendInput.
+/// Оптимизирован для молниеносного и чёткого нажатия.
 /// </summary>
-/// <param name="hWnd">Дескриптор окна ввода (дочернего окна эмулятора).</param>
-/// <param name="x">Базовая координата X.</param>
-/// <param name="y">Базовая координата Y.</param>
-/// <param name="minSec">Минимальная задержка перед кликом (сек).</param>
-/// <param name="maxSec">Максимальная задержка перед кликом (сек).</param>
-/// <param name="offset">Максимальное отклонение от точки в пикселях.</param>
 static void SmartClick(IntPtr hWnd, int x, int y, int minSec = 1, int maxSec = 5, int offset = 10)
 {
-    // 1. Рандомная задержка перед действием
-    int initialDelay = GetRandomDelayMs(minSec, maxSec);
-#if DEBUG
-    ConsolePrint($"SmartClick | Действие: Ожидание перед кликом {initialDelay} мс...", ConsoleColor.Cyan);
-#endif
-    Thread.Sleep(initialDelay);
+    if (hWnd == IntPtr.Zero) return;
 
-    // 2. Расчет координат с плавающим смещением
+    // 1. Рандомная задержка перед действием (если параметры 0, выполнится мгновенно)
+    if (minSec > 0 || maxSec > 0)
+    {
+        int initialDelay = GetRandomDelayMs(minSec, maxSec);
+        Thread.Sleep(initialDelay);
+    }
+
+    // 2. Расчет координат внутри окна со случайным смещением
     int finalX = x + _random.Next(-offset, offset + 1);
     int finalY = y + _random.Next(-offset, offset + 1);
 
-    // 3. Подготовка данных (упаковываем X и Y координаты в один 32-битный lParam)
-    int PackedCoordinates = (finalY << 16) | (finalX & 0xFFFF);
-    IntPtr lParam = (IntPtr)PackedCoordinates;
+    // 3. Выводим окно эмулятора на передний план
+    WinAPI.SetForegroundWindow(hWnd);
 
-    // ИСПРАВЛЕНО: Добавлен префикс WinAPI к вызовам фонового клика
-    // Нажатие (wParam 1 = левая кнопка мыши)
-    WinAPI.PostMessage(hWnd, WinAPI.WM_LBUTTONDOWN, (IntPtr)1, lParam);
+    // 4. Переводим относительные координаты окна в реальные экранные пиксели
+    if (!WinAPI.GetWindowRect(hWnd, out WinAPI.RECT rect))
+    {
+        ConsolePrint("SmartClick | Ошибка: Не удалось получить координаты границ окна.", ConsoleColor.Red);
+        return;
+    }
 
-    // Короткая пауза удержания кнопки (30-100 мс) для реалистичности
-    Thread.Sleep(_random.Next(30, 101));
+    int screenX = rect.Left + finalX;
+    int screenY = rect.Top + finalY;
 
-    // Отпускание кнопки мыши
-    WinAPI.PostMessage(hWnd, WinAPI.WM_LBUTTONUP, IntPtr.Zero, lParam);
+    // 5. Мгновенно перемещаем курсор в точку клика
+    WinAPI.SetCursorPos(screenX, screenY);
+
+    // Константы для SendInput
+    const uint INPUT_MOUSE = 0;
+    const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
+    const uint MOUSEEVENTF_LEFTUP = 0x0004;
+
+    // СТРУКТУРА №1: Нажатие левой кнопки
+    WinAPI.INPUT inputDown = new() { type = INPUT_MOUSE };
+    inputDown.mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
+
+    // СТРУКТУРА №2: Отпускание левой кнопки
+    WinAPI.INPUT inputUp = new() { type = INPUT_MOUSE };
+    inputUp.mi.dwFlags = MOUSEEVENTF_LEFTUP;
+
+    // 6. ВЫПОЛНЯЕМ КЛИК: отправляем массивы из 1 элемента по отдельности
+    // Шаг А: Мгновенно зажимаем кнопку
+    WinAPI.SendInput(1, [inputDown], System.Runtime.InteropServices.Marshal.SizeOf<WinAPI.INPUT>());
+
+    // Маленькая реалистичная пауза удержания кнопки (всего 20-40 миллисекунд), чтобы игра успела зафиксировать клик
+    Thread.Sleep(_random.Next(20, 41));
+
+    // Шаг Б: Мгновенно отпускаем кнопку
+    WinAPI.SendInput(1, [inputUp], System.Runtime.InteropServices.Marshal.SizeOf<WinAPI.INPUT>());
 
 #if DEBUG
-    ConsolePrint($"SmartClick | Действие: Клик в ({finalX}, {finalY}) со смещением {offset}", ConsoleColor.Yellow);
+    ConsolePrint($"SmartClick | [ДРАЙВЕР] Быстрый клик отправлен в ({screenX}, {screenY})", ConsoleColor.Yellow);
 #endif
 }
+
+
 
 
         /// <summary>

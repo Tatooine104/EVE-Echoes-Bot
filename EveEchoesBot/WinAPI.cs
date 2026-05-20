@@ -33,6 +33,41 @@ namespace EVEEchoesBot
             internal uint biClrImportant;
         }
 
+        // --- 
+
+    // --- Структуры для системной эмуляции мыши SendInput ---
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    internal struct INPUT
+    {
+        public uint type;
+        public MOUSEINPUT mi;
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    internal struct MOUSEINPUT
+    {
+        public int dx;
+        public int dy;
+        public uint mouseData;
+        public uint dwFlags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
+    [System.Runtime.InteropServices.LibraryImport("user32.dll")]
+    internal static partial uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+
+    [System.Runtime.InteropServices.LibraryImport("user32.dll")]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    internal static partial bool SetForegroundWindow(IntPtr hWnd);
+
+    [System.Runtime.InteropServices.LibraryImport("user32.dll")]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    internal static partial bool SetCursorPos(int X, int Y);
+
+
+        // ---
+
 
         // === Размеры и поиск окон (User32 / DwmApi) ===
 
@@ -170,5 +205,42 @@ namespace EVEEchoesBot
         [LibraryImport("user32.dll", EntryPoint = "PostMessageW")]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static partial bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+    /// <summary>
+    /// Автоматически находит дочернее окно ввода/рендера внутри главного окна эмулятора.
+    /// </summary>
+    internal static IntPtr GetInputWindow(IntPtr mainHWnd)
+    {
+        if (mainHWnd == IntPtr.Zero) return IntPtr.Zero;
+
+        IntPtr child = FindWindowEx(mainHWnd, IntPtr.Zero, "SubWin", null);
+        if (child != IntPtr.Zero) return child;
+
+        child = FindWindowEx(mainHWnd, IntPtr.Zero, "Form", null);
+        if (child != IntPtr.Zero) return child;
+
+        child = FindWindowEx(mainHWnd, IntPtr.Zero, "RenderWindow", null);
+        if (child != IntPtr.Zero) return child;
+
+        IntPtr currentChild = FindWindowEx(mainHWnd, IntPtr.Zero, null, null);
+        System.Text.StringBuilder className = new();
+
+        while (currentChild != IntPtr.Zero)
+        {
+            GetClassName(currentChild, className, className.Capacity);
+            string name = className.ToString();
+
+            if (name.Contains("Render") || name.Contains("View") || name.Contains("Sub") || name.Contains("Qt"))
+            {
+                return currentChild;
+            }
+
+            currentChild = FindWindowEx(mainHWnd, currentChild, null, null);
+        }
+
+        return mainHWnd;
+    }
+
+
     }
 }
