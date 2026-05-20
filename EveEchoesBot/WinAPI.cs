@@ -94,6 +94,13 @@ namespace EVEEchoesBot
             return result;
         }
 
+        // --- Константы мыши (Windows Messages) ---
+        internal const uint WM_LBUTTONDOWN = 0x0201; // Нажатие левой кнопки мыши
+        internal const uint WM_LBUTTONUP = 0x0202;   // Отпускание левой кнопки мыши
+
+        // --- Константы графического интерфейса и DWM ---
+        internal const int DWMWA_EXTENDED_FRAME_BOUNDS = 9; // Флаг получения реальных границ окна в Win 10/11
+        internal const uint PW_RENDERFULLCONTENT = 2;       // Флаг полного рендеринга содержимого (DirectX/OpenGL эмуляторы)
 
         // === Захват экрана и рендеринг (GDI / Контекст устройства) ===
 

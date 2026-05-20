@@ -10,14 +10,6 @@ namespace EVEEchoesBot
         // 1. Создаем глобальный источник токена отмены
         private static readonly CancellationTokenSource _cts = new();
 
-        // --- Константы мыши (Windows Messages) ---
-        private const uint WM_LBUTTONDOWN = 0x0201; // Нажатие левой кнопки мыши
-        private const uint WM_LBUTTONUP = 0x0202;   // Отпускание левой кнопки мыши
-
-        // --- Константы графического интерфейса и DWM ---
-        private const int DWMWA_EXTENDED_FRAME_BOUNDS = 9; // Флаг получения реальных границ окна в Win 10/11
-        private const uint PW_RENDERFULLCONTENT = 2;       // Флаг полного рендеринга содержимого (DirectX/OpenGL эмуляторы)
-
         // --- Глобальные утилиты ---
         private static readonly Random _random = new();
 
@@ -457,7 +449,7 @@ static OpenCvSharp.Mat? CaptureWindow(IntPtr hWnd)
     try
     {
         // ИСПРАВЛЕНО: Добавлен префикс WinAPI.
-        WinAPI.PrintWindow(hWnd, hdcMem, PW_RENDERFULLCONTENT);
+        WinAPI.PrintWindow(hWnd, hdcMem, WinAPI.PW_RENDERFULLCONTENT);
 
         // ИСПРАВЛЕНО: Ссылка на структуру теперь указывает на WinAPI.BITMAPINFOHEADER
         WinAPI.BITMAPINFOHEADER bmi = new()
@@ -510,7 +502,7 @@ static bool ResizeWindow(IntPtr hWnd, int targetWidth, int targetHeight)
     int structSize = System.Runtime.InteropServices.Marshal.SizeOf<WinAPI.RECT>();
 
     // ИСПРАВЛЕНО: Добавлен префикс WinAPI. и указана структура WinAPI.RECT
-    if (WinAPI.DwmGetWindowAttribute(hWnd, DWMWA_EXTENDED_FRAME_BOUNDS, out WinAPI.RECT realWindowRect, structSize) == 0)
+    if (WinAPI.DwmGetWindowAttribute(hWnd, WinAPI.DWMWA_EXTENDED_FRAME_BOUNDS, out WinAPI.RECT realWindowRect, structSize) == 0)
     {
         // Панели BlueStacks (верхний заголовок и правое тулбар-меню)
         const int bluestacksToolbarWidth = 33;
@@ -633,13 +625,13 @@ static void SmartClick(IntPtr hWnd, int x, int y, int minSec = 1, int maxSec = 5
 
     // ИСПРАВЛЕНО: Добавлен префикс WinAPI к вызовам фонового клика
     // Нажатие (wParam 1 = левая кнопка мыши)
-    WinAPI.PostMessage(hWnd, WM_LBUTTONDOWN, (IntPtr)1, lParam);
+    WinAPI.PostMessage(hWnd, WinAPI.WM_LBUTTONDOWN, (IntPtr)1, lParam);
 
     // Короткая пауза удержания кнопки (30-100 мс) для реалистичности
     Thread.Sleep(_random.Next(30, 101));
 
     // Отпускание кнопки мыши
-    WinAPI.PostMessage(hWnd, WM_LBUTTONUP, IntPtr.Zero, lParam);
+    WinAPI.PostMessage(hWnd, WinAPI.WM_LBUTTONUP, IntPtr.Zero, lParam);
 
 #if DEBUG
     ConsolePrint($"SmartClick | Действие: Клик в ({finalX}, {finalY}) со смещением {offset}", ConsoleColor.Yellow);
