@@ -466,6 +466,9 @@ static void AliChatWarning()
     // 7. Седьмой клик: Нажимаем кнопку "Отправить"
     SmartClick(targetWindow, 450, 255);
 
+    // 8. Восьмой клик: Закрыь чаты
+    SmartClick(targetWindow, 625, 225);
+
 #if DEBUG
     ConsolePrint("--> Цепочка кликов AliChatWarning успешно завершена.", ConsoleColor.Green);
 #endif
