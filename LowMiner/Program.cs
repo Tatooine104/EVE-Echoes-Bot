@@ -1,5 +1,4 @@
-﻿using System.Runtime.InteropServices;
-using System.Text.Json;
+﻿using System.Text.Json;
 
 namespace LowMiner
 {
@@ -10,7 +9,7 @@ namespace LowMiner
         #region Constants & Fields
 
         // 1. Создаем глобальный источник токена отмены
-        private static CancellationTokenSource _cts = new CancellationTokenSource();
+        private static readonly CancellationTokenSource _cts = new();
 
         // --- Константы мыши (Windows Messages) ---
         private const uint WM_LBUTTONDOWN = 0x0201; // Нажатие левой кнопки мыши
@@ -24,39 +23,34 @@ namespace LowMiner
         private static readonly Random _random = new();
 
         // Глобальный список аккаунтов, для которых размер окна уже был успешно подогнан
-        private static System.Collections.Generic.HashSet<string> _resizedAccounts = new();
+        private static readonly System.Collections.Generic.HashSet<string> _resizedAccounts = [];
+
 
 
         #endregion
 
         #region Bot params
 
-        // 1. Используем bool? со значением null. Теперь начальное состояние «неизвестно».
-        private static bool? _isSave = null; 
+        private static bool? _isSave = null;
 
         public static bool? IsSave
         {
             get => _isSave;
             set
             {
-                // Проверяем строгое изменение: старый статус был ТОЧНО true, а новый стал ТOЧНО false
-                if (_isSave == true && value == false)
+                // ИСПРАВЛЕНО: Заменили '== true' на 'is true', а '== false' на 'is false'
+                if (_isSave is true && value is false)
                 {
                     _isSave = value; // Обновляем значение на false
-                    ConsolePrint("=== ВНИМАНИЕ! Обнаружена опасность!", ConsoleColor.Magenta);
-                    AliChatWarning(); // Вызываем оповещение (сработает 1 раз до возврата в true)
+                    AliChatWarning(); // Вызываем оповещение
                 }
                 else
                 {
-                    // Сюда попадают случаи: 
-                    // - инициализация (из null в true или false)
-                    // - повторные удержания статуса (из false в false, из true в true)
-                    // - восстановление системы (из false в true)
-                    ConsolePrint("=== В системе безопастно.", ConsoleColor.Green);
                     _isSave = value;
                 }
             }
         }
+
 
         #endregion
 
@@ -67,13 +61,14 @@ namespace LowMiner
         #region Main
 
 
-static void Main(string[] args)
+static void Main()
     {
         ConsolePrint("=== Бот успешно запущен ===", ConsoleColor.Cyan);
         ConsolePrint("--> Нажмите [ESC] в любой момент для остановки скрипта.", ConsoleColor.DarkGray);
 
         // 2. Запускаем фоновый поток, который слушает клавиатуру
-        Thread inputThread = new Thread(ListenForCancelKey) { IsBackground = true };
+        Thread inputThread = new(ListenForCancelKey) { IsBackground = true };
+
         inputThread.Start();
 
         // 3. Основной цикл теперь проверяет, не поступил ли сигнал отмены
@@ -88,7 +83,7 @@ static void Main(string[] args)
                 if (testAccount == null)
                 {
                     ConsolePrint("Ошибка цикла: В конфигурации нет доступных аккаунтов. Ожидание...", ConsoleColor.Red);
-                    
+
                     // Вместо жесткого Thread.Sleep используем безопасную задержку с проверкой токена
                     if (_cts.Token.WaitHandle.WaitOne(5000)) break;
                     continue;
@@ -119,9 +114,9 @@ static void Main(string[] args)
             // Безопасное ожидание 15 секунд между кругами.
             // Если во время этой паузы нажать ESC — программа прервет ожидание МГНОВЕННО, 
             // а не будет послушно дожидаться окончания 15 секунд.
-            if (_cts.Token.WaitHandle.WaitOne(15000)) 
+            if (_cts.Token.WaitHandle.WaitOne(15000))
             {
-                break; 
+                break;
             }
         }
 
@@ -185,7 +180,7 @@ static void CheckSecurityStatus()
     // 3. Делаем снимок экрана и оборачиваем в using для автоматической очистки памяти C++
     OpenCvSharp.Mat? screenshot = CaptureWindow(hWnd);
 
-    if (screenshot == null || screenshot.Empty() || screenshot.Width <= 0 || screenshot.Height <= 0)
+    if (screenshot?.Empty() is not false || screenshot.Width <= 0 || screenshot.Height <= 0)
     {
         ConsolePrint("Ошибка CheckSecurityStatus: Не удалось сделать скриншот окна.", ConsoleColor.Red);
         IsSave = false;
@@ -197,7 +192,7 @@ static void CheckSecurityStatus()
     string[] templates = ["imgLocalCriminal.png", "imgLocalMinus.png", "imgLocalNeutral.png"];
     bool currentStatus = true;
 
-    OpenCvSharp.Rect searchRegion = new OpenCvSharp.Rect(50, 250, 300, 420);
+    OpenCvSharp.Rect searchRegion = new(50, 250, 300, 420);
 
     foreach (string templateName in templates)
     {
@@ -265,13 +260,13 @@ static void AliChatWarning()
     }
 
     // Делаем актуальный снимок экрана после первого клика (классическое объявление)
-    // ЭТУ СТРОКУ БОЛЬШЕ НЕ УДАЛИТ НИ ОДИН ПЛАГИН:
     OpenCvSharp.Mat? currentScreenshot = CaptureWindow(hWnd);
 
-    if (currentScreenshot == null || currentScreenshot.Empty())
+    // ИСПРАВЛЕНО: Длинное условие заменено на современный и безопасный условный доступ ?.
+    if (currentScreenshot?.Empty() is not false)
     {
         ConsolePrint("Ошибка AliChatWarning: Не удалось сделать свежий скриншот. Прерывание!", ConsoleColor.Red);
-        currentScreenshot?.Dispose(); // Освобождаем память перед выходом
+        currentScreenshot?.Dispose(); // Освобождаем память, если объект был создан, но оказался пустым
         return;
     }
 
@@ -288,7 +283,7 @@ static void AliChatWarning()
     }
 
     // Область поиска элементов чата на экране
-    OpenCvSharp.Rect searchRegion = new OpenCvSharp.Rect(5, 220, 300, 500);
+    OpenCvSharp.Rect searchRegion = new(5, 220, 300, 500);
 
     // Ищем шаблоны на обновленном кадре
     OpenCvSharp.Point? found1 = FindTemplateInRegion(currentScreenshot, imgPath1, searchRegion, 0.85);
@@ -380,7 +375,7 @@ public static OpenCvSharp.Point? FindTemplateInRegion(OpenCvSharp.Mat screen, st
     if (matTemplate.Empty())
     {
         Console.WriteLine($"[Ошибка] Не удалось загрузить шаблон: {templatePath}");
-        
+
         // Освобождаем память под-матрицы перед выходом, если она создавалась
         if (searchArea.HasValue) croppedScreen.Dispose();
         return null;
@@ -390,7 +385,7 @@ public static OpenCvSharp.Point? FindTemplateInRegion(OpenCvSharp.Mat screen, st
     if (matTemplate.Width > croppedScreen.Width || matTemplate.Height > croppedScreen.Height)
     {
         Console.WriteLine($"[Ошибка] Шаблон {templatePath} ({matTemplate.Width}x{matTemplate.Height}) больше области поиска ({croppedScreen.Width}x{croppedScreen.Height})!");
-        
+
         if (searchArea.HasValue) croppedScreen.Dispose();
         return null;
     }
@@ -439,90 +434,105 @@ public static OpenCvSharp.Point? FindTemplateInRegion(OpenCvSharp.Mat screen, st
 
 
 
-        /// <summary>
-        /// Делает скриншот целевого окна и возвращает его напрямую в формате матрицы OpenCV (Mat).
-        /// </summary>
-        /// <param name="hWnd">Дескриптор окна эмулятора.</param>
-        /// <returns>Матрица <see cref="OpenCvSharp.Mat"/> с изображением, или null в случае ошибки.</returns>
-        static OpenCvSharp.Mat? CaptureWindow(IntPtr hWnd) // <--- ДОБАВЛЕН ЗНАК '?'
+/// <summary>
+/// Делает скриншот целевого окна и возвращает его напрямую в формате матрицы OpenCV (Mat).
+/// </summary>
+/// <param name="hWnd">Дескриптор окна эмулятора.</param>
+/// <returns>Матрица <see cref="OpenCvSharp.Mat"/> с изображением, или null в случае ошибки.</returns>
+static OpenCvSharp.Mat? CaptureWindow(IntPtr hWnd)
+{
+    if (hWnd == IntPtr.Zero) return null;
+
+    if (!WinAPI.GetWindowRect(hWnd, out WinAPI.RECT rect)) return null;
+
+    int width = rect.Right - rect.Left;
+    int height = rect.Bottom - rect.Top;
+
+    if (width <= 0 || height <= 0) return null;
+
+    IntPtr hdcWindow = WinAPI.GetDC(hWnd);
+    IntPtr hdcMem = WinAPI.CreateCompatibleDC(hdcWindow);
+    IntPtr hBitmap = WinAPI.CreateCompatibleBitmap(hdcWindow, width, height);
+    IntPtr hOldBmp = WinAPI.SelectObject(hdcMem, hBitmap);
+
+    try
+    {
+        // ИСПРАВЛЕНО: Добавлен префикс WinAPI.
+        WinAPI.PrintWindow(hWnd, hdcMem, PW_RENDERFULLCONTENT);
+
+        // ИСПРАВЛЕНО: Ссылка на структуру теперь указывает на WinAPI.BITMAPINFOHEADER
+        WinAPI.BITMAPINFOHEADER bmi = new()
         {
-            if (hWnd == IntPtr.Zero) return null;
+            biSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf<WinAPI.BITMAPINFOHEADER>(),
+            biWidth = width,
+            biHeight = -height,
+            biPlanes = 1,
+            biBitCount = 32,
+            biCompression = 0
+        };
 
-            if (!GetWindowRect(hWnd, out RECT rect)) return null;
+        byte[] rawPixels = new byte[width * height * 4];
 
-            int width = rect.Right - rect.Left;
-            int height = rect.Bottom - rect.Top;
+        // ИСПРАВЛЕНО: Добавлен префикс WinAPI.
+        WinAPI.GetDIBits(hdcMem, hBitmap, 0, (uint)height, rawPixels, ref bmi, 0);
 
-            if (width <= 0 || height <= 0) return null;
+        OpenCvSharp.Mat mat = new(height, width, OpenCvSharp.MatType.CV_8UC4);
+        System.Runtime.InteropServices.Marshal.Copy(rawPixels, 0, mat.Data, rawPixels.Length);
 
-            IntPtr hdcWindow = GetDC(hWnd);
-            IntPtr hdcMem = CreateCompatibleDC(hdcWindow);
-            IntPtr hBitmap = CreateCompatibleBitmap(hdcWindow, width, height);
-            IntPtr hOldBmp = SelectObject(hdcMem, hBitmap);
-
-            try
-            {
-                PrintWindow(hWnd, hdcMem, PW_RENDERFULLCONTENT);
-
-                BITMAPINFOHEADER bmi = new()
-                {
-                    biSize = (uint)Marshal.SizeOf<BITMAPINFOHEADER>(),
-                    biWidth = width,
-                    biHeight = -height,
-                    biPlanes = 1,
-                    biBitCount = 32,
-                    biCompression = 0
-                };
-
-                byte[] rawPixels = new byte[width * height * 4];
-                GetDIBits(hdcMem, hBitmap, 0, (uint)height, rawPixels, ref bmi, 0);
-
-                OpenCvSharp.Mat mat = new(height, width, OpenCvSharp.MatType.CV_8UC4);
-                Marshal.Copy(rawPixels, 0, mat.Data, rawPixels.Length);
-
-                return mat;
-            }
-            finally
-            {
-                SelectObject(hdcMem, hOldBmp);
-                DeleteObject(hBitmap);
-                DeleteDC(hdcMem);
-                _ = ReleaseDC(hWnd, hdcWindow);
-            }
-        }
+        return mat;
+    }
+    finally
+    {
+        // ИСПРАВЛЕНО: Ко всем вызовам очистки ресурсов GDI добавлены префиксы WinAPI.
+        WinAPI.SelectObject(hdcMem, hOldBmp);
+        WinAPI.DeleteObject(hBitmap);
+        WinAPI.DeleteDC(hdcMem);
+        _ = WinAPI.ReleaseDC(hWnd, hdcWindow);
+    }
+}
 
 
 
 
 
-        /// <summary>
-        /// Изменяет размер окна BlueStacks так, чтобы его рабочая область стала заданной ширины и высоты.
-        /// </summary>
-        static bool ResizeWindow(IntPtr hWnd, int targetWidth, int targetHeight)
-        {
-            if (hWnd == IntPtr.Zero) return false;
 
-            int structSize = Marshal.SizeOf<RECT>();
-            if (DwmGetWindowAttribute(hWnd, DWMWA_EXTENDED_FRAME_BOUNDS, out RECT realWindowRect, structSize) == 0)
-            {
-                // Панели BlueStacks (верхний заголовок и правое тулбар-меню)
-                const int bluestacksToolbarWidth = 33;
-                const int bluestacksHeaderHeight = 33;
+/// <summary>
+/// Изменяет размер окна BlueStacks так, чтобы его рабочая область стала заданной ширины и высоты.
+/// </summary>
+/// <param name="hWnd">Дескриптор окна эмулятора.</param>
+/// <param name="targetWidth">Целевая ширина рабочей области.</param>
+/// <param name="targetHeight">Целевая высота рабочей области.</param>
+/// <returns>True, если размер окна успешно изменен, иначе false.</returns>
+static bool ResizeWindow(IntPtr hWnd, int targetWidth, int targetHeight)
+{
+    if (hWnd == IntPtr.Zero) return false;
 
-                // Обычные тонкие рамки изменения размера Windows 10/11
-                const int windowsFrameWidth = 2;
-                const int windowsFrameHeight = 2;
+    // ИСПРАВЛЕНО: Указываем структуру из класса WinAPI
+    int structSize = System.Runtime.InteropServices.Marshal.SizeOf<WinAPI.RECT>();
 
-                // Рассчитываем итоговый полный габарит окна
-                int finalWindowWidth = targetWidth + bluestacksToolbarWidth + windowsFrameWidth;
-                int finalWindowHeight = targetHeight + bluestacksHeaderHeight + windowsFrameHeight;
+    // ИСПРАВЛЕНО: Добавлен префикс WinAPI. и указана структура WinAPI.RECT
+    if (WinAPI.DwmGetWindowAttribute(hWnd, DWMWA_EXTENDED_FRAME_BOUNDS, out WinAPI.RECT realWindowRect, structSize) == 0)
+    {
+        // Панели BlueStacks (верхний заголовок и правое тулбар-меню)
+        const int bluestacksToolbarWidth = 33;
+        const int bluestacksHeaderHeight = 33;
 
-                // Меняем размер окна, оставляя его на прежних координатах X и Y
-                return MoveWindow(hWnd, realWindowRect.Left, realWindowRect.Top, finalWindowWidth, finalWindowHeight, true);
-            }
+        // Обычные тонкие рамки изменения размера Windows 10/11
+        const int windowsFrameWidth = 2;
+        const int windowsFrameHeight = 2;
 
-            return false;
-        }
+        // Рассчитываем итоговый полный габарит окна
+        int finalWindowWidth = targetWidth + bluestacksToolbarWidth + windowsFrameWidth;
+        int finalWindowHeight = targetHeight + bluestacksHeaderHeight + windowsFrameHeight;
+
+        // ИСПРАВЛЕНО: Добавлен префикс WinAPI. для вызова MoveWindow
+        // Меняем размер окна, оставляя его на прежних координатах X и Y
+        return WinAPI.MoveWindow(hWnd, realWindowRect.Left, realWindowRect.Top, finalWindowWidth, finalWindowHeight, true);
+    }
+
+    return false;
+}
+
 
 
 /// <summary>
@@ -532,8 +542,8 @@ public static OpenCvSharp.Point? FindTemplateInRegion(OpenCvSharp.Mat screen, st
 /// <returns>Дескриптор окна (IntPtr.Zero, если окно не найдено).</returns>
 static IntPtr GetWindow(WindowSettings settings)
 {
-    // Поиск дескриптора окна по заголовку из настроек
-    IntPtr hWnd = FindWindow(null, settings.WindowTitle);
+    // ИСПРАВЛЕНО: Добавлен префикс WinAPI к вызову FindWindow
+    IntPtr hWnd = WinAPI.FindWindow(null, settings.WindowTitle);
 
     if (hWnd != IntPtr.Zero)
     {
@@ -560,10 +570,10 @@ static IntPtr GetWindow(WindowSettings settings)
         if (ResizeWindow(hWnd, targetW, targetH))
         {
             ConsolePrint($"GetWindow | Аккаунт: {settings.AccountName} | Успех: Окно '{settings.WindowTitle}' подогнано под размер {targetW}x{targetH}", ConsoleColor.Green);
-            
+
             // Запоминаем аккаунт в глобальный список, чтобы больше никогда его не трогать
             _resizedAccounts.Add(settings.AccountName);
-            
+
             // Даем окну 300 мс на применение изменений в Windows
             Thread.Sleep(300);
         }
@@ -582,6 +592,7 @@ static IntPtr GetWindow(WindowSettings settings)
 
 
 
+
         /// <summary>
         /// Генерирует случайную задержку в миллисекундах на основе заданного диапазона секунд.
         /// </summary>
@@ -594,46 +605,48 @@ static IntPtr GetWindow(WindowSettings settings)
             return _random.Next(minSeconds, maxSeconds + 1) * 1000;
         }
 
-        /// <summary>
-        /// Выполняет имитацию человеческого клика: выдерживает паузу,
-        /// добавляет случайное смещение к координатам и нажимает кнопку мыши.
-        /// </summary>
-        /// <param name="hWnd">Дескриптор окна для отправки сообщения.</param>
-        /// <param name="x">Базовая координата X.</param>
-        /// <param name="y">Базовая координата Y.</param>
-        /// <param name="minSec">Минимальная задержка перед кликом (сек).</param>
-        /// <param name="maxSec">Максимальная задержка перед кликом (сек).</param>
-        /// <param name="offset">Максимальное отклонение от точки в пикселях (в обе стороны).</param>
-        static void SmartClick(IntPtr hWnd, int x, int y, int minSec = 1, int maxSec = 5, int offset = 10)
-        {
-            // 1. Рандомная задержка перед действием
-            int initialDelay = GetRandomDelayMs(minSec, maxSec);
+/// <summary>
+/// Выполняет имитацию человеческого клика: выдерживает паузу,
+/// добавляет случайное смещение к координатам и нажимает кнопку мыши в фоне.
+/// </summary>
+/// <param name="hWnd">Дескриптор окна ввода (дочернего окна эмулятора).</param>
+/// <param name="x">Базовая координата X.</param>
+/// <param name="y">Базовая координата Y.</param>
+/// <param name="minSec">Минимальная задержка перед кликом (сек).</param>
+/// <param name="maxSec">Максимальная задержка перед кликом (сек).</param>
+/// <param name="offset">Максимальное отклонение от точки в пикселях.</param>
+static void SmartClick(IntPtr hWnd, int x, int y, int minSec = 1, int maxSec = 5, int offset = 10)
+{
+    // 1. Рандомная задержка перед действием
+    int initialDelay = GetRandomDelayMs(minSec, maxSec);
 #if DEBUG
-            ConsolePrint($"SmartClick | Действие: Ожидание перед кликом {initialDelay} мс...", ConsoleColor.Cyan);
+    ConsolePrint($"SmartClick | Действие: Ожидание перед кликом {initialDelay} мс...", ConsoleColor.Cyan);
 #endif
-            Thread.Sleep(initialDelay);
+    Thread.Sleep(initialDelay);
 
-            // 2. Расчет координат с плавающим смещением
-            // Используем offset для задания диапазона [-offset, +offset]
-            int finalX = x + _random.Next(-offset, offset + 1);
-            int finalY = y + _random.Next(-offset, offset + 1);
+    // 2. Расчет координат с плавающим смещением
+    int finalX = x + _random.Next(-offset, offset + 1);
+    int finalY = y + _random.Next(-offset, offset + 1);
 
-            // 3. Подготовка данных и отправка клика
-            IntPtr lParam = (IntPtr)((finalY << 16) | (finalX & 0xFFFF));
+    // 3. Подготовка данных (упаковываем X и Y координаты в один 32-битный lParam)
+    int PackedCoordinates = (finalY << 16) | (finalX & 0xFFFF);
+    IntPtr lParam = (IntPtr)PackedCoordinates;
 
-            // Нажатие (wParam 1 = левая кнопка)
-            PostMessage(hWnd, WM_LBUTTONDOWN, (IntPtr)1, lParam);
+    // ИСПРАВЛЕНО: Добавлен префикс WinAPI к вызовам фонового клика
+    // Нажатие (wParam 1 = левая кнопка мыши)
+    WinAPI.PostMessage(hWnd, WM_LBUTTONDOWN, (IntPtr)1, lParam);
 
-            // Короткая пауза удержания кнопки (30-100 мс) для реалистичности
-            Thread.Sleep(_random.Next(30, 101));
+    // Короткая пауза удержания кнопки (30-100 мс) для реалистичности
+    Thread.Sleep(_random.Next(30, 101));
 
-            // Отпускание
-            PostMessage(hWnd, WM_LBUTTONUP, IntPtr.Zero, lParam);
+    // Отпускание кнопки мыши
+    WinAPI.PostMessage(hWnd, WM_LBUTTONUP, IntPtr.Zero, lParam);
 
 #if DEBUG
-            ConsolePrint($"SmartClick | Действие: Клик в ({finalX}, {finalY}) со смещением {offset}", ConsoleColor.Yellow);
+    ConsolePrint($"SmartClick | Действие: Клик в ({finalX}, {finalY}) со смещением {offset}", ConsoleColor.Yellow);
 #endif
-        }
+}
+
 
         /// <summary>
         /// Выводит форматированное сообщение в консоль с указанным цветом.
@@ -673,7 +686,7 @@ public class WindowSettings
     // Указываем полный путь к родному атрибуту .NET. 
     // Он свяжет тег "WindowSettings" из JSON со свойством "Size" в коде без каких-либо using!
     [System.Text.Json.Serialization.JsonPropertyName("WindowSettings")]
-    public TargetSize? Size { get; set; } 
+    public TargetSize? Size { get; set; }
 }
 
 public class TargetSize
@@ -717,7 +730,7 @@ public static BotConfig Load()
                     AccountName = "Miner_V04K0",
                     WindowTitle = "BlueStacks_EVE.01",
                     Script = "LocalWatcher", // Сразу прописываем сценарий по умолчанию
-                    
+
                     // ИСПРАВЛЕНО: Теперь инициализируем вложенный объект Size
                     Size = new TargetSize
                     {
