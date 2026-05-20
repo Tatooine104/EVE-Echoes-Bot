@@ -1,6 +1,5 @@
-﻿using System.Text.Json;
-
-namespace EveEchoesBot
+﻿
+namespace EVEEchoesBot
 {
 
     static partial class Program
@@ -668,114 +667,30 @@ static void SmartClick(IntPtr hWnd, int x, int y, int minSec = 1, int maxSec = 5
 
 #region CONFIG
 
-    public class BotConfig
-    {
-        // Список настроек для каждого персонажа/окна
-        public List<WindowSettings> Accounts { get; set; } = [];
 
-    }
-
-
-
-public class WindowSettings
-{
-    public string AccountName { get; set; } = "";
-    public string WindowTitle { get; set; } = "";
-    public string? Script { get; set; }
-
-    // Указываем полный путь к родному атрибуту .NET. 
-    // Он свяжет тег "WindowSettings" из JSON со свойством "Size" в коде без каких-либо using!
-    [System.Text.Json.Serialization.JsonPropertyName("WindowSettings")]
-    public TargetSize? Size { get; set; }
-}
-
-public class TargetSize
-{
-    // Поля внутри JSON-блока WindowSettings
-    public int TargetWidth { get; set; }
-    public int TargetHeight { get; set; }
-}
-
-
-
-
-
-    public static class ConfigManager
-    {
-        private const string ConfigPath = "config.json";
-
-        // Кэшируем настройки сериализации один раз для всего приложения
-        private static readonly JsonSerializerOptions _options = new()
+        public class WindowSettings
         {
-            WriteIndented = true,
-            PropertyNameCaseInsensitive = true // Полезно, если вы вручную правите JSON
-        };
+            public string AccountName { get; set; } = "";
+            public string WindowTitle { get; set; } = "";
+            public string? Script { get; set; }
 
-
-/// <summary>
-/// Загружает конфигурацию бота из JSON-файла или создает конфигурацию по умолчанию, если файл отсутствует.
-/// </summary>
-/// <returns>Объект конфигурации <see cref="BotConfig"/>.</returns>
-public static BotConfig Load()
-{
-    if (!File.Exists(ConfigPath))
-    {
-        // Создаем дефолтный конфиг, соответствующий вашей новой вложенной структуре
-        var defaultConfig = new BotConfig
-        {
-            Accounts =
-            [
-                new WindowSettings
-                {
-                    AccountName = "Miner_V04K0",
-                    WindowTitle = "BlueStacks_EVE.01",
-                    Script = "LocalWatcher", // Сразу прописываем сценарий по умолчанию
-
-                    // ИСПРАВЛЕНО: Теперь инициализируем вложенный объект Size
-                    Size = new TargetSize
-                    {
-                        TargetWidth = 1280,
-                        TargetHeight = 720
-                    }
-                }
-            ]
-        };
-
-        Save(defaultConfig);
-        return defaultConfig;
-    }
-
-    try
-    {
-        string json = File.ReadAllText(ConfigPath);
-
-        // ИСПРАВЛЕНО: Добавлен оператор '!' после закрывающей круглой скобки метода Deserialize
-        return JsonSerializer.Deserialize<BotConfig>(json, _options)! ?? new();
-    }
-    catch (Exception ex)
-    {
-        Program.ConsolePrint($"[Ошибка] Не удалось прочитать конфиг: {ex.Message}", ConsoleColor.Red);
-        return new();
-    }
-}
-
-
-        public static void Save(BotConfig config)
-        {
-            try
-            {
-                // Используем те же закэшированные настройки
-                string json = JsonSerializer.Serialize(config, _options);
-                File.WriteAllText(ConfigPath, json);
-            }
-            catch (Exception ex)
-            {
-                Program.ConsolePrint($"[Ошибка] Не удалось сохранить конфиг: {ex.Message}", ConsoleColor.Red);
-            }
+            // Указываем полный путь к родному атрибуту .NET. 
+            // Он свяжет тег "WindowSettings" из JSON со свойством "Size" в коде без каких-либо using!
+            [System.Text.Json.Serialization.JsonPropertyName("WindowSettings")]
+            public TargetSize? Size { get; set; }
         }
+
+        public class TargetSize
+        {
+            // Поля внутри JSON-блока WindowSettings
+            public int TargetWidth { get; set; }
+            public int TargetHeight { get; set; }
+        }
+
+
+
     }
 
 #endregion
 
 
-}
