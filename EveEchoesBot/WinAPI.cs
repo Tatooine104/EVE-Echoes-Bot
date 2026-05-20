@@ -2,7 +2,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 
 // Замените "LowMiner" на пространство имен вашего проекта, если оно называется иначе
-namespace LowMiner
+namespace EveEchoesBot
 {
     internal static partial class WinAPI
     {

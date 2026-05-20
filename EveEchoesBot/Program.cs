@@ -1,6 +1,6 @@
 ﻿using System.Text.Json;
 
-namespace LowMiner
+namespace EveEchoesBot
 {
 
     static partial class Program
