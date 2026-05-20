@@ -665,32 +665,6 @@ static void SmartClick(IntPtr hWnd, int x, int y, int minSec = 1, int maxSec = 5
 
         #endregion
 
-#region CONFIG
-
-
-        public class WindowSettings
-        {
-            public string AccountName { get; set; } = "";
-            public string WindowTitle { get; set; } = "";
-            public string? Script { get; set; }
-
-            // Указываем полный путь к родному атрибуту .NET. 
-            // Он свяжет тег "WindowSettings" из JSON со свойством "Size" в коде без каких-либо using!
-            [System.Text.Json.Serialization.JsonPropertyName("WindowSettings")]
-            public TargetSize? Size { get; set; }
-        }
-
-        public class TargetSize
-        {
-            // Поля внутри JSON-блока WindowSettings
-            public int TargetWidth { get; set; }
-            public int TargetHeight { get; set; }
-        }
-
-
-
-    }
-
-#endregion
+}
 
 
