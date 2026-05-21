@@ -1,3 +1,4 @@
 {
-    "dotnet.defaultSolution": "LowMiner.sln"
+    "dotnet.defaultSolution": "LowMiner.sln",
+    "workbench.settings.alwaysShowAdvancedSettings": true
 }

@@ -18,9 +18,9 @@ namespace EVEEchoesBot
         /// <param name="color">Цвет текста (по умолчанию серый).</param>
         public static void ConsolePrint(string message, ConsoleColor color = ConsoleColor.Gray)
         {
-            // TODO: Сделать разделение логики по флагу DEBUG: Консоль / Лог
-            // TODO: Сделать метод логирования
-            // TODO: Сделать типы: Info / Success / Warning / Error           
+            // [ ] Сделать разделение логики по флагу DEBUG: Консоль / Лог
+            // [ ] Сделать метод логирования
+            // [ ] Сделать типы: Info / Success / Warning / Error           
             Console.ForegroundColor = color;
             Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] {message}");
             Console.ResetColor();

@@ -46,13 +46,14 @@ namespace EVEEchoesBot
     public static readonly Dictionary<string, AccountTask> _accountTasks = [];
 
     // Перечисление для задач (что делать боту дальше)
-    // TODO: Продумать список возможных действий
+    // [x] Продумать список возможных действий
     public enum AccountTask
     {
-        Idle,
-        CheckSecurity,
-        RunScenario,
-        SyncData
+        Undocking,
+        GoToBelt,
+        Mining,
+        GoToStation,
+        Unloading
     }
 
         // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
@@ -91,25 +92,44 @@ namespace EVEEchoesBot
 
                     // Устанавливаем текущий активный аккаунт
                     _currentAccount = account;
-                    Tools.ConsolePrint($"\n[Аккаунт: {_currentAccount.Name}] Обработка...", ConsoleColor.Blue);
+
+                    // Получаем имя текущего аккаунта (замените AccountName на реальное поле, если нужно)
+                    string accountName = _currentAccount.Name ?? "Unknown";
+                    Tools.ConsolePrint($"\n[Аккаунт: {accountName}] Обработка...", ConsoleColor.Blue);
 
                     // Получаем текущую задачу для этого аккаунта
-                    AccountTask currentTask = _accountTasks[_currentAccount.Name];
+                    AccountTask currentTask = _accountTasks[accountName];
 
-                    // Выполняем логику в зависимости от назначенной задачи
+                    // Выполняем логику в зависимости от текущей задачи бота
                     switch (currentTask)
                     {
-                        case AccountTask.CheckSecurity:
-                            CheckSecurityStatus();
+                        case AccountTask.Undocking:
+                            Tools.ConsolePrint($"[{accountName}] Выполняется андок (вылет со станции)...", ConsoleColor.Cyan);
+                            // RunUndockLogic();
                             break;
 
-                        case AccountTask.RunScenario:
-                            // RunAnotherScenario();
+                        case AccountTask.GoToBelt:
+                            Tools.ConsolePrint($"[{accountName}] Полет на астероидный белт...", ConsoleColor.Yellow);
+                            // RunWarpToBeltLogic();
                             break;
 
-                        case AccountTask.Idle:
+                        case AccountTask.Mining:
+                            Tools.ConsolePrint($"[{accountName}] Процесс добычи руды (майнинг)...", ConsoleColor.Green);
+                            // RunMiningLogic();
+                            break;
+
+                        case AccountTask.GoToStation:
+                            Tools.ConsolePrint($"[{accountName}] Трюм полон. Возврат на станцию (варп)...", ConsoleColor.Magenta);
+                            // RunWarpToStationLogic();
+                            break;
+
+                        case AccountTask.Unloading:
+                            Tools.ConsolePrint($"[{accountName}] Разгрузка руды на станции в ангар...", ConsoleColor.DarkCyan);
+                            // RunUnloadLogic();
+                            break;
+
                         default:
-                            Tools.ConsolePrint($"Аккаунт {_currentAccount.Name} в режиме ожидания.", ConsoleColor.Gray);
+                            Tools.ConsolePrint($"Предупреждение: Неизвестное состояние задачи для {accountName}.", ConsoleColor.Red);
                             break;
                     }
                 }
@@ -129,6 +149,10 @@ namespace EVEEchoesBot
         Tools.ConsolePrint("=== Бот успешно остановлен ===", ConsoleColor.Cyan);
     }
 
+#endregion
+
+#region Initialize Bot
+
     // Метод для инициализации данных
     private static void InitializeBot()
     {
@@ -147,15 +171,25 @@ namespace EVEEchoesBot
             // Заполняем массив (словарь) начальными задачами на основе Script из конфига
             foreach (var account in _config.Accounts)
             {
-                // Привязываем задачи к именам аккаунтов (имя должно быть уникальным)
-                AccountTask initialTask = account.Script switch
+                // Безопасно получаем имя аккаунта (замените AccountName на ваше реальное поле)
+                string accountName = account.Name ?? "Unknown";
+
+                // Считываем стартовую задачу из конфига. Если там пусто, используем Undocking по умолчанию.
+                string firstTaskStr = account.FirstTask ?? "Undocking";
+
+                // Преобразуем строку из конфига в элемент перечисления AccountTask
+                AccountTask initialTask = firstTaskStr switch
                 {
-                    "LocalWatcher" => AccountTask.CheckSecurity,
-                    "AnotherScript" => AccountTask.RunScenario,
-                    _ => AccountTask.Idle
+                    "Undocking"   => AccountTask.Undocking,
+                    "GoToBelt"    => AccountTask.GoToBelt,
+                    "Mining"      => AccountTask.Mining,
+                    "GoToStation" => AccountTask.GoToStation,
+                    "Unloading"   => AccountTask.Unloading,
+                    _             => AccountTask.Undocking // Защита от опечаток в конфиге
                 };
 
-                _accountTasks[account.Name] = initialTask;
+                // Записываем стартовую задачу в словарь
+                _accountTasks[accountName] = initialTask;
             }
 
             Tools.ConsolePrint($"Конфигурация загружена. Аккаунтов в работе: {_config.Accounts.Count}", ConsoleColor.Green);
