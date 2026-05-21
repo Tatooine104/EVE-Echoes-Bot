@@ -32,7 +32,7 @@ namespace EVEEchoesBot
                     [
                         new WindowSettings
                         {
-                            AccountName = "Miner_V04K0",
+                            Name = "Miner_V04K0",
                             WindowTitle = "BlueStacks_EVE.01",
                             Script = "LocalWatcher",
                             Size = new TargetSize
@@ -92,7 +92,7 @@ namespace EVEEchoesBot
     /// </summary>
     public class WindowSettings
     {
-        public string AccountName { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
         public string WindowTitle { get; set; } = string.Empty;
         public string? Script { get; set; }
 

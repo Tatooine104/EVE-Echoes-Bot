@@ -26,6 +26,151 @@ namespace EVEEchoesBot
             Console.ResetColor();
         }
 
+
+        /// <summary>
+        /// Делает скриншот целевого окна и возвращает его напрямую в формате матрицы OpenCV (Mat).
+        /// </summary>
+        /// <param name="hWnd">Дескриптор окна эмулятора.</param>
+        /// <returns>Матрица <see cref="OpenCvSharp.Mat"/> с изображением, или null в случае ошибки.</returns>
+        public static OpenCvSharp.Mat? CaptureWindow(IntPtr hWnd)
+        {
+            if (hWnd == IntPtr.Zero) return null;
+
+            if (!WinAPI.GetWindowRect(hWnd, out WinAPI.RECT rect)) return null;
+
+            int width = rect.Right - rect.Left;
+            int height = rect.Bottom - rect.Top;
+
+            if (width <= 0 || height <= 0) return null;
+
+            IntPtr hdcWindow = WinAPI.GetDC(hWnd);
+            IntPtr hdcMem = WinAPI.CreateCompatibleDC(hdcWindow);
+            IntPtr hBitmap = WinAPI.CreateCompatibleBitmap(hdcWindow, width, height);
+            IntPtr hOldBmp = WinAPI.SelectObject(hdcMem, hBitmap);
+
+            try
+            {
+                // ИСПРАВЛЕНО: Добавлен префикс WinAPI.
+                WinAPI.PrintWindow(hWnd, hdcMem, WinAPI.PW_RENDERFULLCONTENT);
+
+                // ИСПРАВЛЕНО: Ссылка на структуру теперь указывает на WinAPI.BITMAPINFOHEADER
+                WinAPI.BITMAPINFOHEADER bmi = new()
+                {
+                    biSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf<WinAPI.BITMAPINFOHEADER>(),
+                    biWidth = width,
+                    biHeight = -height,
+                    biPlanes = 1,
+                    biBitCount = 32,
+                    biCompression = 0
+                };
+
+                byte[] rawPixels = new byte[width * height * 4];
+
+                // ИСПРАВЛЕНО: Добавлен префикс WinAPI.
+                WinAPI.GetDIBits(hdcMem, hBitmap, 0, (uint)height, rawPixels, ref bmi, 0);
+
+                OpenCvSharp.Mat mat = new(height, width, OpenCvSharp.MatType.CV_8UC4);
+                System.Runtime.InteropServices.Marshal.Copy(rawPixels, 0, mat.Data, rawPixels.Length);
+
+                return mat;
+            }
+            finally
+            {
+                // ИСПРАВЛЕНО: Ко всем вызовам очистки ресурсов GDI добавлены префиксы WinAPI.
+                WinAPI.SelectObject(hdcMem, hOldBmp);
+                WinAPI.DeleteObject(hBitmap);
+                WinAPI.DeleteDC(hdcMem);
+                _ = WinAPI.ReleaseDC(hWnd, hdcWindow);
+            }
+        }
+
+
+        /// <summary>
+        /// Кросплатформенный метод поиска шаблона на кадре по форме.
+        /// </summary>
+        /// <param name="screen">Матрица полного скриншота эмулятора.</param>
+        /// <param name="templatePath">Путь к файлу-шаблону.</param>
+        /// <param name="searchArea">Область поиска. Если null — поиск по всему кадру.</param>
+        /// <param name="threshold">Порог точности (0.0 - 1.0).</param>
+        /// <returns>Точка центра или null.</returns>
+        public static OpenCvSharp.Point? FindTemplateInRegion(OpenCvSharp.Mat screen, string templatePath, OpenCvSharp.Rect? searchArea = null, double threshold = 0.55)
+        {
+            if (screen?.Empty() is not false) return null;
+
+            // 1. Объявляем переменную. Этот стиль объявления плагины очистки кода не удаляют.
+            OpenCvSharp.Mat croppedScreen;
+
+            if (searchArea.HasValue)
+            {
+                // Если область передана, создаем под-матрицу (ссылку на регион)
+                croppedScreen = new OpenCvSharp.Mat(screen, searchArea.Value);
+            }
+            else
+            {
+                // Если область не передана, работаем со всем экраном целиком
+                croppedScreen = screen;
+            }
+
+            // 2. Загружаем файл шаблона с диска
+            using var matTemplate = Cv2.ImRead(templatePath, ImreadModes.Color);
+
+            if (matTemplate.Empty())
+            {
+                Console.WriteLine($"[Ошибка] Не удалось загрузить шаблон: {templatePath}");
+
+                // Освобождаем память под-матрицы перед выходом, если она создавалась
+                if (searchArea.HasValue) croppedScreen.Dispose();
+                return null;
+            }
+
+            // 3. Проверяем, помещается ли шаблон в выбранную область поиска
+            if (matTemplate.Width > croppedScreen.Width || matTemplate.Height > croppedScreen.Height)
+            {
+                Console.WriteLine($"[Ошибка] Шаблон {templatePath} ({matTemplate.Width}x{matTemplate.Height}) больше области поиска ({croppedScreen.Width}x{croppedScreen.Height})!");
+
+                if (searchArea.HasValue) croppedScreen.Dispose();
+                return null;
+            }
+
+            // 4. Переводим изображения в оттенки серого для повышения скорости и точности поиска
+            using Mat grayScreen = new();
+            using Mat grayTemplate = new();
+            Cv2.CvtColor(croppedScreen, grayScreen, ColorConversionCodes.BGR2GRAY);
+            Cv2.CvtColor(matTemplate, grayTemplate, ColorConversionCodes.BGR2GRAY);
+
+            // 5. Выполняем сопоставление шаблонов (Template Matching)
+            using Mat result = new();
+            Cv2.MatchTemplate(grayScreen, grayTemplate, result, TemplateMatchModes.CCoeffNormed);
+            Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out OpenCvSharp.Point maxLoc);
+
+        #if DEBUG
+            // Данный блок выводится только при запуске проекта в режиме отладки (Debug)
+            double matchPercentage = maxVal * 100;
+            Console.WriteLine($"   -> Диагностика {Path.GetFileName(templatePath)}: Макс. совпадение = {matchPercentage:F1}%");
+        #endif
+
+            // 6. Проверяем, превысил ли результат установленный порог точности
+            if (maxVal >= threshold)
+            {
+                int offsetX = searchArea?.X ?? 0;
+                int offsetY = searchArea?.Y ?? 0;
+
+                // Вычисляем координаты центра найденного объекта на исходном полном скриншоте
+                int centerX = offsetX + maxLoc.X + (matTemplate.Width / 2);
+                int centerY = offsetY + maxLoc.Y + (matTemplate.Height / 2);
+
+                // Корректно освобождаем память региона перед возвратом результата
+                if (searchArea.HasValue) croppedScreen.Dispose();
+
+                return new OpenCvSharp.Point(centerX, centerY);
+            }
+
+            // Освобождаем память региона перед выходом, если объект не был найден
+            if (searchArea.HasValue) croppedScreen.Dispose();
+
+            return null;
+        }
+
         /// <summary>
         /// Аппаратно эмулирует клик мыши на уровне драйвера Windows с помощью SendInput.
         /// Оптимизирован для молниеносного и чёткого нажатия.
@@ -115,18 +260,18 @@ namespace EVEEchoesBot
             if (hWnd != IntPtr.Zero)
             {
                 // 1. Проверяем наш глобальный массив (HashSet)
-                if (_resizedAccounts.Contains(settings.AccountName))
+                if (_resizedAccounts.Contains(settings.Name))
                 {
 #if DEBUG
                     // В режиме отладки пишем, что аккаунт уже подгонялся ранее
-                    Tools.ConsolePrint($"GetWindow | {settings.AccountName} | Окно уже подгонялось в этой сессии. Шаг пропущен.", ConsoleColor.DarkGray);
+                    Tools.ConsolePrint($"GetWindow | {settings.Name} | Окно уже подгонялось в этой сессии. Шаг пропущен.", ConsoleColor.DarkGray);
 #endif
                     return hWnd; // МГНОВЕННЫЙ ВЫХОД, ПОЛНЫЙ ПРОПУСК ЛЮБЫХ ПРОВЕРОК И РЕСАЙЗОВ
                 }
 
                 if (settings.Size == null)
                 {
-                    Tools.ConsolePrint($"GetWindow | Ошибка: В конфиге аккаунта {settings.AccountName} отсутствует блок WindowSettings!", ConsoleColor.Red);
+                    Tools.ConsolePrint($"GetWindow | Ошибка: В конфиге аккаунта {settings.Name} отсутствует блок WindowSettings!", ConsoleColor.Red);
                     return hWnd;
                 }
 
@@ -136,22 +281,22 @@ namespace EVEEchoesBot
                 // 2. Если аккаунта нет в списке, выполняем подгонку размера
                 if (ResizeWindow(hWnd, targetW, targetH))
                 {
-                    Tools.ConsolePrint($"GetWindow | Аккаунт: {settings.AccountName} | Успех: Окно '{settings.WindowTitle}' подогнано под размер {targetW}x{targetH}", ConsoleColor.Green);
+                    Tools.ConsolePrint($"GetWindow | Аккаунт: {settings.Name} | Успех: Окно '{settings.WindowTitle}' подогнано под размер {targetW}x{targetH}", ConsoleColor.Green);
 
                     // Запоминаем аккаунт в глобальный список, чтобы больше никогда его не трогать
-                    _resizedAccounts.Add(settings.AccountName);
+                    _resizedAccounts.Add(settings.Name);
 
                     // Даем окну 300 мс на применение изменений в Windows
                     Thread.Sleep(300);
                 }
                 else
                 {
-                    Tools.ConsolePrint($"GetWindow | Аккаунт: {settings.AccountName} | Ошибка: Не удалось изменить размер окна.", ConsoleColor.Red);
+                    Tools.ConsolePrint($"GetWindow | Аккаунт: {settings.Name} | Ошибка: Не удалось изменить размер окна.", ConsoleColor.Red);
                 }
             }
             else
             {
-                Tools.ConsolePrint($"GetWindow | Ошибка: Окно '{settings.WindowTitle}' для аккаунта {settings.AccountName} не найдено.", ConsoleColor.Red);
+                Tools.ConsolePrint($"GetWindow | Ошибка: Окно '{settings.WindowTitle}' для аккаунта {settings.Name} не найдено.", ConsoleColor.Red);
             }
 
             return hWnd;
