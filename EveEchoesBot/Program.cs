@@ -33,12 +33,13 @@ namespace EVEEchoesBot
                 if (_isSave is true && value is false)
                 {
                     _isSave = value; // Обновляем значение на false
-                    ConsolePrint($"=== ОПАСТНОСТЬ !!! В системе посторонние", ConsoleColor.Red);
+                    Tools.ConsolePrint($"IsSave | ОПАСТНОСТЬ !!! В системе посторонние!", ConsoleColor.Red);
+                    //Tools.ConsolePrint($"IsSave | {settings.AccountName} | ОПАСТНОСТЬ !!! В системе посторонние!", ConsoleColor.Red);
                     AliChatWarning(); // Вызываем оповещение
                 }
                 else
                 {
-                    ConsolePrint($"=== В системе нет посторонних!", ConsoleColor.Green);
+                    Tools.ConsolePrint($"IsSave | В системе нет посторонних!", ConsoleColor.Green);
                     _isSave = value;
                 }
             }
@@ -55,8 +56,8 @@ namespace EVEEchoesBot
 
 static void Main()
     {
-        ConsolePrint("=== Бот успешно запущен ===", ConsoleColor.Cyan);
-        ConsolePrint("--> Нажмите [ESC] в любой момент для остановки скрипта.", ConsoleColor.DarkGray);
+        Tools.ConsolePrint("=== Бот успешно запущен ===", ConsoleColor.Cyan);
+        Tools.ConsolePrint("--> Нажмите [ESC] в любой момент для остановки скрипта.", ConsoleColor.DarkGray);
 
         // 2. Запускаем фоновый поток, который слушает клавиатуру
         Thread inputThread = new(ListenForCancelKey) { IsBackground = true };
@@ -74,7 +75,7 @@ static void Main()
 
                 if (testAccount == null)
                 {
-                    ConsolePrint("Ошибка цикла: В конфигурации нет доступных аккаунтов. Ожидание...", ConsoleColor.Red);
+                    Tools.ConsolePrint("Ошибка цикла: В конфигурации нет доступных аккаунтов. Ожидание...", ConsoleColor.Red);
 
                     // Вместо жесткого Thread.Sleep используем безопасную задержку с проверкой токена
                     if (_cts.Token.WaitHandle.WaitOne(5000)) break;
@@ -94,13 +95,13 @@ static void Main()
                         break;
 
                     default:
-                        ConsolePrint($"Предупреждение: Неизвестный или пустой режим скрипта '{scriptMode}'.", ConsoleColor.Yellow);
+                        Tools.ConsolePrint($"Предупреждение: Неизвестный или пустой режим скрипта '{scriptMode}'.", ConsoleColor.Yellow);
                         break;
                 }
             }
             catch (Exception ex)
             {
-                ConsolePrint($"Критическая ошибка в главном цикле: {ex.Message}", ConsoleColor.Red);
+                Tools.ConsolePrint($"Критическая ошибка в главном цикле: {ex.Message}", ConsoleColor.Red);
             }
 
             // Безопасное ожидание 15 секунд между кругами.
@@ -113,7 +114,7 @@ static void Main()
         }
 
         // Выполняется после выхода из цикла while
-        ConsolePrint("=== Бот успешно остановлен. До свидания! ===", ConsoleColor.Cyan);
+        Tools.ConsolePrint("=== Бот успешно остановлен. До свидания! ===", ConsoleColor.Cyan);
     }
 
 
@@ -133,7 +134,7 @@ private static void ListenForCancelKey()
             // 1. Если нажат ESC — плавно останавливаем бота
             if (key.Key == ConsoleKey.Escape)
             {
-                ConsolePrint("\n[INFO] Получен сигнал отмены. Завершаем текущий круг и выходим...", ConsoleColor.Yellow);
+                Tools.ConsolePrint("\n[INFO] Получен сигнал отмены. Завершаем текущий круг и выходим...", ConsoleColor.Yellow);
                 _cts.Cancel(); // Посылаем сигнал отмены
                 break;
             }
@@ -141,7 +142,7 @@ private static void ListenForCancelKey()
             // 2. Если нажат F10 — выполняем мгновенный тестовый клик по координатам
             if (key.Key == ConsoleKey.F10)
             {
-                ConsolePrint("\n[ТЕСТ] Нажата клавиша F10! Запуск проверки клика...", ConsoleColor.Cyan);
+                Tools.ConsolePrint("\n[ТЕСТ] Нажата клавиша F10! Запуск проверки клика...", ConsoleColor.Cyan);
 
                 try
                 {
@@ -151,7 +152,7 @@ private static void ListenForCancelKey()
 
                     if (testAccount == null)
                     {
-                        ConsolePrint("[ТЕСТ] Ошибка: Аккаунты в конфигурации не найдены.", ConsoleColor.Red);
+                        Tools.ConsolePrint("[ТЕСТ] Ошибка: Аккаунты в конфигурации не найдены.", ConsoleColor.Red);
                         continue;
                     }
 
@@ -160,7 +161,7 @@ private static void ListenForCancelKey()
 
                     if (hWnd == IntPtr.Zero)
                     {
-                        ConsolePrint($"[ТЕСТ] Ошибка: Окно '{testAccount.WindowTitle}' не найдено.", ConsoleColor.Red);
+                        Tools.ConsolePrint($"[ТЕСТ] Ошибка: Окно '{testAccount.WindowTitle}' не найдено.", ConsoleColor.Red);
                         continue;
                     }
 
@@ -171,16 +172,16 @@ private static void ListenForCancelKey()
                     const int testX = 60;
                     const int testY = 680;
 
-                    ConsolePrint($"[ТЕСТ] Отправляю SmartClick в окно {inputWindow} по координатам ({testX}, {testY})...", ConsoleColor.Yellow);
+                    Tools.ConsolePrint($"[ТЕСТ] Отправляю SmartClick в окно {inputWindow} по координатам ({testX}, {testY})...", ConsoleColor.Yellow);
 
                     // Вызываем клик. minSec и maxSec ставим в 0, чтобы кликнуло мгновенно без пауз
                     SmartClick(hWnd, testX, testY, minSec: 0, maxSec: 0, offset: 3);
 
-                    ConsolePrint("[ТЕСТ] Клик успешно отправлен в эмулятор!", ConsoleColor.Green);
+                    Tools.ConsolePrint("[ТЕСТ] Клик успешно отправлен в эмулятор!", ConsoleColor.Green);
                 }
                 catch (Exception ex)
                 {
-                    ConsolePrint($"[ТЕСТ] Ошибка при симуляции клика: {ex.Message}", ConsoleColor.Red);
+                    Tools.ConsolePrint($"[ТЕСТ] Ошибка при симуляции клика: {ex.Message}", ConsoleColor.Red);
                 }
             }
         }
@@ -207,7 +208,7 @@ private static void ListenForCancelKey()
 
             if (testAccount == null)
             {
-                ConsolePrint("Ошибка CheckSecurityStatus: В конфигурации нет доступных аккаунтов.", ConsoleColor.Red);
+                Tools.ConsolePrint("Ошибка CheckSecurityStatus: В конфигурации нет доступных аккаунтов.", ConsoleColor.Red);
                 IsSave = false; // Нет настроек — система не может считаться безопасной
                 return;
             }
@@ -217,7 +218,7 @@ private static void ListenForCancelKey()
 
             if (hWnd == IntPtr.Zero)
             {
-                ConsolePrint("Ошибка CheckSecurityStatus: Окно целевой программы не найдено.", ConsoleColor.Red);
+                Tools.ConsolePrint("Ошибка CheckSecurityStatus: Окно целевой программы не найдено.", ConsoleColor.Red);
                 IsSave = false;
                 return;
             }
@@ -227,7 +228,7 @@ private static void ListenForCancelKey()
 
             if (screenshot?.Empty() is not false || screenshot.Width <= 0 || screenshot.Height <= 0)
             {
-                ConsolePrint("Ошибка CheckSecurityStatus: Не удалось сделать скриншот окна.", ConsoleColor.Red);
+                Tools.ConsolePrint("Ошибка CheckSecurityStatus: Не удалось сделать скриншот окна.", ConsoleColor.Red);
                 IsSave = false;
                 screenshot?.Dispose(); // Освобождаем память вручную при ошибке
                 return;
@@ -262,7 +263,7 @@ private static void ListenForCancelKey()
 
             /*if (IsSave == false)
             {
-                ConsolePrint("=== ВНИМАНИЕ! Обнаружена опасность!", ConsoleColor.Magenta);
+                Tools.ConsolePrint("=== ВНИМАНИЕ! Обнаружена опасность!", ConsoleColor.Magenta);
             }*/
         }
 
@@ -276,7 +277,7 @@ static void AliChatWarning()
     IntPtr targetWindow = IntPtr.Zero;
 
 #if DEBUG
-    ConsolePrint("--> Запуск цепочки кликов AliChatWarning...", ConsoleColor.Yellow);
+    Tools.ConsolePrint("--> Запуск цепочки кликов AliChatWarning...", ConsoleColor.Yellow);
 #endif
 
     // 1. Первый клик: Открываем меню чатов
@@ -293,14 +294,14 @@ static void AliChatWarning()
 
     if (testAccount == null)
     {
-        ConsolePrint("Ошибка AliChatWarning: Аккаунты в конфигурации не найдены. Прерывание!", ConsoleColor.Red);
+        Tools.ConsolePrint("Ошибка AliChatWarning: Аккаунты в конфигурации не найдены. Прерывание!", ConsoleColor.Red);
         return;
     }
 
     nint hWnd = GetWindow(testAccount);
     if (hWnd == IntPtr.Zero)
     {
-        ConsolePrint("Ошибка AliChatWarning: Целевое окно программы не найдено. Прерывание!", ConsoleColor.Red);
+        Tools.ConsolePrint("Ошибка AliChatWarning: Целевое окно программы не найдено. Прерывание!", ConsoleColor.Red);
         return;
     }
 
@@ -310,7 +311,7 @@ static void AliChatWarning()
     // ИСПРАВЛЕНО: Длинное условие заменено на современный и безопасный условный доступ ?.
     if (currentScreenshot?.Empty() is not false)
     {
-        ConsolePrint("Ошибка AliChatWarning: Не удалось сделать свежий скриншот. Прерывание!", ConsoleColor.Red);
+        Tools.ConsolePrint("Ошибка AliChatWarning: Не удалось сделать свежий скриншот. Прерывание!", ConsoleColor.Red);
         currentScreenshot?.Dispose(); // Освобождаем память, если объект был создан, но оказался пустым
         return;
     }
@@ -322,7 +323,7 @@ static void AliChatWarning()
     // Проверяем физическое наличие файлов картинок, чтобы избежать системных ошибок OpenCV
     if (!File.Exists(imgPath1) || !File.Exists(imgPath2))
     {
-        ConsolePrint("Ошибка AliChatWarning: Файлы шаблонов чата отсутствуют на диске. Прерывание!", ConsoleColor.Red);
+        Tools.ConsolePrint("Ошибка AliChatWarning: Файлы шаблонов чата отсутствуют на диске. Прерывание!", ConsoleColor.Red);
         currentScreenshot.Dispose(); // Освобождаем память перед выходом
         return;
     }
@@ -338,7 +339,7 @@ static void AliChatWarning()
     if (!found1.HasValue && !found2.HasValue)
     {
 #if DEBUG
-        ConsolePrint($"--> [{Path.GetFileName(imgPath1)}] и [{Path.GetFileName(imgPath2)}] не найдены. Прерывание AliChatWarning!", ConsoleColor.Red);
+        Tools.ConsolePrint($"--> [{Path.GetFileName(imgPath1)}] и [{Path.GetFileName(imgPath2)}] не найдены. Прерывание AliChatWarning!", ConsoleColor.Red);
 #endif
         currentScreenshot.Dispose(); // Освобождаем память перед выходом
         return;
@@ -371,7 +372,7 @@ static void AliChatWarning()
     SmartClick(targetWindow, 625, 225);
 
 #if DEBUG
-    ConsolePrint("--> Цепочка кликов AliChatWarning успешно завершена.", ConsoleColor.Green);
+    Tools.ConsolePrint("--> Цепочка кликов AliChatWarning успешно завершена.", ConsoleColor.Green);
 #endif
 }
 
@@ -597,14 +598,14 @@ static IntPtr GetWindow(WindowSettings settings)
         {
 #if DEBUG
             // В режиме отладки пишем, что аккаунт уже подгонялся ранее
-            ConsolePrint($"GetWindow | {settings.AccountName} | Окно уже подгонялось в этой сессии. Шаг пропущен.", ConsoleColor.DarkGray);
+            Tools.ConsolePrint($"GetWindow | {settings.AccountName} | Окно уже подгонялось в этой сессии. Шаг пропущен.", ConsoleColor.DarkGray);
 #endif
             return hWnd; // МГНОВЕННЫЙ ВЫХОД, ПОЛНЫЙ ПРОПУСК ЛЮБЫХ ПРОВЕРОК И РЕСАЙЗОВ
         }
 
         if (settings.Size == null)
         {
-            ConsolePrint($"GetWindow | Ошибка: В конфиге аккаунта {settings.AccountName} отсутствует блок WindowSettings!", ConsoleColor.Red);
+            Tools.ConsolePrint($"GetWindow | Ошибка: В конфиге аккаунта {settings.AccountName} отсутствует блок WindowSettings!", ConsoleColor.Red);
             return hWnd;
         }
 
@@ -614,7 +615,7 @@ static IntPtr GetWindow(WindowSettings settings)
         // 2. Если аккаунта нет в списке, выполняем подгонку размера
         if (ResizeWindow(hWnd, targetW, targetH))
         {
-            ConsolePrint($"GetWindow | Аккаунт: {settings.AccountName} | Успех: Окно '{settings.WindowTitle}' подогнано под размер {targetW}x{targetH}", ConsoleColor.Green);
+            Tools.ConsolePrint($"GetWindow | Аккаунт: {settings.AccountName} | Успех: Окно '{settings.WindowTitle}' подогнано под размер {targetW}x{targetH}", ConsoleColor.Green);
 
             // Запоминаем аккаунт в глобальный список, чтобы больше никогда его не трогать
             _resizedAccounts.Add(settings.AccountName);
@@ -624,12 +625,12 @@ static IntPtr GetWindow(WindowSettings settings)
         }
         else
         {
-            ConsolePrint($"GetWindow | Аккаунт: {settings.AccountName} | Ошибка: Не удалось изменить размер окна.", ConsoleColor.Red);
+            Tools.ConsolePrint($"GetWindow | Аккаунт: {settings.AccountName} | Ошибка: Не удалось изменить размер окна.", ConsoleColor.Red);
         }
     }
     else
     {
-        ConsolePrint($"GetWindow | Ошибка: Окно '{settings.WindowTitle}' для аккаунта {settings.AccountName} не найдено.", ConsoleColor.Red);
+        Tools.ConsolePrint($"GetWindow | Ошибка: Окно '{settings.WindowTitle}' для аккаунта {settings.AccountName} не найдено.", ConsoleColor.Red);
     }
 
     return hWnd;
@@ -675,7 +676,7 @@ static void SmartClick(IntPtr hWnd, int x, int y, int minSec = 1, int maxSec = 5
     // 4. Переводим относительные координаты окна в реальные экранные пиксели
     if (!WinAPI.GetWindowRect(hWnd, out WinAPI.RECT rect))
     {
-        ConsolePrint("SmartClick | Ошибка: Не удалось получить координаты границ окна.", ConsoleColor.Red);
+        Tools.ConsolePrint("SmartClick | Ошибка: Не удалось получить координаты границ окна.", ConsoleColor.Red);
         return;
     }
 
@@ -709,24 +710,14 @@ static void SmartClick(IntPtr hWnd, int x, int y, int minSec = 1, int maxSec = 5
     WinAPI.SendInput(1, [inputUp], System.Runtime.InteropServices.Marshal.SizeOf<WinAPI.INPUT>());
 
 #if DEBUG
-    ConsolePrint($"SmartClick | [ДРАЙВЕР] Быстрый клик отправлен в ({screenX}, {screenY})", ConsoleColor.Yellow);
+    Tools.ConsolePrint($"SmartClick | [ДРАЙВЕР] Быстрый клик отправлен в ({screenX}, {screenY})", ConsoleColor.Yellow);
 #endif
 }
 
 
 
 
-        /// <summary>
-        /// Выводит форматированное сообщение в консоль с указанным цветом.
-        /// </summary>
-        /// <param name="message">Текст сообщения.</param>
-        /// <param name="color">Цвет текста (по умолчанию серый).</param>
-        public static void ConsolePrint(string message, ConsoleColor color = ConsoleColor.Gray)
-        {
-            Console.ForegroundColor = color;
-            Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] {message}");
-            Console.ResetColor();
-        }
+
 
 
 

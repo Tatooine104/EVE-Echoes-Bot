@@ -1,6 +1,3 @@
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -59,7 +56,7 @@ namespace EVEEchoesBot
             catch (Exception ex)
             {
                 // Используем прямое обращение к методу логов основного класса
-                Program.ConsolePrint($"[Ошибка] Не удалось прочитать конфиг: {ex.Message}", ConsoleColor.Red);
+                Tools.ConsolePrint($"[Ошибка] Не удалось прочитать конфиг: {ex.Message}", ConsoleColor.Red);
                 return new BotConfig();
             }
         }
@@ -77,7 +74,7 @@ namespace EVEEchoesBot
             }
             catch (Exception ex)
             {
-                Program.ConsolePrint($"[Ошибка] Не удалось сохранить конфиг: {ex.Message}", ConsoleColor.Red);
+                Tools.ConsolePrint($"[Ошибка] Не удалось сохранить конфиг: {ex.Message}", ConsoleColor.Red);
             }
         }
     }
