@@ -53,7 +53,8 @@ namespace EVEEchoesBot
         GoToBelt,
         Mining,
         GoToStation,
-        Unloading
+        Unloading,
+        CheckSecurity
     }
 
         // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
@@ -128,6 +129,11 @@ namespace EVEEchoesBot
                             // RunUnloadLogic();
                             break;
 
+                        case AccountTask.CheckSecurity:
+                            Tools.ConsolePrint($"[{accountName}] Разгрузка руды на станции в ангар...", ConsoleColor.DarkCyan);
+                            CheckSecurityStatus();
+                            break;
+
                         default:
                             Tools.ConsolePrint($"Предупреждение: Неизвестное состояние задачи для {accountName}.", ConsoleColor.Red);
                             break;
@@ -180,12 +186,13 @@ namespace EVEEchoesBot
                 // Преобразуем строку из конфига в элемент перечисления AccountTask
                 AccountTask initialTask = firstTaskStr switch
                 {
-                    "Undocking"   => AccountTask.Undocking,
-                    "GoToBelt"    => AccountTask.GoToBelt,
-                    "Mining"      => AccountTask.Mining,
-                    "GoToStation" => AccountTask.GoToStation,
-                    "Unloading"   => AccountTask.Unloading,
-                    _             => AccountTask.Undocking // Защита от опечаток в конфиге
+                    "Undocking"     => AccountTask.Undocking,
+                    "GoToBelt"      => AccountTask.GoToBelt,
+                    "Mining"        => AccountTask.Mining,
+                    "GoToStation"   => AccountTask.GoToStation,
+                    "Unloading"     => AccountTask.Unloading,
+                    "CheckSecurity" => AccountTask.CheckSecurity,
+                    _               => AccountTask.CheckSecurity // Защита от опечаток в конфиге
                 };
 
                 // Записываем стартовую задачу в словарь
