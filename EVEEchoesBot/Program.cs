@@ -45,7 +45,7 @@ namespace EVEEchoesBot
     public static WindowSettings? _currentAccount;
     public static readonly Dictionary<string, AccountTask> _accountTasks = [];
 
-    // Перечисление для задач (что делать боту дальше)
+    // Перечисление для задач (что делать боту дальше) 
     // [x] Продумать список возможных действий
     public enum AccountTask
     {
