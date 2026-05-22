@@ -32,9 +32,10 @@ namespace EVEEchoesBot
                     [
                         new WindowSettings
                         {
-                            AccountName = "Miner_V04K0",
+                            Name = "Miner_Lana_Muc",
                             WindowTitle = "BlueStacks_EVE.01",
                             Script = "LocalWatcher",
+                            FirstTask = "CheckSecurity",
                             Size = new TargetSize
                             {
                                 TargetWidth = 1280,
@@ -92,9 +93,10 @@ namespace EVEEchoesBot
     /// </summary>
     public class WindowSettings
     {
-        public string AccountName { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
         public string WindowTitle { get; set; } = string.Empty;
         public string? Script { get; set; }
+        public string? FirstTask { get; set; }
 
         // Полный путь к атрибуту больше не нужен, так как вверху файла добавлен System.Text.Json.Serialization
         [JsonPropertyName("WindowSettings")]
