@@ -263,11 +263,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "c:\\Users\\Tatooine\\GitHub\\EVE Echoes Bot\\EveEchoesBot\\EveEchoesBot.csproj",
-      "projectName": "EveEchoesBot",
-      "projectPath": "c:\\Users\\Tatooine\\GitHub\\EVE Echoes Bot\\EveEchoesBot\\EveEchoesBot.csproj",
+      "projectUniqueName": "c:\\Users\\Tatooine\\GitHub\\EVE Echoes Bot\\EVEEchoesBot.csproj",
+      "projectName": "EVEEchoesBot",
+      "projectPath": "c:\\Users\\Tatooine\\GitHub\\EVE Echoes Bot\\EVEEchoesBot.csproj",
       "packagesPath": "C:\\Users\\Tatooine\\.nuget\\packages\\",
-      "outputPath": "c:\\Users\\Tatooine\\GitHub\\EVE Echoes Bot\\EveEchoesBot\\obj\\",
+      "outputPath": "c:\\Users\\Tatooine\\GitHub\\EVE Echoes Bot\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\Tatooine\\AppData\\Roaming\\NuGet\\NuGet.Config"

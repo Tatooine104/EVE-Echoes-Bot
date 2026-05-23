@@ -10,12 +10,12 @@
 using System;
 using System.Reflection;
 
-[assembly: System.Reflection.AssemblyCompanyAttribute("EveEchoesBot")]
+[assembly: System.Reflection.AssemblyCompanyAttribute("EVEEchoesBot")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+b383a442de014ad88364a2a0b14ae7c15da3d8aa")]
-[assembly: System.Reflection.AssemblyProductAttribute("EveEchoesBot")]
-[assembly: System.Reflection.AssemblyTitleAttribute("EveEchoesBot")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+39ba12aa0fca1308c32b44a6081bbbf4e7a13ccc")]
+[assembly: System.Reflection.AssemblyProductAttribute("EVEEchoesBot")]
+[assembly: System.Reflection.AssemblyTitleAttribute("EVEEchoesBot")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
 
 // Создано классом WriteCodeFragment MSBuild.
