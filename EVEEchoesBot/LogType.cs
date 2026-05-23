@@ -26,9 +26,9 @@ namespace EVEEchoesBot
         /// <param name="accountName">Имя активного аккаунта (по умолчанию System).</param>
         /// <param name="callerMethod">Автоматически заполняется компилятором.</param>
         public static void Log(
-            string message, 
-            LogType type = LogType.Info, 
-            string accountName = "System", 
+            string message,
+            LogType type = LogType.Info,
+            string accountName = "System",
             [CallerMemberName] string callerMethod = "")
         {
             // Строго по порядку: Дата -> Тип сообщения -> Вызвавший метод -> Аккаунт -> Текст
