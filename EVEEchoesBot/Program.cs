@@ -16,23 +16,26 @@ namespace EVEEchoesBot
 
         #region Bot params
 
-        private static bool? _isSave = null;
+        private static bool? _isSave;
 
         public static bool? IsSave
         {
             get => _isSave;
             set
             {
-                // ИСПРАВЛЕНО: Заменили '== true' на 'is true', а '== false' на 'is false'
+                // Если состояние изменилось с безопасного (true) на опасное (false)
                 if (_isSave is true && value is false)
                 {
-                    _isSave = value; // Обновляем значение на false
-                    Tools.ConsolePrint("IsSave | ОПАСТНОСТЬ !!! В системе посторонние!", ConsoleColor.Red);
-                    AliChatWarning(); // Вызываем оповещение
+                    _isSave = value;
+
+                    // Используем критический тип лога Red
+                    Logger.Log("ОПАСНОСТЬ!!! В системе посторонние!", LogType.Warning);
+                    AliChatWarning();
                 }
                 else
                 {
-                    Tools.ConsolePrint("IsSave | В системе нет посторонних!", ConsoleColor.Green);
+                    // Используем подтверждающий тип лога Green
+                    Logger.Log("В системе нет посторонних.", LogType.Success);
                     _isSave = value;
                 }
             }
@@ -48,15 +51,16 @@ namespace EVEEchoesBot
 
     // Перечисление для задач (что делать боту дальше) 
     // [x] Продумать список возможных действий
-    // [ ] Добавить действие "Осмотреться"
+    // [x] Добавить действие "Осмотреться"
     public enum AccountTask
     {
-        Undocking,
-        GoToBelt,
-        Mining,
-        GoToStation,
-        Unloading,
-        CheckSecurity
+        Undocking,        // Выйти из дока
+        GoToBelt,         // Отправиться в зону добычи
+        Mining,           // Добывать руду
+        GoToStation,      // Вернуться на станцию
+        Unloading,        // Выгрузить руду на станцию
+        CheckSecurity,    // Проверить статус безопастности
+        CheckYourOwnState // Проверить текущее состояние
     }
 
         // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
@@ -188,13 +192,14 @@ namespace EVEEchoesBot
                 // Преобразуем строку из конфига в элемент перечисления AccountTask
                 AccountTask initialTask = firstTaskStr switch
                 {
-                    "Undocking"     => AccountTask.Undocking,
-                    "GoToBelt"      => AccountTask.GoToBelt,
-                    "Mining"        => AccountTask.Mining,
-                    "GoToStation"   => AccountTask.GoToStation,
-                    "Unloading"     => AccountTask.Unloading,
-                    "CheckSecurity" => AccountTask.CheckSecurity,
-                    _               => AccountTask.CheckSecurity // Защита от опечаток в конфиге
+                    "Undocking"         => AccountTask.Undocking,
+                    "GoToBelt"          => AccountTask.GoToBelt,
+                    "Mining"            => AccountTask.Mining,
+                    "GoToStation"       => AccountTask.GoToStation,
+                    "Unloading"         => AccountTask.Unloading,
+                    "CheckSecurity"     => AccountTask.CheckSecurity,
+                    "CheckYourOwnState" => AccountTask.CheckYourOwnState,
+                    _                   => AccountTask.CheckYourOwnState // Защита от опечаток в конфиге
                 };
 
                 // Записываем стартовую задачу в словарь

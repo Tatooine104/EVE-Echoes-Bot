@@ -5,21 +5,22 @@ using System.Text.Json.Serialization;
 namespace EVEEchoesBot
 {
 
-// [ ] Проверить все методы и добавить новый метод Logger.Log() 
+// [x] Проверить все методы и добавить новый метод Logger.Log() 
 
     // Главный класс конфигурации
     public class BotConfig
     {
-        public List<WindowSettings> Accounts { get; set; } = new();
+        public List<WindowSettings> Accounts { get; set; } = [];
     }
 
     // Класс настроек конкретного аккаунта (ЗАМЕНИТЕ СВОЙ СТАРЫЙ НА ЭТОТ)
     public class WindowSettings
     {
-        public string Name { get; set; } = "";
+        public string Name        { get; set; } = "";
         public string WindowTitle { get; set; } = "";
-        public string Script { get; set; } = "";
-        public string FirstTask { get; set; } = "";
+        public string Script      { get; set; } = "";
+        public string FirstTask   { get; set; } = "";
+        public string EVESystem   { get; set; } = "";
 
         // <-- 2. СЮДА ДОБАВЛЯЕМ АТРИБУТ СВЯЗИ С JSON
         [JsonPropertyName("WindowSettings")]
@@ -29,7 +30,7 @@ namespace EVEEchoesBot
     // Класс размеров окна
     public class TargetSize
     {
-        public int TargetWidth { get; set; }
+        public int TargetWidth  { get; set; }
         public int TargetHeight { get; set; }
     }
 
@@ -107,6 +108,7 @@ namespace EVEEchoesBot
                         WindowTitle = "BlueStacks_EVE.01",
                         Script = "LocalWatcher",
                         FirstTask = "CheckSecurity",
+                        EVESystem = "Z-K495",
 
                         // ИСПРАВЛЕНО: возвращаем имя свойства Size. 
                         // Атрибут [JsonPropertyName] сам запишет его в JSON как "WindowSettings"

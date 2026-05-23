@@ -1,10 +1,11 @@
 {
   "Accounts": [
     {
-      "Name": "Miner_Lana_Muc",
+      "Name": "Lana Muc",
       "WindowTitle": "BlueStacks_EVE.01",
       "Script": "LocalWatcher",
       "FirstTask": "CheckSecurity",
+      "EVESystem": "Z-K495",
       "WindowSettings": {
         "TargetWidth": 1280,
         "TargetHeight": 720
