@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Text;
+using OpenCvSharp;
 
 // Замените "LowMiner" на пространство имен вашего проекта, если оно называется иначе
 namespace EVEEchoesBot

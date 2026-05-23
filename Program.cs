@@ -1,4 +1,5 @@
-﻿
+﻿using OpenCvSharp;
+
 namespace EVEEchoesBot
 {
 
