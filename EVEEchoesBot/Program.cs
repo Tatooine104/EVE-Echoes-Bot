@@ -28,7 +28,6 @@ namespace EVEEchoesBot
                 {
                     _isSave = value; // Обновляем значение на false
                     Tools.ConsolePrint("IsSave | ОПАСТНОСТЬ !!! В системе посторонние!", ConsoleColor.Red);
-                    //Tools.ConsolePrint($"IsSave | {settings.AccountName} | ОПАСТНОСТЬ !!! В системе посторонние!", ConsoleColor.Red);
                     AliChatWarning(); // Вызываем оповещение
                 }
                 else

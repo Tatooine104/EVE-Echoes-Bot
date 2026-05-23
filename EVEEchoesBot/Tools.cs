@@ -318,60 +318,51 @@ namespace EVEEchoesBot
 
 #region GetWindow
 
-        /// <summary>
-        /// Находит окно по настройкам из конфигурации и подгоняет его размеры только один раз за сессию.
-        /// </summary>
-        /// <param name="settings">Объект настроек окна.</param>
-        /// <returns>Дескриптор окна (IntPtr.Zero, если окно не найдено).</returns>
-        public static IntPtr GetWindow(WindowSettings settings)
-        {
-            // Поиск окна по его заголовку через Windows API
-            IntPtr hWnd = WinAPI.FindWindow(null, settings.WindowTitle);
+public static IntPtr GetWindow(WindowSettings settings)
+{
+    // Привязываем контекст логгера к текущему обрабатываемому аккаунту
+    Program._currentAccount = settings; 
 
-            // КРИТИЧЕСКИЙ ВЫХОД: Если окно вообще не найдено в системе
-            if (hWnd == IntPtr.Zero)
-            {
-                Logger.Log($"Окно '{settings.WindowTitle}' для аккаунта {settings.Name} не найдено.", LogType.Error);
-                return IntPtr.Zero;
-            }
+    IntPtr hWnd = WinAPI.FindWindow(null, settings.WindowTitle);
 
-            // БЫСТРЫЙ ВЫХОД: Если размеры окна для этого аккаунта уже подгонялись в текущей сессии
-            if (_resizedAccounts.Contains(settings.Name))
-            {
-    #if DEBUG
-                Logger.Log("Окно уже подгонялось в этой сессии. Шаг пропущен.", LogType.Test);
-    #endif
-                return hWnd;
-            }
+    if (hWnd == IntPtr.Zero)
+    {
+        Logger.Log($"Окно '{settings.WindowTitle}' не найдено.", LogType.Error);
+        return IntPtr.Zero;
+    }
 
-            // ВАЛИДАЦИЯ КОНФИГУРАЦИИ: Проверяем наличие блока размеров
-            if (settings.Size == null)
-            {
-                Logger.Log($"В конфиге аккаунта {settings.Name} отсутствует блок WindowSettings (Size)!", LogType.Error);
-                return hWnd;
-            }
+    if (_resizedAccounts.Contains(settings.Name))
+    {
+#if DEBUG
+        Logger.Log("Окно уже подгонялось в этой сессии. Шаг пропущен.", LogType.Test);
+#endif
+        return hWnd;
+    }
 
-            int targetW = settings.Size.TargetWidth;
-            int targetH = settings.Size.TargetHeight;
+    if (settings.Size == null)
+    {
+        Logger.Log("В конфигурации отсутствует блок WindowSettings (Size)!", LogType.Error);
+        return hWnd;
+    }
 
-            // Выполняем подгонку размера окна эмулятора
-            if (ResizeWindow(hWnd, targetW, targetH))
-            {
-                Logger.Log($"Окно '{settings.WindowTitle}' подогнано под размер {targetW}x{targetH}", LogType.Test);
+    int targetW = settings.Size.TargetWidth;
+    int targetH = settings.Size.TargetHeight;
 
-                // Фиксируем успешный ресайз в глобальном кэше сессии
-                _resizedAccounts.Add(settings.Name);
+    if (ResizeWindow(hWnd, targetW, targetH))
+    {
+        Logger.Log($"Окно подогнано под размер {targetW}x{targetH}", LogType.Test);
+        _resizedAccounts.Add(settings.Name);
+        Thread.Sleep(300);
+    }
+    else
+    {
+        Logger.Log("Не удалось изменить размер окна эмулятора.", LogType.Warning);
+    }
 
-                // Даем операционной системе Windows 300 мс на физическое применение геометрии окна
-                Thread.Sleep(300);
-            }
-            else
-            {
-                Logger.Log($"Не удалось изменить размер окна для аккаунта {settings.Name}.", LogType.Warning);
-            }
+    return hWnd;
+}
 
-            return hWnd;
-        }
+
 
 #endregion
 
