@@ -130,7 +130,7 @@ namespace EVEEchoesBot
                             break;
 
                         case AccountTask.CheckSecurity:
-                            Tools.ConsolePrint($"[{accountName}] Разгрузка руды на станции в ангар...", ConsoleColor.DarkCyan);
+                            Tools.ConsolePrint($"[{accountName}] Выполняю контроль безопастности системы...", ConsoleColor.DarkCyan);
                             CheckSecurityStatus();
                             break;
 

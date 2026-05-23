@@ -1,3 +1,4 @@
+
 namespace EVEEchoesBot
 {
 
@@ -20,30 +21,7 @@ namespace EVEEchoesBot
         {
             // [ ] Сделать разделение логики по флагу DEBUG: Консоль / Лог
             // [ ] Сделать метод логирования
-            // [ ] Сделать типы: Info / Success / Warning / Error           
-            // [ ] Добавить в лог название аккаунта 
-            // [ ] Добавить в лог название метода откуда вызван лог
-            // ! Тут что-то интересное написано...
-            /*
-            Начиная с C# 5.0, в язык добавлены специальные атрибуты [Caller...]. 
-            Компилятор сам на этапе сборки подставляет в них данные. 
-            Это работает мгновенно и вообще не нагружает процессор. 
-            Для этого в параметры метода нужно добавить необязательные переменные со специальными атрибутами из пространства System.Runtime.CompilerServices:
-            using System;
-            using System.Runtime.CompilerServices;
-
-            private static void CheckSecurityStatus(
-                [CallerMemberName] string callerMethod = "", // Имя метода, который вызвал
-                [CallerFilePath] string callerFile = "",     // Полный путь к файлу
-                [CallerLineNumber] int callerLine = 0)        // Номер строки кода
-            {
-                // Метод выполняет свою работу, но теперь знает, откуда его дернули
-                Tools.ConsolePrint($"Метод CheckSecurityStatus вызван из: {callerMethod} (Строка: {callerLine})", ConsoleColor.DarkGray);
-                
-                // Ваша обычная логика...
-            }
-            */
-
+            // [ ] Сделать типы: Info / Success / Warning / Error / Test         
             Console.ForegroundColor = color;
             Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] {message}");
             Console.ResetColor();
