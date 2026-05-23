@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "dgSpecHash": "4YjWdXZJyBs=",
+  "success": true,
+  "projectFilePath": "c:\\Users\\Tatooine\\GitHub\\EVE Echoes Bot\\EveEchoesBot\\EveEchoesBot.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\Tatooine\\.nuget\\packages\\microsoft.win32.systemevents\\10.0.8\\microsoft.win32.systemevents.10.0.8.nupkg.sha512",
+    "C:\\Users\\Tatooine\\.nuget\\packages\\opencvsharp4\\4.13.0.20260427\\opencvsharp4.4.13.0.20260427.nupkg.sha512",
+    "C:\\Users\\Tatooine\\.nuget\\packages\\opencvsharp4.extensions\\4.13.0.20260427\\opencvsharp4.extensions.4.13.0.20260427.nupkg.sha512",
+    "C:\\Users\\Tatooine\\.nuget\\packages\\opencvsharp4.runtime.win\\4.13.0.20260302\\opencvsharp4.runtime.win.4.13.0.20260302.nupkg.sha512",
+    "C:\\Users\\Tatooine\\.nuget\\packages\\system.drawing.common\\10.0.8\\system.drawing.common.10.0.8.nupkg.sha512"
+  ],
+  "logs": []
+}
