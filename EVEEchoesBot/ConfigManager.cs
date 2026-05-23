@@ -4,6 +4,9 @@ using System.Text.Json.Serialization;
 // ЗАМЕТКА: Убедитесь, что это пространство имен (namespace) совпадает с вашим основным файлом!
 namespace EVEEchoesBot
 {
+
+// [ ] Проверить все методы и добавить новый метод Logger.Log() 
+
     /// <summary>
     /// Класс управления конфигурацией всего бота.
     /// </summary>

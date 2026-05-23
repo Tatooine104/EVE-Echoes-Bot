@@ -2,6 +2,8 @@
 namespace EVEEchoesBot
 {
 
+// [ ] Проверить все методы и добавить новый метод Logger.Log() 
+
     public static class Tools
     {
 
@@ -12,6 +14,7 @@ namespace EVEEchoesBot
         // Глобальный список аккаунтов, для которых размер окна уже был успешно подогнан
         public static readonly System.Collections.Generic.HashSet<string> _resizedAccounts = [];
 
+/*
         /// <summary>
         /// Выводит форматированное сообщение в консоль с указанным цветом.
         /// </summary>
@@ -19,14 +22,14 @@ namespace EVEEchoesBot
         /// <param name="color">Цвет текста (по умолчанию серый).</param>
         public static void ConsolePrint(string message, ConsoleColor color = ConsoleColor.Gray)
         {
-            // [ ] Сделать разделение логики по флагу DEBUG: Консоль / Лог
-            // [ ] Сделать метод логирования
-            // [ ] Сделать типы: Info / Success / Warning / Error / Test         
+            // [x] Сделать разделение логики по флагу DEBUG: Консоль / Лог
+            // [x] Сделать метод логирования
+            // [x] Сделать типы: Info / Success / Warning / Error / Test         
             Console.ForegroundColor = color;
             Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] {message}");
             Console.ResetColor();
         }
-
+*/
 
         /// <summary>
         /// Делает скриншот целевого окна и возвращает его напрямую в формате матрицы OpenCV (Mat).
@@ -197,7 +200,7 @@ namespace EVEEchoesBot
             // 4. Переводим относительные координаты окна в реальные экранные пиксели
             if (!WinAPI.GetWindowRect(hWnd, out WinAPI.RECT rect))
             {
-                Tools.ConsolePrint("SmartClick | Ошибка: Не удалось получить координаты границ окна.", ConsoleColor.Red);
+                Logger.Log("Не удалось получить координаты границ окна.", LogType.Error);
                 return;
             }
 
@@ -231,7 +234,7 @@ namespace EVEEchoesBot
             WinAPI.SendInput(1, [inputUp], System.Runtime.InteropServices.Marshal.SizeOf<WinAPI.INPUT>());
 
 #if DEBUG
-            Tools.ConsolePrint($"SmartClick | [ДРАЙВЕР] Быстрый клик отправлен в ({screenX}, {screenY})", ConsoleColor.Yellow);
+            Logger.Log($"Быстрый клик отправлен в ({screenX}, {screenY})", LogType.Test);
 #endif
         }
 
@@ -265,14 +268,14 @@ namespace EVEEchoesBot
                 {
 #if DEBUG
                     // В режиме отладки пишем, что аккаунт уже подгонялся ранее
-                    Tools.ConsolePrint($"GetWindow | {settings.Name} | Окно уже подгонялось в этой сессии. Шаг пропущен.", ConsoleColor.DarkGray);
+                    Logger.Log($"Окно уже подгонялось в этой сессии. Шаг пропущен.", LogType.Test);
 #endif
                     return hWnd; // МГНОВЕННЫЙ ВЫХОД, ПОЛНЫЙ ПРОПУСК ЛЮБЫХ ПРОВЕРОК И РЕСАЙЗОВ
                 }
 
                 if (settings.Size == null)
                 {
-                    Tools.ConsolePrint($"GetWindow | Ошибка: В конфиге аккаунта {settings.Name} отсутствует блок WindowSettings!", ConsoleColor.Red);
+                    Logger.Log($"В конфиге аккаунта {settings.Name} отсутствует блок WindowSettings!", LogType.Error);
                     return hWnd;
                 }
 
@@ -282,7 +285,7 @@ namespace EVEEchoesBot
                 // 2. Если аккаунта нет в списке, выполняем подгонку размера
                 if (ResizeWindow(hWnd, targetW, targetH))
                 {
-                    Tools.ConsolePrint($"GetWindow | Аккаунт: {settings.Name} | Успех: Окно '{settings.WindowTitle}' подогнано под размер {targetW}x{targetH}", ConsoleColor.Green);
+                    Logger.Log($"Окно '{settings.WindowTitle}' подогнано под размер {targetW}x{targetH}", LogType.Test);
 
                     // Запоминаем аккаунт в глобальный список, чтобы больше никогда его не трогать
                     _resizedAccounts.Add(settings.Name);
@@ -292,12 +295,12 @@ namespace EVEEchoesBot
                 }
                 else
                 {
-                    Tools.ConsolePrint($"GetWindow | Аккаунт: {settings.Name} | Ошибка: Не удалось изменить размер окна.", ConsoleColor.Red);
+                    Logger.Log("Не удалось изменить размер окна.", LogType.Error);
                 }
             }
             else
             {
-                Tools.ConsolePrint($"GetWindow | Ошибка: Окно '{settings.WindowTitle}' для аккаунта {settings.Name} не найдено.", ConsoleColor.Red);
+                Logger.Log($"Окно '{settings.WindowTitle}' для аккаунта {settings.Name} не найдено.", LogType.Error);
             }
 
             return hWnd;

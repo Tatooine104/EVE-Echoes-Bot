@@ -26,13 +26,21 @@ namespace EVEEchoesBot
         /// <param name="accountName">Имя активного аккаунта (по умолчанию System).</param>
         /// <param name="callerMethod">Автоматически заполняется компилятором.</param>
         public static void Log(
-            string message,
-            LogType type = LogType.Info,
-            string accountName = "System",
+            string message, 
+            LogType type = LogType.Info, 
+            string? accountName = null, // Меняем дефолт на null
             [CallerMemberName] string callerMethod = "")
         {
-            // Строго по порядку: Дата -> Тип сообщения -> Вызвавший метод -> Аккаунт -> Текст
-            string formattedMessage = $"[{DateTime.Now:HH:mm:ss}] [{type.ToString().ToUpper()}] [{callerMethod}] [{accountName}] -> {message}";
+            // 1. Если имя не передано явно, пытаемся взять его из глобальной переменной
+            if (string.IsNullOrEmpty(accountName))
+            {
+                // Проверяем, что объект _currentAccount не равен null
+                // Замените .Name на реальное свойство вашего класса WindowSettings (например, .AccountName)
+                accountName = Program._currentAccount?.Name ?? "System";
+            }
+
+            // 2. Строго по порядку: Дата -> Тип сообщения -> Вызвавший метод -> Аккаунт -> Текст
+            string formattedMessage = $"[{DateTime.Now:HH:mm:ss}] [{accountName}] -> [{type.ToString().ToUpper()}] -> [{callerMethod}]: {message}";
             ConsoleColor color = GetColorForType(type);
 
         #if DEBUG

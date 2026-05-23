@@ -2,6 +2,8 @@
 namespace EVEEchoesBot
 {
 
+// [ ] Проверить все методы и добавить новый метод Logger.Log() 
+
     static partial class Program
     {
 
@@ -47,6 +49,7 @@ namespace EVEEchoesBot
 
     // Перечисление для задач (что делать боту дальше) 
     // [x] Продумать список возможных действий
+    // [ ] Добавить действие "Осмотреться"
     public enum AccountTask
     {
         Undocking,
