@@ -67,126 +67,150 @@ namespace EVEEchoesBot
         // - + - + - + - + - |  Основная программа   | - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
         // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
-        #region Main
+#region Main
 
-        static void Main()
+
+    public static void Main()
     {
-        Tools.ConsolePrint("=== Бот успешно запущен ===", ConsoleColor.Cyan);
-        Tools.ConsolePrint("--> Нажмите [ESC] в любой момент для остановки скрипта.", ConsoleColor.DarkGray);
+        Logger.Log("Бот успешно запущен.", LogType.Success);
+        Logger.Log("Нажмите [ESC] в любой момент для плавной остановки скрипта.", LogType.Info);
 
-        // Фоновый поток для отслеживания нажатия ESC
+        // Запуск фонового потока для непрерывного отслеживания нажатия управляющих клавиш
         Thread inputThread = new(ListenForCancelKey) { IsBackground = true };
         inputThread.Start();
 
-        // 2. Инициализация параметров вне главного цикла
+        // Инициализация параметров диспетчера задач из конфигурации
         InitializeBot();
 
         if (_config?.Accounts == null)
         {
-            Tools.ConsolePrint("Критическая ошибка: Данные конфигурации не инициализированы. Выход.", ConsoleColor.Red);
+            Logger.Log("Критическая ошибка: Данные конфигурации не инициализированы. Выход.", LogType.Error);
             return;
         }
 
-        // 3. Основной цикл
+        // Главный диспетчерский цикл автоматизации
         while (!_cts.Token.IsCancellationRequested)
         {
             try
             {
-                // Итерируемся по всем аккаунтам из конфигурации
-                foreach (var account in _config.Accounts)
+                foreach (WindowSettings account in _config.Accounts)
                 {
-                    if (_cts.Token.IsCancellationRequested) break;
+                    if (_cts.Token.IsCancellationRequested)
+                    {
+                        break;
+                    }
 
-                    // Устанавливаем текущий активный аккаунт
+                    // Переключаем глобальный контекст логгера на обрабатываемый аккаунт
                     _currentAccount = account;
+                    string accountName = account.Name ?? "Unknown";
 
-                    // Получаем имя текущего аккаунта (замените AccountName на реальное поле, если нужно)
-                    string accountName = _currentAccount.Name ?? "Unknown";
-                    Tools.ConsolePrint($"\n[Аккаунт: {accountName}] Обработка...", ConsoleColor.Blue);
+                    // Извлекаем текущую назначенную задачу из словаря диспетчера
+                    if (!_accountTasks.TryGetValue(accountName, out AccountTask currentTask))
+                    {
+                        Logger.Log("В словаре диспетчера отсутствует задача для данного аккаунта.", LogType.Warning);
+                        continue;
+                    }
 
-                    // Получаем текущую задачу для этого аккаунта
-                    AccountTask currentTask = _accountTasks[accountName];
-
-                    // Выполняем логику в зависимости от текущей задачи бота
+                    // Маршрутизация выполнения в зависимости от текущего состояния автоматизации
                     switch (currentTask)
                     {
                         case AccountTask.Undocking:
-                            Tools.ConsolePrint($"[{accountName}] Выполняется андок (вылет со станции)...", ConsoleColor.Cyan);
+                            Logger.Log("Выполняется андок (вылет со станции)...", LogType.Info);
                             // RunUndockLogic();
                             break;
 
                         case AccountTask.GoToBelt:
-                            Tools.ConsolePrint($"[{accountName}] Полет на астероидный белт...", ConsoleColor.Yellow);
+                            Logger.Log("Полет на астероидный белт...", LogType.Info);
                             // RunWarpToBeltLogic();
                             break;
 
                         case AccountTask.Mining:
-                            Tools.ConsolePrint($"[{accountName}] Процесс добычи руды (майнинг)...", ConsoleColor.Green);
+                            Logger.Log("Процесс добычи руды (майнинг)...", LogType.Info);
                             // RunMiningLogic();
                             break;
 
                         case AccountTask.GoToStation:
-                            Tools.ConsolePrint($"[{accountName}] Трюм полон. Возврат на станцию (варп)...", ConsoleColor.Magenta);
+                            Logger.Log("Трюм полон. Возврат на станцию (варп)...", LogType.Info);
                             // RunWarpToStationLogic();
                             break;
 
                         case AccountTask.Unloading:
-                            Tools.ConsolePrint($"[{accountName}] Разгрузка руды на станции в ангар...", ConsoleColor.DarkCyan);
+                            Logger.Log("Разгрузка руды на станции в ангар...", LogType.Info);
                             // RunUnloadLogic();
                             break;
 
                         case AccountTask.CheckSecurity:
-                            Tools.ConsolePrint($"[{accountName}] Выполняю контроль безопастности системы...", ConsoleColor.DarkCyan);
+                            Logger.Log("Выполняю контроль безопасности системы...", LogType.Info);
                             CheckSecurityStatus();
                             break;
 
+                        case AccountTask.CheckYourOwnState:
+                            Logger.Log("Выполняю оценку текущего состояния...", LogType.Info);
+                            // CheckYourOwnState();
+                            break;
+
                         default:
-                            Tools.ConsolePrint($"Предупреждение: Неизвестное состояние задачи для {accountName}.", ConsoleColor.Red);
+                            Logger.Log($"Неизвестное состояние задачи: {currentTask}", LogType.Error);
                             break;
                     }
                 }
             }
             catch (Exception ex)
             {
-                Tools.ConsolePrint($"Критическая ошибка в главном цикле: {ex.Message}", ConsoleColor.Red);
+                Logger.Log($"Критическая ошибка в главном цикле диспетчера: {ex.Message}", LogType.Error);
+            }
+            finally
+            {
+                // Сбрасываем контекст логов в конце каждого полного круга
+                _currentAccount = null;
             }
 
-            // Безопасное ожидание 15 секунд между кругами
+            // Безопасное неблокирующее ожидание 15 секунд между кругами автоматизации
             if (_cts.Token.WaitHandle.WaitOne(15000))
             {
                 break;
             }
         }
 
-        Tools.ConsolePrint("=== Бот успешно остановлен ===", ConsoleColor.Cyan);
+        Logger.Log("Бот успешно остановлен. Сессия завершена.", LogType.Success);
     }
+
 
 #endregion
 
 #region Initialize Bot
 
-    // Метод для инициализации данных
+    /// <summary>
+    /// Выполняет первоначальную инициализацию бота при старте сессии:
+    /// <list type="bullet">
+    /// <item><description>Загружает файл конфигурации JSON через <see cref="ConfigManager"/>.</description></item>
+    /// <item><description>Проверяет валидность списка игровых аккаунтов.</description></item>
+    /// <item><description>Конвертирует строковые названия стартовых задач в перечисление <see cref="AccountTask"/>.</description></item>
+    /// <item><description>Формирует глобальный диспетчерский словарь начального состояния автоматизации.</description></item>
+    /// </list>
+    /// В случае критической ошибки инициирует безопасную отмену токена <c>_cts.Cancel()</c> для остановки всех потоков.
+    /// </summary>
     private static void InitializeBot()
     {
         try
         {
-            // Загружаем конфиг один раз при старте
+            // Загружаем конфигурацию один раз при старте
             _config = ConfigManager.Load();
 
             if (_config?.Accounts == null || _config.Accounts.Count == 0)
             {
-                Tools.ConsolePrint("Критическая ошибка: В конфигурации нет доступных аккаунтов.", ConsoleColor.Red);
+                Logger.Log("В конфигурации нет доступных аккаунтов. Запуск отменен.", LogType.Error);
                 _cts.Cancel();
                 return;
             }
 
-            // Заполняем массив (словарь) начальными задачами на основе Script из конфига
-            foreach (var account in _config.Accounts)
+            // Заполняем словарь начальными задачами на основе конфигурации
+            foreach (WindowSettings account in _config.Accounts)
             {
-                // Безопасно получаем имя аккаунта (замените AccountName на ваше реальное поле)
-                string accountName = account.Name ?? "Unknown";
+                // Временно привязываем контекст логгера к текущему аккаунту для точной диагностики
+                _currentAccount = account;
 
-                // Считываем стартовую задачу из конфига. Если там пусто, используем Undocking по умолчанию.
+                string accountName = account.Name ?? "Unknown";
                 string firstTaskStr = account.FirstTask ?? "Undocking";
 
                 // Преобразуем строку из конфига в элемент перечисления AccountTask
@@ -199,279 +223,381 @@ namespace EVEEchoesBot
                     "Unloading"         => AccountTask.Unloading,
                     "CheckSecurity"     => AccountTask.CheckSecurity,
                     "CheckYourOwnState" => AccountTask.CheckYourOwnState,
-                    _                   => AccountTask.CheckYourOwnState // Защита от опечаток в конфиге
+                    _                   => AccountTask.CheckYourOwnState
                 };
 
-                // Записываем стартовую задачу в словарь
+                // Записываем стартовую задачу в глобальный словарь диспетчера
                 _accountTasks[accountName] = initialTask;
             }
 
-            Tools.ConsolePrint($"Конфигурация загружена. Аккаунтов в работе: {_config.Accounts.Count}", ConsoleColor.Green);
+            // Сбрасываем системный контекст после завершения цикла инициализации
+            _currentAccount = null;
+
+            Logger.Log($"Конфигурация успешно загружена. Аккаунтов в работе: {_config.Accounts.Count}", LogType.Success);
         }
         catch (Exception ex)
         {
-            Tools.ConsolePrint($"Ошибка при инициализации бота: {ex.Message}", ConsoleColor.Red);
+            Logger.Log($"Критическая ошибка при инициализации бота: {ex.Message}", LogType.Error);
             _cts.Cancel();
         }
     }
 
+#region ListenForCancelKey
 
-/// <summary>
-/// Метод постоянно работает в фоне: ждет ESC для выхода или F10 для мгновенного теста клика.
-/// </summary>
-private static void ListenForCancelKey()
-{
-    while (!_cts.Token.IsCancellationRequested)
+    /// <summary>
+    /// Постоянно работает в фоновом потоке, отслеживая нажатия управляющих клавиш:
+    /// <list type="bullet">
+    /// <item><description><c>ConsoleKey.Escape</c> — инициирует плавную остановку всех процессов бота.</description></item>
+    /// <item><description><c>ConsoleKey.F10</c> — запускает мгновенный изолированный тест эмуляции клика драйвером.</description></item>
+    /// </list>
+    /// </summary>
+    private static void ListenForCancelKey()
     {
-        // Проверяем, нажата ли какая-либо клавиша
-        if (Console.KeyAvailable)
+        while (!_cts.Token.IsCancellationRequested)
         {
-            // Считываем клавишу и прячем её символ из консоли (intercept: true)
+            if (!Console.KeyAvailable)
+            {
+                Thread.Sleep(100); // Снижаем нагрузку на процессор до ~0%
+                continue;
+            }
+
+            // Считываем нажатую клавишу и скрываем её символ из консоли
             ConsoleKeyInfo key = Console.ReadKey(intercept: true);
 
-            // 1. Если нажат ESC — плавно останавливаем бота
+            // 1. Плавный выход из программы
             if (key.Key == ConsoleKey.Escape)
             {
-                Tools.ConsolePrint("\n[INFO] Получен сигнал отмены. Завершаем текущий круг и выходим...", ConsoleColor.Yellow);
-                _cts.Cancel(); // Посылаем сигнал отмены
+                Logger.Log("Получен сигнал отмены. Завершаем текущий круг и выходим...", LogType.Warning);
+                _cts.Cancel();
                 break;
             }
 
-            // 2. Если нажат F10 — выполняем мгновенный тестовый клик по координатам
+            // 2. Мгновенный отладочный клик
             if (key.Key == ConsoleKey.F10)
             {
-                Tools.ConsolePrint("\n[ТЕСТ] Нажата клавиша F10! Запуск проверки клика...", ConsoleColor.Cyan);
+                Logger.Log("Нажата клавиша F10! Запуск экспресс-проверки клика...", LogType.Test);
 
                 try
                 {
-                    // Быстро подгружаем настройки текущего аккаунта
                     BotConfig config = ConfigManager.Load();
                     WindowSettings? testAccount = config.Accounts.FirstOrDefault();
 
                     if (testAccount == null)
                     {
-                        Tools.ConsolePrint("[ТЕСТ] Ошибка: Аккаунты в конфигурации не найдены.", ConsoleColor.Red);
+                        Logger.Log("Ошибка теста: Аккаунты в файле конфигурации не найдены.", LogType.Error);
                         continue;
                     }
 
-                    // Получаем окно (без ресайза, так как кэш в HashSet его пропустит)
-                    nint hWnd = Tools.GetWindow(testAccount);
+                    // Переключаем глобальный контекст логгера на тестовый аккаунт
+                    _currentAccount = testAccount;
 
+                    // Получаем хэндл окна через обновленный менеджер
+                    IntPtr hWnd = Tools.GetWindow(testAccount);
                     if (hWnd == IntPtr.Zero)
                     {
-                        Tools.ConsolePrint($"[ТЕСТ] Ошибка: Окно '{testAccount.WindowTitle}' не найдено.", ConsoleColor.Red);
+                        Logger.Log($"Ошибка теста: Окно '{testAccount.WindowTitle}' не найдено в ОС.", LogType.Error);
                         continue;
                     }
 
-                    // Находим внутреннее окно ввода эмулятора (SubWin/RenderWindow)
+                    // Находим внутреннее окно ввода эмулятора
                     IntPtr inputWindow = WinAPI.GetInputWindow(hWnd);
 
-                    // Укажите здесь ТЕ КООРДИНАТЫ, которые вы хотите проверить
+                    // Координаты для быстрой проверки клика
                     const int testX = 60;
                     const int testY = 680;
 
-                    Tools.ConsolePrint($"[ТЕСТ] Отправляю SmartClick в окно {inputWindow} по координатам ({testX}, {testY})...", ConsoleColor.Yellow);
+                    Logger.Log($"Отправляю тестовый клик в окно {inputWindow} (X: {testX}, Y: {testY})...", LogType.Test);
 
-                    // Вызываем клик. minSec и maxSec ставим в 0, чтобы кликнуло мгновенно без пауз
+                    // Вызываем клик через оптимизированный класс эмулятора драйвера
                     Tools.SmartClick(hWnd, testX, testY, minSec: 0, maxSec: 0, offset: 3);
 
-                    Tools.ConsolePrint("[ТЕСТ] Клик успешно отправлен в эмулятор!", ConsoleColor.Green);
+                    Logger.Log("Тестовый клик успешно сгенерирован и отправлен.", LogType.Success);
                 }
                 catch (Exception ex)
                 {
-                    Tools.ConsolePrint($"[ТЕСТ] Ошибка при симуляции клика: {ex.Message}", ConsoleColor.Red);
+                    Logger.Log($"Сбой при симуляции отладочного клика: {ex.Message}", LogType.Error);
+                }
+                finally
+                {
+                    // Сбрасываем контекст логов после окончания теста
+                    _currentAccount = null;
                 }
             }
         }
-
-        Thread.Sleep(100); // Разгружаем процессор, чтобы поток не ел 100% ядра
     }
-}
 
+#endregion
 
         #endregion
 
         // ============================================================================================
 
-        #region EVE Echoes Methods 
-
-        /// <summary>
-        /// Автономно загружает конфиг, находит окно, делает скриншот и проверяет безопасность локала.
-        /// </summary>
-        static void CheckSecurityStatus()
-        {
-            // 1. Самостоятельно загружаем настройки и ищем аккаунт
-            BotConfig config = ConfigManager.Load();
-            WindowSettings? testAccount = config.Accounts.FirstOrDefault();
-
-            if (testAccount == null)
-            {
-                Tools.ConsolePrint("Ошибка CheckSecurityStatus: В конфигурации нет доступных аккаунтов.", ConsoleColor.Red);
-                IsSave = false; // Нет настроек — система не может считаться безопасной
-                return;
-            }
-
-            // 2. Получаем дескриптор окна приложения
-            nint hWnd = Tools.GetWindow(testAccount);
-
-            if (hWnd == IntPtr.Zero)
-            {
-                Tools.ConsolePrint("Ошибка CheckSecurityStatus: Окно целевой программы не найдено.", ConsoleColor.Red);
-                IsSave = false;
-                return;
-            }
-
-            // 3. Делаем снимок экрана и оборачиваем в using для автоматической очистки памяти C++
-            OpenCvSharp.Mat? screenshot = Tools.CaptureWindow(hWnd);
-
-            if (screenshot?.Empty() is not false || screenshot.Width <= 0 || screenshot.Height <= 0)
-            {
-                Tools.ConsolePrint("Ошибка CheckSecurityStatus: Не удалось сделать скриншот окна.", ConsoleColor.Red);
-                IsSave = false;
-                screenshot?.Dispose(); // Освобождаем память вручную при ошибке
-                return;
-            }
-
-            // 4. Логика проверки шаблонов интерфейса
-            string[] templates = ["imgLocalCriminal.png", "imgLocalMinus.png", "imgLocalNeutral.png"];
-            bool currentStatus = true;
-
-            OpenCvSharp.Rect searchRegion = new(50, 250, 300, 420);
-
-            foreach (string templateName in templates)
-            {
-                string fullTemplatePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", templateName);
-
-                if (!File.Exists(fullTemplatePath))
-                {
-                    currentStatus = false;
-                    continue;
-                }
-
-                OpenCvSharp.Point? foundPoint = Tools.FindTemplateInRegion(screenshot, fullTemplatePath, searchRegion, 0.80);
-
-                if (!foundPoint.HasValue)
-                {
-                    currentStatus = false;
-                }
-            }
-
-            // При присвоении сработает логика внутри свойства set { ... }
-            IsSave = currentStatus;
-
-            /*if (IsSave == false)
-            {
-                Tools.ConsolePrint("=== ВНИМАНИЕ! Обнаружена опасность!", ConsoleColor.Magenta);
-            }*/
-        }
-
+        #region CheckSecurityStatus 
 
 /// <summary>
-/// Выполняет цепочку из 7 кликов для отправки предупреждения в чат.
-/// На втором шаге проверяет, открылось ли меню чатов на русском или английском языке.
+/// Автономно загружает конфиг, находит окно, делает скриншот и проверяет безопасность локала.
+/// Реализует сложную многоуровневую логику поиска маркеров интерфейса с возможностью клика и жесткого стопа бота.
 /// </summary>
-static void AliChatWarning()
+static void CheckSecurityStatus()
 {
-    IntPtr targetWindow = IntPtr.Zero;
-
-#if DEBUG
-    Tools.ConsolePrint("--> Запуск цепочки кликов AliChatWarning...", ConsoleColor.Yellow);
-#endif
-
-    // 1. Первый клик: Открываем меню чатов
-    Tools.SmartClick(targetWindow, 25, 600);
-
-    // Пауза 500 мс, чтобы интерфейс игры/эмулятора успел обновиться после клика
-    Thread.Sleep(500);
-
-    // ================= НАЧАЛО АВТОНОМНОЙ ПРОВЕРКИ НА ВТОРОМ ШАГЕ =================
-
-    // Получаем настройки и дескриптор окна для создания свежего скриншота
+    // 1. Самостоятельно загружаем настройки и ищем аккаунт
     BotConfig config = ConfigManager.Load();
     WindowSettings? testAccount = config.Accounts.FirstOrDefault();
 
     if (testAccount == null)
     {
-        Tools.ConsolePrint("Ошибка AliChatWarning: Аккаунты в конфигурации не найдены. Прерывание!", ConsoleColor.Red);
+        Logger.Log("Ошибка CheckSecurityStatus: В конфигурации нет доступных аккаунтов.", LogType.Error);
+        IsSave = false;
         return;
     }
 
-    nint hWnd = Tools.GetWindow(testAccount);
+    // Привязываем контекст логгера к текущему аккаунту
+    Program._currentAccount = testAccount;
+
+    // 2. Получаем дескриптор окна приложения
+    IntPtr hWnd = Tools.GetWindow(testAccount);
     if (hWnd == IntPtr.Zero)
     {
-        Tools.ConsolePrint("Ошибка AliChatWarning: Целевое окно программы не найдено. Прерывание!", ConsoleColor.Red);
+        Logger.Log("Ошибка CheckSecurityStatus: Окно целевой программы не найдено.", LogType.Error);
+        IsSave = false;
         return;
     }
 
-    // Делаем актуальный снимок экрана после первого клика (классическое объявление)
-    OpenCvSharp.Mat? currentScreenshot = Tools.CaptureWindow(hWnd);
+    // Пути к базовым маркерам интерфейса
+    string pathImg1 = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", "imgMarker1.png"); // Переименуйте в ваше имя
+    string pathImg2 = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", "imgMarker2.png"); // Переименуйте в ваше имя
 
-    // ИСПРАВЛЕНО: Длинное условие заменено на современный и безопасный условный доступ ?.
-    if (currentScreenshot?.Empty() is not false)
+    // Области поиска (настройте под координаты вашей игры)
+    Rect localRegion = new(50, 250, 300, 420);
+
+    while (!_cts.Token.IsCancellationRequested)
     {
-        Tools.ConsolePrint("Ошибка AliChatWarning: Не удалось сделать свежий скриншот. Прерывание!", ConsoleColor.Red);
-        currentScreenshot?.Dispose(); // Освобождаем память, если объект был создан, но оказался пустым
+        // 3. Делаем снимок экрана
+        using Mat? screenshot = Tools.CaptureWindow(hWnd);
+        if (screenshot?.Empty() is not false || screenshot.Width <= 0 || screenshot.Height <= 0)
+        {
+            Logger.Log("Ошибка CheckSecurityStatus: Не удалось сделать скриншот окна.", LogType.Error);
+            IsSave = false;
+            return;
+        }
+
+        // Шаг А: Ищем Изображение 1
+        Point? foundImg1 = Tools.FindTemplateInRegion(screenshot, pathImg1, localRegion, 0.80);
+        if (foundImg1.HasValue)
+        {
+            // Нашли изображение 1 -> Переходим сразу к финальной проверке локала
+            if (RunLocalCheck(screenshot, localRegion)) return;
+            continue; // Если финальная проверка сказала "не нашли ничего", идем на старт цикла
+        }
+
+        // Шаг Б: Изображение 1 не найдено, ищем Изображение 2
+        Point? foundImg2 = Tools.FindTemplateInRegion(screenshot, pathImg2, localRegion, 0.80);
+        if (foundImg2.HasValue)
+        {
+            // Нашли Изображение 2 -> Кликаем в него и переходим к финальной проверке
+            Logger.Log("Обнаружено Изображение 2. Выполняю клик для раскрытия интерфейса.", LogType.Test);
+            Tools.SmartClick(hWnd, foundImg2.Value.X, foundImg2.Value.Y, minSec: 0, maxSec: 0, offset: 2);
+            Thread.Sleep(500); // Короткая пауза, чтобы интерфейс успел отрисоваться
+
+            // Делаем новый скриншот, так как после клика экран изменился
+            using Mat? freshScreenshot = Tools.CaptureWindow(hWnd);
+            if (freshScreenshot?.Empty() is not false) continue;
+
+            if (RunLocalCheck(freshScreenshot, localRegion)) return;
+            continue;
+        }
+
+        // Шаг В: Изображение 2 тоже не нашли -> Ждем 5 секунд и пробуем найти его еще раз
+        Logger.Log("Изображение 1 и 2 не найдены. Ожидание 5 секунд для повторной проверки...", LogType.Warning);
+        Thread.Sleep(5000);
+
+        using Mat? retryScreenshot = Tools.CaptureWindow(hWnd);
+        if (retryScreenshot?.Empty() is not false) continue;
+
+        Point? retryImg2 = Tools.FindTemplateInRegion(retryScreenshot, pathImg2, localRegion, 0.80);
+        if (retryImg2.HasValue)
+        {
+            // Со второй попытки нашли Изображение 2 -> Кликаем и проверяем
+            Tools.SmartClick(hWnd, retryImg2.Value.X, retryImg2.Value.Y, minSec: 0, maxSec: 0, offset: 2);
+            Thread.Sleep(500);
+
+            using Mat? freshScreenshot2 = Tools.CaptureWindow(hWnd);
+            if (freshScreenshot2?.Empty() is not false) continue;
+
+            if (RunLocalCheck(freshScreenshot2, localRegion)) return;
+            continue;
+        }
+
+        // КРИТИЧЕСКИЙ СТОП: Если после 5 секунд ожидания Изображение 2 так и не появилось
+        Logger.Log("КРИТИЧЕСКИЙ СБОЙ: Повторный поиск Изображения 2 не дал результатов. Полная остановка бота!", LogType.Error);
+        IsSave = false;
+        _cts.Cancel(); // Экстренное завершение работы всего бота
+        return;
+    }
+}
+
+#endregion
+
+#region RunLocalCheck
+
+/// <summary>
+/// Выполняет финальную проверку трех шаблонов безопасности на указанном кадре.
+/// </summary>
+/// <returns>True — если статус безопасности окончательно определен (Safe/Danger); False — если не нашли вообще ничего и нужно вернуться в начало.</returns>
+private static bool RunLocalCheck(Mat screenshot, Rect searchRegion)
+{
+    string[] templates = ["imgLocalCriminal.png", "imgLocalMinus.png", "imgLocalNeutral.png"];
+    int foundCount = 0;
+
+    foreach (string templateName in templates)
+    {
+        string fullTemplatePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", templateName);
+        if (!File.Exists(fullTemplatePath)) continue;
+
+        Point? foundPoint = Tools.FindTemplateInRegion(screenshot, fullTemplatePath, searchRegion, 0.80);
+        if (foundPoint.HasValue)
+        {
+            foundCount++;
+        }
+    }
+
+    // Обработка результатов согласно вашим правилам:
+    if (foundCount == 3)
+    {
+        // 1. Нашли все три шаблона — БЕЗОПАСНО
+        IsSave = true;
+        return true;
+    }
+
+    if (foundCount > 0 && foundCount < 3)
+    {
+        // 2. Нашли один или два, но не все — ОПАСНОСТЬ (сработает триггер в свойстве IsSave)
+        IsSave = false;
+        return true;
+    }
+
+    // 3. Не нашли вообще ни одного шаблона (foundCount == 0) — возвращаемся в начало (ищем изображение 1 и т.д.)
+    Logger.Log("Ни один из трех шаблонов безопасности не найден на экране. Сброс к началу проверки...", LogType.Warning);
+    return false;
+}
+
+#endregion
+
+#region AliChatWarning
+
+/// <summary>
+/// Выполняет цепочку из 8 кликов для автоматической отправки предупреждения в чат альянса.
+/// На втором шаге производит валидацию экрана через OpenCV, проверяя, открылось ли меню чатов.
+/// </summary>
+private static void AliChatWarning()
+{
+    // Загружаем конфигурацию для определения целевого окна
+    BotConfig config = ConfigManager.Load();
+    WindowSettings? activeAccount = config.Accounts.FirstOrDefault();
+
+    if (activeAccount == null)
+    {
+        Logger.Log("Аккаунты в конфигурации не найдены. Прерывание цепочки!", LogType.Error);
         return;
     }
 
-    // Пути к шаблонам локализации чата
-    string imgPath1 = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", "imgAliChatENG.png");
-    string imgPath2 = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", "imgAliChatRUS.png");
+    // Привязываем контекст логгера к текущему аккаунту
+    _currentAccount = activeAccount;
 
-    // Проверяем физическое наличие файлов картинок, чтобы избежать системных ошибок OpenCV
-    if (!File.Exists(imgPath1) || !File.Exists(imgPath2))
+    // Получаем дескриптор окна эмулятора
+    IntPtr hWnd = Tools.GetWindow(activeAccount);
+    if (hWnd == IntPtr.Zero)
     {
-        Tools.ConsolePrint("Ошибка AliChatWarning: Файлы шаблонов чата отсутствуют на диске. Прерывание!", ConsoleColor.Red);
-        currentScreenshot.Dispose(); // Освобождаем память перед выходом
+        Logger.Log("Целевое окно программы не найдено. Прерывание цепочки!", LogType.Error);
         return;
     }
 
-    // Область поиска элементов чата на экране
-    OpenCvSharp.Rect searchRegion = new(5, 220, 300, 500);
-
-    // Ищем шаблоны на обновленном кадре
-    OpenCvSharp.Point? found1 = Tools.FindTemplateInRegion(currentScreenshot, imgPath1, searchRegion, 0.85);
-    OpenCvSharp.Point? found2 = Tools.FindTemplateInRegion(currentScreenshot, imgPath2, searchRegion, 0.85);
-
-    // Если ОБА изображения НЕ найдены — меню не открылось, прерываем выполнение
-    if (!found1.HasValue && !found2.HasValue)
-    {
 #if DEBUG
-        Tools.ConsolePrint($"--> [{Path.GetFileName(imgPath1)}] и [{Path.GetFileName(imgPath2)}] не найдены. Прерывание AliChatWarning!", ConsoleColor.Red);
+    Logger.Log("Запуск цепочки кликов оповещения альянса...", LogType.Test);
 #endif
-        currentScreenshot.Dispose(); // Освобождаем память перед выходом
+
+    // 1. Первый клик: Открываем меню чатов
+    Tools.SmartClick(hWnd, 25, 600);
+    Thread.Sleep(500); // Ожидаем анимацию открытия интерфейса
+
+    // ================= НАЧАЛО АВТОНОМНОЙ ПРОВЕРКИ ИНТЕРФЕЙСА =================
+
+    // Делаем снимок экрана после первого клика
+    Mat? currentScreenshot = Tools.CaptureWindow(hWnd);
+
+    if (currentScreenshot?.Empty() is not false)
+{
+        Logger.Log("Не удалось сделать свежий скриншот экрана эмулятора. Прерывание!", LogType.Error);
+        currentScreenshot?.Dispose();
         return;
     }
 
-    // Освобождаем память скриншота, так как дальше он нам больше не нужен (идут только клики)
-    currentScreenshot.Dispose();
+    try
+    {
+        // Пути к шаблонам локализации чата
+        string imgPath1 = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", "imgAliChatENG.png");
+        string imgPath2 = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", "imgAliChatRUS.png");
 
-    // ================= КОНЕЦ АВТОНОМНОЙ ПРОВЕРКИ НА ВТОРОМ ШАГЕ =================
+        if (!File.Exists(imgPath1) || !File.Exists(imgPath2))
+        {
+            Logger.Log("Файлы шаблонов чата (ENG/RUS) отсутствуют на диске. Прерывание!", LogType.Error);
+            return;
+        }
+
+        // Ограничиваем область поиска для ускорения работы алгоритма
+        Rect searchRegion = new(5, 220, 300, 500);
+
+        // Ищем языковые маркеры меню чата
+        Point? foundEng = Tools.FindTemplateInRegion(currentScreenshot, imgPath1, searchRegion, 0.85);
+        Point? foundRus = Tools.FindTemplateInRegion(currentScreenshot, imgPath2, searchRegion, 0.85);
+
+        // Если ни один шаблон не распознан — меню не открылось, прекращаем операцию
+        if (!foundEng.HasValue && !foundRus.HasValue)
+        {
+#if DEBUG
+            Logger.Log("Шаблоны чата не обнаружены. Интерфейс не готов. Прерывание!", LogType.Error);
+#endif
+            return;
+        }
+    }
+    catch (Exception ex)
+    {
+        Logger.Log($"Критический сбой анализа экрана: {ex.Message}", LogType.Error);
+        return;
+    }
+    finally
+    {
+        // Гарантированно освобождаем неуправляемую память OpenCV
+        currentScreenshot.Dispose();
+    }
+
+    // ================= КОНЕЦ АВТОНОМНОЙ ПРОВЕРКИ ИНТЕРФЕЙСА =================
 
     // 2. Второй клик: Активируем чат альянса
-    Tools.SmartClick(targetWindow, 50, 450);
+    Tools.SmartClick(hWnd, 50, 450);
 
-    // 3. Третий клик: Открываем меню чата
-    Tools.SmartClick(targetWindow, 365, 700);
+    // 3. Третий клик: Открываем меню ввода чата
+    Tools.SmartClick(hWnd, 365, 700);
 
-    // 4. Четвертый клик: Открываем меню сообщений
-    Tools.SmartClick(targetWindow, 1250, 700);
+    // 4. Четвертый клик: Открываем меню быстрых сообщений
+    Tools.SmartClick(hWnd, 1250, 700);
 
-    // 5. Пятый клик: Открываем данные разведки
-    Tools.SmartClick(targetWindow, 80, 400);
+    // 5. Пятый клик: Открываем вкладку данных разведки
+    Tools.SmartClick(hWnd, 80, 400);
 
-    // 6. Шестой клик: Выбираем сообщение "Scout"
-    Tools.SmartClick(targetWindow, 300, 600);
+    // 6. Шестой клик: Выбираем статус-сообщение "Scout"
+    Tools.SmartClick(hWnd, 300, 600);
 
     // 7. Седьмой клик: Нажимаем кнопку "Отправить"
-    Tools.SmartClick(targetWindow, 450, 255);
+    Tools.SmartClick(hWnd, 450, 255);
 
-    // 8. Восьмой клик: Закрыь чаты
-    Tools.SmartClick(targetWindow, 625, 225);
+    // 8. Восьмой клик: Закрываем интерфейс чатов
+    Tools.SmartClick(hWnd, 625, 225);
 
-#if DEBUG
-    Tools.ConsolePrint("--> Цепочка кликов AliChatWarning успешно завершена.", ConsoleColor.Green);
-#endif
+    Logger.Log("Цепочка кликов экстренного оповещения AliChatWarning успешно выполнена.", LogType.Success);
+
+    // Сбрасываем контекст логгера
+    _currentAccount = null;
 }
 
 #endregion

@@ -321,7 +321,7 @@ namespace EVEEchoesBot
 public static IntPtr GetWindow(WindowSettings settings)
 {
     // Привязываем контекст логгера к текущему обрабатываемому аккаунту
-    Program._currentAccount = settings; 
+    Program._currentAccount = settings;
 
     IntPtr hWnd = WinAPI.FindWindow(null, settings.WindowTitle);
 

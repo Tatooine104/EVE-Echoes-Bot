@@ -1,6 +1,0 @@
-{
-    "dotnet.defaultSolution": "LowMiner.sln",
-    "workbench.settings.alwaysShowAdvancedSettings": true,
-    "todo-tree.tree.showBadges": true,
-    "todo-tree.tree.disableCompactFolders": true
-}

@@ -2,14 +2,6 @@ using System.Runtime.CompilerServices;
 
 namespace EVEEchoesBot
 {
-    public enum LogType
-    {
-        Info,
-        Success,
-        Warning,
-        Error,
-        Test
-    }
 
     public static class Logger
     {
@@ -26,8 +18,8 @@ namespace EVEEchoesBot
         /// <param name="accountName">Имя активного аккаунта (по умолчанию System).</param>
         /// <param name="callerMethod">Автоматически заполняется компилятором.</param>
         public static void Log(
-            string message, 
-            LogType type = LogType.Info, 
+            string message,
+            LogType type = LogType.Info,
             string? accountName = null, // Меняем дефолт на null
             [CallerMemberName] string callerMethod = "")
         {
@@ -104,4 +96,14 @@ namespace EVEEchoesBot
             };
         }
     }
+
+    public enum LogType
+    {
+        Info,
+        Success,
+        Warning,
+        Error,
+        Test
+    }
+
 }
