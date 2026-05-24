@@ -6,7 +6,7 @@ using OpenCvSharp;
 namespace EVEEchoesBot
 {
 
-// [x] Проверить все методы и добавить новый метод Logger.Log() 
+// [v] Проверить все методы и добавить новый метод Logger.Log() 
 
     public static class Tools
     {

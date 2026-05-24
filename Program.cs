@@ -3,7 +3,7 @@
 namespace EVEEchoesBot
 {
 
-// [ ] Проверить все методы и добавить новый метод Logger.Log() 
+// [ ] TODO Проверить все методы и добавить новый метод Logger.Log() 
 
     static partial class Program
     {
@@ -51,8 +51,8 @@ namespace EVEEchoesBot
     public static readonly Dictionary<string, AccountTask> _accountTasks = [];
 
     // Перечисление для задач (что делать боту дальше) 
-    // [x] Продумать список возможных действий
-    // [x] Добавить действие "Осмотреться"
+    // [v] Продумать список возможных действий
+    // [v] Добавить действие "Осмотреться"
     public enum AccountTask
     {
         Undocking,        // Выйти из дока

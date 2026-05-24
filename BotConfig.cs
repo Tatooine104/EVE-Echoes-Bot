@@ -5,7 +5,7 @@ using System.Text.Json.Serialization;
 namespace EVEEchoesBot
 {
 
-// [x] Проверить все методы и добавить новый метод Logger.Log() 
+// [v] Проверить все методы и добавить новый метод Logger.Log() 
 
     // Главный класс конфигурации
     public class BotConfig
