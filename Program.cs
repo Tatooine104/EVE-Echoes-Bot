@@ -64,9 +64,9 @@ namespace EVEEchoesBot
         CheckYourOwnState // Проверить текущее состояние
     }
 
-        // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-        // - + - + - + - + - |  Основная программа   | - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-        // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+// - + - + - + - + - |  Основная программа   | - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
 #region Main
 
@@ -117,35 +117,42 @@ namespace EVEEchoesBot
                     {
                         case AccountTask.Undocking:
                             Logger.Log("Выполняется андок (вылет со станции)...", LogType.Info);
+                            // [ ] TODO Написать метод андока 
                             // RunUndockLogic();
                             break;
 
                         case AccountTask.GoToBelt:
                             Logger.Log("Полет на астероидный белт...", LogType.Info);
+                            // [ ] TODO Написать метод варпа на белт
                             // RunWarpToBeltLogic();
                             break;
 
                         case AccountTask.Mining:
                             Logger.Log("Процесс добычи руды (майнинг)...", LogType.Info);
+                            // [ ] TODO Написать метод добычи руды
                             // RunMiningLogic();
                             break;
 
                         case AccountTask.GoToStation:
                             Logger.Log("Трюм полон. Возврат на станцию (варп)...", LogType.Info);
+                            // [ ] TODO Написать метод возврата на станцию
                             // RunWarpToStationLogic();
                             break;
 
                         case AccountTask.Unloading:
                             Logger.Log("Разгрузка руды на станции в ангар...", LogType.Info);
+                            // [ ] TODO Написать метод выгрузки руды на станцию
                             // RunUnloadLogic();
                             break;
 
                         case AccountTask.CheckSecurity:
                             Logger.Log("Выполняю контроль безопасности системы...", LogType.Info);
+                            // [ ] TEST Проверить работопособность 
                             CheckSecurityStatus();
                             break;
 
                         case AccountTask.CheckYourOwnState:
+                            // [ ] TODO Написать метод проверки текущего состояния
                             Logger.Log("Выполняю оценку текущего состояния...", LogType.Info);
                             // CheckYourOwnState();
                             break;
