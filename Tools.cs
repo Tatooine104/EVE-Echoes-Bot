@@ -25,6 +25,7 @@ namespace EVEEchoesBot
 
         /// <summary>
         /// Делает скриншот целевого окна и возвращает его в формате матрицы OpenCV (Mat).
+        /// В режиме отладки (DEBUG) автоматически сохраняет снимок в папку проекта.
         /// </summary>
         /// <param name="hWnd">Дескриптор окна эмулятора.</param>
         /// <returns>Матрица <see cref="Mat"/> с изображением, или null в случае ошибки.</returns>
@@ -86,6 +87,31 @@ namespace EVEEchoesBot
                 mat = new Mat(height, width, MatType.CV_8UC4);
                 Marshal.Copy(rawPixels, 0, mat.Data, rawPixels.Length);
 
+#if DEBUG
+                try
+                {
+                    // Находим путь к папке проекта (на 3 уровня выше bin/Debug/netX.X)
+                    string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                    string projectDir = Path.GetFullPath(Path.Combine(baseDir, @"..\..\..\"));
+
+                    // Создаем папку DebugScreenshots внутри проекта
+                    //string saveDir = Path.Combine(projectDir, "DebugScreenshots");
+                    //Directory.CreateDirectory(saveDir);
+
+                    // Формируем имя файла с временной меткой
+                    const string fileName = "debug_screenshot.png";
+                    string filePath = Path.Combine(projectDir, fileName);
+
+                    // Сохраняем матрицу на диск
+                    Cv2.ImWrite(filePath, mat);
+                    Logger.Log($"[Debug] Скриншот сохранен: {filePath}", LogType.Info);
+                }
+                catch (Exception dbgEx)
+                {
+                    Logger.Log($"[Debug] Не удалось сохранить скриншот на диск: {dbgEx.Message}", LogType.Warning);
+                }
+#endif
+
                 return mat;
             }
             catch (Exception ex)
@@ -106,11 +132,11 @@ namespace EVEEchoesBot
                 // Проверяем успешность освобождения контекста устройства (DC)
                 if (WinAPI.ReleaseDC(hWnd, hdcWindow) == 0)
                 {
-                    // Используем Logger.Log без указания аккаунта, он определится автоматически
                     Logger.Log($"Не удалось освободить контекст устройства (ReleaseDC) для hWnd: {hWnd}", LogType.Warning);
                 }
             }
         }
+
 
 #endregion
 

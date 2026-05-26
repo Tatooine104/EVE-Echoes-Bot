@@ -24,23 +24,25 @@ namespace EVEEchoesBot
             get => _isSave;
             set
             {
-                // Если состояние изменилось с безопасного (true) на опасное (false)
-                if (_isSave is true && value is false)
-                {
-                    _isSave = value;
+                // Если значение не изменилось, ничего не делаем (чтобы не спамить в консоль)
+                if (_isSave == value) return;
 
-                    // Используем критический тип лога Red
+                _isSave = value;
+
+                if (_isSave is false)
+                {
+                    // Сработает ВСЕГДА, когда статус становится опасным (даже при первом запуске)
                     Logger.Log("ОПАСНОСТЬ!!! В системе посторонние!", LogType.Warning);
                     AliChatWarning();
                 }
-                else
+                else if (_isSave is true)
                 {
-                    // Используем подтверждающий тип лога Green
+                    // Сработает, только если в системе действительно чисто
                     Logger.Log("В системе нет посторонних.", LogType.Success);
-                    _isSave = value;
                 }
             }
         }
+
 
 
         #endregion
@@ -49,6 +51,12 @@ namespace EVEEchoesBot
     public static BotConfig? _config;
     public static WindowSettings? _currentAccount;
     public static readonly Dictionary<string, AccountTask> _accountTasks = [];
+
+    /// <summary>
+    /// Глобальный путь к папке Images в корне проекта.
+    /// </summary>
+    public static string TemplatesDir => Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\..\..\Images"));
+
 
     // Перечисление для задач (что делать боту дальше) 
     // [v] Продумать список возможных действий
@@ -180,7 +188,7 @@ namespace EVEEchoesBot
             }
         }
 
-        Logger.Log("Бот успешно остановлен. Сессия завершена.", LogType.Success);
+        Logger.Log("Бот остановлен. Сессия завершена.", LogType.Warning);
     }
 
 
@@ -342,271 +350,415 @@ namespace EVEEchoesBot
 
         #region CheckSecurityStatus 
 
-/// <summary>
-/// Автономно загружает конфиг, находит окно, делает скриншот и проверяет безопасность локала.
-/// Реализует сложную многоуровневую логику поиска маркеров интерфейса с возможностью клика и жесткого стопа бота.
-/// </summary>
-static void CheckSecurityStatus()
-{
-    // 1. Самостоятельно загружаем настройки и ищем аккаунт
-    BotConfig config = ConfigManager.Load();
-    WindowSettings? testAccount = config.Accounts.FirstOrDefault();
-
-    if (testAccount == null)
-    {
-        Logger.Log("Ошибка CheckSecurityStatus: В конфигурации нет доступных аккаунтов.", LogType.Error);
-        IsSave = false;
-        return;
-    }
-
-    // Привязываем контекст логгера к текущему аккаунту
-    Program._currentAccount = testAccount;
-
-    // 2. Получаем дескриптор окна приложения
-    IntPtr hWnd = Tools.GetWindow(testAccount);
-    if (hWnd == IntPtr.Zero)
-    {
-        Logger.Log("Ошибка CheckSecurityStatus: Окно целевой программы не найдено.", LogType.Error);
-        IsSave = false;
-        return;
-    }
-
-    // Пути к базовым маркерам интерфейса
-    string pathImg1 = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", "imgMarker1.png"); // Переименуйте в ваше имя
-    string pathImg2 = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", "imgMarker2.png"); // Переименуйте в ваше имя
-
-    // Области поиска (настройте под координаты вашей игры)
-    Rect localRegion = new(50, 250, 300, 420);
-
-    while (!_cts.Token.IsCancellationRequested)
-    {
-        // 3. Делаем снимок экрана
-        using Mat? screenshot = Tools.CaptureWindow(hWnd);
-        if (screenshot?.Empty() is not false || screenshot.Width <= 0 || screenshot.Height <= 0)
+        /// <summary>
+        /// Автономно загружает конфиг, находит окно, делает скриншот и проверяет безопасность локала.
+        /// Реализует сложную многоуровневую логику поиска маркеров интерфейса с возможностью клика и жесткого стопа бота.
+        /// </summary>
+        static void CheckSecurityStatus()
         {
-            Logger.Log("Ошибка CheckSecurityStatus: Не удалось сделать скриншот окна.", LogType.Error);
-            IsSave = false;
-            return;
+            Logger.Log("[Диагностика] Запуск метода CheckSecurityStatus.", LogType.Info);
+
+            BotConfig config = ConfigManager.Load();
+            WindowSettings? testAccount = config.Accounts.FirstOrDefault();
+
+            if (testAccount == null)
+            {
+                Logger.Log("Ошибка CheckSecurityStatus: В конфигурации нет доступных аккаунтов.", LogType.Error);
+                IsSave = false;
+                return;
+            }
+
+            Program._currentAccount = testAccount;
+
+            IntPtr hWnd = Tools.GetWindow(testAccount);
+            if (hWnd == IntPtr.Zero)
+            {
+                Logger.Log("Ошибка CheckSecurityStatus: Окно целевой программы не найдено.", LogType.Error);
+                IsSave = false;
+                return;
+            }
+
+            // Использование глобального свойства для путей к шаблонам
+            string pathImg1 = Path.Combine(TemplatesDir, "imgLocalChatHead.png");
+            string pathImg2 = Path.Combine(TemplatesDir, "imgLocalChatIcon.png");
+
+            // [ ] TODO Области поиска (настройте под координаты вашей игры)
+            Rect localRegion1 = new(5, 5, 500, 715);
+            Rect localRegion2 = new(5, 650, 100, 120);
+
+            // Путь к папке отладки вычисляется на одном уровне с папкой Images
+            string debugDir = Path.GetFullPath(Path.Combine(TemplatesDir, "..", "DebugScreenshots"));
+
+            while (!_cts.Token.IsCancellationRequested)
+            {
+                using Mat? screenshot = Tools.CaptureWindow(hWnd);
+                if (screenshot?.Empty() is not false || screenshot.Width <= 0 || screenshot.Height <= 0)
+                {
+                    Logger.Log("Ошибка CheckSecurityStatus: Не удалось сделать скриншот окна.", LogType.Error);
+                    IsSave = false;
+                    return;
+                }
+
+                // КОРРЕКЦИЯ ГРАНИЦ: Защита от вылета OpenCV (срезаем регионы, если они вылезают за границы скриншота)
+                Rect safeRegion1 = ClampRegion(localRegion1, screenshot.Width, screenshot.Height);
+                Rect safeRegion2 = ClampRegion(localRegion2, screenshot.Width, screenshot.Height);
+
+                // Если регионы получились нулевыми или некорректными — логируем проблему размеров
+                if (safeRegion1.Width <= 0 || safeRegion1.Height <= 0 || safeRegion2.Width <= 0 || safeRegion2.Height <= 0)
+                {
+                    Logger.Log($"[КРИТИЧЕСКИЙ СБОЙ] Заданные Rect выходят за рамки окна! Размер скриншота: {screenshot.Width}x{screenshot.Height}", LogType.Error);
+                    IsSave = false;
+                    return;
+                }
+
+                // ==========================================
+                // ЭТАП 1: Ищем Изображение 1 (Шапка чата)
+                // ==========================================
+                Point? foundImg1 = Tools.FindTemplateInRegion(screenshot, pathImg1, safeRegion1, 0.80);
+
+                if (foundImg1.HasValue)
+                {
+                    Logger.Log($"[УСПЕХ] Изображение 1 НАЙДЕНО в точке X={foundImg1.Value.X}, Y={foundImg1.Value.Y}.", LogType.Info);
+
+#if DEBUG
+                    try
+                    {
+                        using Mat cropped = new(screenshot, safeRegion1);
+                        Directory.CreateDirectory(debugDir);
+                        Cv2.ImWrite(Path.Combine(debugDir, "imgLocalChatHead_FOUND.png"), cropped);
+                    }
+                    catch (Exception ex) { Logger.Log($"[Debug] Ошибка сохранения кадра: {ex.Message}", LogType.Warning); }
+#endif
+
+                    if (RunLocalCheck(screenshot, safeRegion1)) return;
+                    continue;
+                }
+
+#if DEBUG
+                try
+                {
+                    using Mat cropped = new(screenshot, safeRegion1);
+                    Directory.CreateDirectory(debugDir);
+                    Cv2.ImWrite(Path.Combine(debugDir, "imgLocalChatHead_NOT_FOUND.png"), cropped);
+                }
+                catch (Exception ex) { Logger.Log($"Ошибка сохранения кадра: {ex.Message}", LogType.Warning); }
+#endif
+
+                // ==========================================
+                // ЭТАП 2: Ищем Изображение 2 (Иконка)
+                // ==========================================
+                Point? foundImg2 = Tools.FindTemplateInRegion(screenshot, pathImg2, safeRegion2, 0.80);
+
+                if (foundImg2.HasValue)
+                {
+                    Logger.Log($"{pathImg2} НАЙДЕНО. Выполняю клик.", LogType.Test);
+
+#if DEBUG
+                    try
+                    {
+                        using Mat cropped = new(screenshot, safeRegion2);
+                        Directory.CreateDirectory(debugDir);
+                        Cv2.ImWrite(Path.Combine(debugDir, "imgLocalChatIcon_FOUND.png"), cropped);
+                    }
+                    catch (Exception ex) { Logger.Log($"[Debug] Ошибка сохранения кадра: {ex.Message}", LogType.Warning); }
+#endif
+
+                    Tools.SmartClick(hWnd, foundImg2.Value.X, foundImg2.Value.Y, minSec: 0, maxSec: 0, offset: 2);
+                    Thread.Sleep(3000);
+
+                    using Mat? freshScreenshot = Tools.CaptureWindow(hWnd);
+                    if (freshScreenshot?.Empty() is not false) continue;
+
+                    // Обновляем безопасный регион для нового скриншота на случай изменения размеров окна
+                    Rect freshSafeRegion1 = ClampRegion(localRegion1, freshScreenshot.Width, freshScreenshot.Height);
+
+                    Point? retryImg1 = Tools.FindTemplateInRegion(freshScreenshot, pathImg1, freshSafeRegion1, 0.80);
+
+                    if (retryImg1.HasValue)
+                    {
+                        if (RunLocalCheck(freshScreenshot, freshSafeRegion1)) return;
+                    }
+                    else
+                    {
+#if DEBUG
+                        try
+                        {
+                            using Mat cropped = new(freshScreenshot, freshSafeRegion1);
+                            Directory.CreateDirectory(debugDir);
+                            Cv2.ImWrite(Path.Combine(debugDir, "imgLocalChatHead_AFTER_CLICK_NOT_FOUND.png"), cropped);
+                        }
+                        catch (Exception ex) { Logger.Log($"[Debug] Ошибка сохранения кадра: {ex.Message}", LogType.Warning); }
+#endif
+                    }
+
+                    continue;
+                }
+
+#if DEBUG
+                try
+                {
+                    using Mat cropped = new(screenshot, safeRegion2);
+                    Directory.CreateDirectory(debugDir);
+                    Cv2.ImWrite(Path.Combine(debugDir, "imgLocalChatIcon_NOT_FOUND.png"), cropped);
+                }
+                catch (Exception ex) { Logger.Log($"[Debug] Ошибка сохранения кадра: {ex.Message}", LogType.Warning); }
+#endif
+
+                Logger.Log("КРИТИЧЕСКИЙ СБОЙ: Изображение 1 и Изображение 2 не найдены. Полная остановка бота!", LogType.Error);
+                IsSave = false;
+                _cts.Cancel();
+                return;
+            }
         }
 
-        // Шаг А: Ищем Изображение 1
-        Point? foundImg1 = Tools.FindTemplateInRegion(screenshot, pathImg1, localRegion, 0.80);
-        if (foundImg1.HasValue)
-        {
-            // Нашли изображение 1 -> Переходим сразу к финальной проверке локала
-            if (RunLocalCheck(screenshot, localRegion)) return;
-            continue; // Если финальная проверка сказала "не нашли ничего", идем на старт цикла
-        }
 
-        // Шаг Б: Изображение 1 не найдено, ищем Изображение 2
-        Point? foundImg2 = Tools.FindTemplateInRegion(screenshot, pathImg2, localRegion, 0.80);
-        if (foundImg2.HasValue)
-        {
-            // Нашли Изображение 2 -> Кликаем в него и переходим к финальной проверке
-            Logger.Log("Обнаружено Изображение 2. Выполняю клик для раскрытия интерфейса.", LogType.Test);
-            Tools.SmartClick(hWnd, foundImg2.Value.X, foundImg2.Value.Y, minSec: 0, maxSec: 0, offset: 2);
-            Thread.Sleep(500); // Короткая пауза, чтобы интерфейс успел отрисоваться
 
-            // Делаем новый скриншот, так как после клика экран изменился
-            using Mat? freshScreenshot = Tools.CaptureWindow(hWnd);
-            if (freshScreenshot?.Empty() is not false) continue;
 
-            if (RunLocalCheck(freshScreenshot, localRegion)) return;
-            continue;
-        }
-
-        // Шаг В: Изображение 2 тоже не нашли -> Ждем 5 секунд и пробуем найти его еще раз
-        Logger.Log("Изображение 1 и 2 не найдены. Ожидание 5 секунд для повторной проверки...", LogType.Warning);
-        Thread.Sleep(5000);
-
-        using Mat? retryScreenshot = Tools.CaptureWindow(hWnd);
-        if (retryScreenshot?.Empty() is not false) continue;
-
-        Point? retryImg2 = Tools.FindTemplateInRegion(retryScreenshot, pathImg2, localRegion, 0.80);
-        if (retryImg2.HasValue)
-        {
-            // Со второй попытки нашли Изображение 2 -> Кликаем и проверяем
-            Tools.SmartClick(hWnd, retryImg2.Value.X, retryImg2.Value.Y, minSec: 0, maxSec: 0, offset: 2);
-            Thread.Sleep(500);
-
-            using Mat? freshScreenshot2 = Tools.CaptureWindow(hWnd);
-            if (freshScreenshot2?.Empty() is not false) continue;
-
-            if (RunLocalCheck(freshScreenshot2, localRegion)) return;
-            continue;
-        }
-
-        // КРИТИЧЕСКИЙ СТОП: Если после 5 секунд ожидания Изображение 2 так и не появилось
-        Logger.Log("КРИТИЧЕСКИЙ СБОЙ: Повторный поиск Изображения 2 не дал результатов. Полная остановка бота!", LogType.Error);
-        IsSave = false;
-        _cts.Cancel(); // Экстренное завершение работы всего бота
-        return;
-    }
-}
 
 #endregion
 
 #region RunLocalCheck
 
-/// <summary>
-/// Выполняет финальную проверку трех шаблонов безопасности на указанном кадре.
-/// </summary>
-/// <returns>True — если статус безопасности окончательно определен (Safe/Danger); False — если не нашли вообще ничего и нужно вернуться в начало.</returns>
-private static bool RunLocalCheck(Mat screenshot, Rect searchRegion)
-{
-    string[] templates = ["imgLocalCriminal.png", "imgLocalMinus.png", "imgLocalNeutral.png"];
-    int foundCount = 0;
-
-    foreach (string templateName in templates)
-    {
-        string fullTemplatePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", templateName);
-        if (!File.Exists(fullTemplatePath)) continue;
-
-        Point? foundPoint = Tools.FindTemplateInRegion(screenshot, fullTemplatePath, searchRegion, 0.80);
-        if (foundPoint.HasValue)
+        /// <summary>
+        /// Выполняет финальную проверку трех шаблонов безопасности на указанном кадре.
+        /// </summary>
+        /// <returns>True — если статус безопасности окончательно определен (Safe/Danger); False — если не нашли вообще ничего и нужно вернуться в начало.</returns>
+        private static bool RunLocalCheck(Mat screenshot, Rect searchRegion)
         {
-            foundCount++;
+            // На всякий случай повторно защищаем регион внутри метода
+            Rect safeSearchRegion = ClampRegion(searchRegion, screenshot.Width, screenshot.Height);
+
+            string[] templates = ["imgLocalCriminal.png", "imgLocalMinus.png", "imgLocalNeutral.png"];
+            int foundCount = 0;
+
+            foreach (string templateName in templates)
+            {
+                // Используем единое глобальное свойство для поиска шаблонов
+                string fullTemplatePath = Path.Combine(TemplatesDir, templateName);
+                if (!File.Exists(fullTemplatePath)) continue;
+
+                Point? foundPoint = Tools.FindTemplateInRegion(screenshot, fullTemplatePath, safeSearchRegion, 0.80);
+
+                if (foundPoint.HasValue)
+                {
+                    foundCount++;
+#if DEBUG
+                    try
+                    {
+                        using Mat croppedRegion = new(screenshot, safeSearchRegion);
+                        // Путь к папке отладки строим относительно глобальной папки шаблонов
+                        string debugDir = Path.GetFullPath(Path.Combine(TemplatesDir, "..", "DebugScreenshots"));
+                        Directory.CreateDirectory(debugDir);
+                        string debugPath = Path.Combine(debugDir, $"{Path.GetFileNameWithoutExtension(templateName)}_FOUND.png");
+                        Cv2.ImWrite(debugPath, croppedRegion);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Log($"[Debug] Ошибка сохранения скриншота успеха для {templateName}: {ex.Message}", LogType.Warning);
+                    }
+#endif
+                }
+                else
+                {
+#if DEBUG
+                    try
+                    {
+                        using Mat croppedRegion = new(screenshot, safeSearchRegion);
+                        string debugDir = Path.GetFullPath(Path.Combine(TemplatesDir, "..", "DebugScreenshots"));
+                        Directory.CreateDirectory(debugDir);
+                        string debugPath = Path.Combine(debugDir, $"{Path.GetFileNameWithoutExtension(templateName)}_NOT_FOUND.png");
+                        Cv2.ImWrite(debugPath, croppedRegion);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Log($"[Debug] Ошибка сохранения скриншота неудачи для {templateName}: {ex.Message}", LogType.Warning);
+                    }
+#endif
+                }
+            }
+
+            if (foundCount == 3)
+            {
+                IsSave = true;
+                return true;
+            }
+
+            if (foundCount > 0 && foundCount < 3)
+            {
+                IsSave = false;
+                return true;
+            }
+
+            Logger.Log("Ни один из трех шаблонов безопасности не найден на экране. Сброс к началу проверки...", LogType.Warning);
+            return false;
         }
-    }
 
-    // Обработка результатов согласно вашим правилам:
-    if (foundCount == 3)
-    {
-        // 1. Нашли все три шаблона — БЕЗОПАСНО
-        IsSave = true;
-        return true;
-    }
 
-    if (foundCount > 0 && foundCount < 3)
-    {
-        // 2. Нашли один или два, но не все — ОПАСНОСТЬ (сработает триггер в свойстве IsSave)
-        IsSave = false;
-        return true;
-    }
 
-    // 3. Не нашли вообще ни одного шаблона (foundCount == 0) — возвращаемся в начало (ищем изображение 1 и т.д.)
-    Logger.Log("Ни один из трех шаблонов безопасности не найден на экране. Сброс к началу проверки...", LogType.Warning);
-    return false;
-}
+
+#endregion
+
+#region ClampRegion
+
+        /// <summary>
+        /// Корректирует прямоугольник под фактические размеры изображения, предотвращая вылет OpenCV.
+        /// </summary>
+        private static Rect ClampRegion(Rect region, int maxWidth, int maxHeight)
+        {
+            int x = Math.Max(0, Math.Min(region.X, maxWidth - 1));
+            int y = Math.Max(0, Math.Min(region.Y, maxHeight - 1));
+
+            int width = Math.Min(region.Width, maxWidth - x);
+            int height = Math.Min(region.Height, maxHeight - y);
+
+            return new Rect(x, y, width, height);
+        }
 
 #endregion
 
 #region AliChatWarning
 
-/// <summary>
-/// Выполняет цепочку из 8 кликов для автоматической отправки предупреждения в чат альянса.
-/// На втором шаге производит валидацию экрана через OpenCV, проверяя, открылось ли меню чатов.
-/// </summary>
-private static void AliChatWarning()
-{
-    // Загружаем конфигурацию для определения целевого окна
-    BotConfig config = ConfigManager.Load();
-    WindowSettings? activeAccount = config.Accounts.FirstOrDefault();
+        /// <summary>
+        /// Выполняет цепочку из 8 кликов для автоматической отправки предупреждения в чат альянса.
+        /// На втором шаге производит валидацию экрана через OpenCV, проверяя, открылось ли меню чатов.
+        /// </summary>
+        private static void AliChatWarning()
+        {
+            Logger.Log("[Диагностика] Запуск метода AliChatWarning.", LogType.Info);
 
-    if (activeAccount == null)
-    {
-        Logger.Log("Аккаунты в конфигурации не найдены. Прерывание цепочки!", LogType.Error);
-        return;
-    }
+            // Загружаем конфигурацию для определения целевого окна
+            BotConfig config = ConfigManager.Load();
+            WindowSettings? activeAccount = config.Accounts.FirstOrDefault();
 
-    // Привязываем контекст логгера к текущему аккаунту
-    _currentAccount = activeAccount;
+            if (activeAccount == null)
+            {
+                Logger.Log("Аккаунты в конфигурации не найдены. Прерывание цепочки!", LogType.Error);
+                return;
+            }
 
-    // Получаем дескриптор окна эмулятора
-    IntPtr hWnd = Tools.GetWindow(activeAccount);
-    if (hWnd == IntPtr.Zero)
-    {
-        Logger.Log("Целевое окно программы не найдено. Прерывание цепочки!", LogType.Error);
-        return;
-    }
+            // Привязываем контекст логгера к текущему аккаунту
+            _currentAccount = activeAccount;
+
+            // Получаем дескриптор окна эмулятора
+            IntPtr hWnd = Tools.GetWindow(activeAccount);
+            if (hWnd == IntPtr.Zero)
+            {
+                Logger.Log("Целевое окно программы не найдено. Прерывание цепочки!", LogType.Error);
+                return;
+            }
 
 #if DEBUG
-    Logger.Log("Запуск цепочки кликов оповещения альянса...", LogType.Test);
+            Logger.Log("Запуск цепочки кликов оповещения альянса...", LogType.Test);
 #endif
 
-    // 1. Первый клик: Открываем меню чатов
-    Tools.SmartClick(hWnd, 25, 600);
-    Thread.Sleep(500); // Ожидаем анимацию открытия интерфейса
+            // 1. Первый клик: Открываем меню чатов
+            Tools.SmartClick(hWnd, 25, 600, 1, 3, 3);
+            Thread.Sleep(3000); // Ожидаем анимацию открытия интерфейса
 
-    // ================= НАЧАЛО АВТОНОМНОЙ ПРОВЕРКИ ИНТЕРФЕЙСА =================
+            // ================= НАЧАЛО АВТОНОМНОЙ ПРОВЕРКИ ИНТЕРФЕЙСА =================
 
-    // Делаем снимок экрана после первого клика
-    Mat? currentScreenshot = Tools.CaptureWindow(hWnd);
+            // Делаем снимок экрана после первого клика
+            Mat? currentScreenshot = Tools.CaptureWindow(hWnd);
 
-    if (currentScreenshot?.Empty() is not false)
-{
-        Logger.Log("Не удалось сделать свежий скриншот экрана эмулятора. Прерывание!", LogType.Error);
-        currentScreenshot?.Dispose();
-        return;
-    }
+            if (currentScreenshot?.Empty() is not false || currentScreenshot.Width <= 0 || currentScreenshot.Height <= 0)
+            {
+                Logger.Log("Не удалось сделать свежий скриншот экрана эмулятора. Прерывание!", LogType.Error);
+                currentScreenshot?.Dispose();
+                return;
+            }
 
-    try
-    {
-        // Пути к шаблонам локализации чата
-        string imgPath1 = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", "imgAliChatENG.png");
-        string imgPath2 = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", "imgAliChatRUS.png");
+            try
+            {
+                // Используем глобальное свойство для путей
+                string imgPath1 = Path.Combine(TemplatesDir, "imgAliChatENG.png");
+                string imgPath2 = Path.Combine(TemplatesDir, "imgAliChatRUS.png");
 
-        if (!File.Exists(imgPath1) || !File.Exists(imgPath2))
-        {
-            Logger.Log("Файлы шаблонов чата (ENG/RUS) отсутствуют на диске. Прерывание!", LogType.Error);
-            return;
-        }
+                Logger.Log($"[Диагностика чата] Путь ENG: {imgPath1}", LogType.Info);
+                Logger.Log($"[Диагностика чата] Путь RUS: {imgPath2}", LogType.Info);
 
-        // Ограничиваем область поиска для ускорения работы алгоритма
-        Rect searchRegion = new(5, 220, 300, 500);
+                if (!File.Exists(imgPath1) || !File.Exists(imgPath2))
+                {
+                    Logger.Log("[КРИТИЧЕСКАЯ ОШИБКА] Файлы шаблонов чата (ENG/RUS) отсутствуют на диске. Прерывание!", LogType.Error);
+                    return;
+                }
 
-        // Ищем языковые маркеры меню чата
-        Point? foundEng = Tools.FindTemplateInRegion(currentScreenshot, imgPath1, searchRegion, 0.85);
-        Point? foundRus = Tools.FindTemplateInRegion(currentScreenshot, imgPath2, searchRegion, 0.85);
+                // Ограничиваем область поиска для ускорения работы алгоритма
+                Rect searchRegion = new(5, 220, 300, 500);
 
-        // Если ни один шаблон не распознан — меню не открылось, прекращаем операцию
-        if (!foundEng.HasValue && !foundRus.HasValue)
-        {
+                // Защита от вылета OpenCV (выход за границы картинки)
+                Rect safeSearchRegion = ClampRegion(searchRegion, currentScreenshot.Width, currentScreenshot.Height);
+
+                // Ищем языковые маркеры меню чата
+                Logger.Log("[Диагностика чата] Ищу маркеры языков меню чата...", LogType.Info);
+                Point? foundEng = Tools.FindTemplateInRegion(currentScreenshot, imgPath1, safeSearchRegion, 0.85);
+                Point? foundRus = Tools.FindTemplateInRegion(currentScreenshot, imgPath2, safeSearchRegion, 0.85);
+
+                // Если ни один шаблон не распознан — меню не открылось, прекращаем операцию
+                if (!foundEng.HasValue && !foundRus.HasValue)
+                {
+                    Logger.Log("Шаблоны чата не обнаружены. Интерфейс не готов. Прерывание!", LogType.Error);
+
 #if DEBUG
-            Logger.Log("Шаблоны чата не обнаружены. Интерфейс не готов. Прерывание!", LogType.Error);
+                    // Сохраняем область, где бот пытался найти маркеры чата, для отладки координат
+                    try
+                    {
+                        using Mat cropped = new(currentScreenshot, safeSearchRegion);
+                        string debugDir = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\..\..\DebugScreenshots"));
+                        Directory.CreateDirectory(debugDir);
+                        Cv2.ImWrite(Path.Combine(debugDir, "imgAliChat_NOT_FOUND.png"), cropped);
+                        Logger.Log($"[Debug] Область поиска чата сохранена: {Path.Combine(debugDir, "imgAliChat_NOT_FOUND.png")}", LogType.Info);
+                    }
+                    catch (Exception ex) { Logger.Log($"[Debug] Ошибка сохранения кадра: {ex.Message}", LogType.Warning); }
 #endif
-            return;
+                    return;
+                }
+
+                if (foundEng.HasValue) Logger.Log($"[Диагностика чата] УСПЕХ: Найден ENG чат в точке X={foundEng.Value.X}, Y={foundEng.Value.Y}", LogType.Info);
+                if (foundRus.HasValue) Logger.Log($"[Диагностика чата] УСПЕХ: Найден RUS чат в точке X={foundRus.Value.X}, Y={foundRus.Value.Y}", LogType.Info);
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Критический сбой анализа экрана: {ex.Message}", LogType.Error);
+                return;
+            }
+            finally
+            {
+                // Гарантированно освобождаем неуправляемую память OpenCV
+                currentScreenshot.Dispose();
+            }
+
+            // ================= КОНЕЦ АВТОНОМНОЙ ПРОВЕРКИ ИНТЕРФЕЙСА =================
+
+            // 2. Второй клик: Активируем чат альянса
+            Tools.SmartClick(hWnd, 50, 450, 1, 3, 3);
+
+            // 3. Третий клик: Открываем меню ввода чата
+            Tools.SmartClick(hWnd, 365, 700, 1, 3, 3);
+
+            // 4. Четвертый клик: Открываем меню быстрых сообщений
+            Tools.SmartClick(hWnd, 1250, 700, 1, 3, 3);
+
+            // 5. Пятый клик: Открываем вкладку данных разведки
+            Tools.SmartClick(hWnd, 80, 400, 1, 3, 3);
+
+            // 6. Шестой клик: Выбираем статус-сообщение "Scout"
+            Tools.SmartClick(hWnd, 300, 600, 1, 3, 3);
+
+            // 7. Седьмой клик: Закрываем область ввода
+            Tools.SmartClick(hWnd, 800, 250, 1, 3, 10);
+
+            // 8. Восьмой клик: Нажимаем кнопку "Отправить"
+            Tools.SmartClick(hWnd, 450, 690, 3, 5, 2);
+
+            // 9. Девятый клик: Закрываем интерфейс чатов
+            Tools.SmartClick(hWnd, 625, 225, 1, 3, 3);
+
+            Logger.Log("Цепочка кликов экстренного оповещения AliChatWarning успешно выполнена.", LogType.Success);
+
+            // Сбрасываем контекст логгера
+            _currentAccount = null;
         }
-    }
-    catch (Exception ex)
-    {
-        Logger.Log($"Критический сбой анализа экрана: {ex.Message}", LogType.Error);
-        return;
-    }
-    finally
-    {
-        // Гарантированно освобождаем неуправляемую память OpenCV
-        currentScreenshot.Dispose();
-    }
 
-    // ================= КОНЕЦ АВТОНОМНОЙ ПРОВЕРКИ ИНТЕРФЕЙСА =================
-
-    // 2. Второй клик: Активируем чат альянса
-    Tools.SmartClick(hWnd, 50, 450);
-
-    // 3. Третий клик: Открываем меню ввода чата
-    Tools.SmartClick(hWnd, 365, 700);
-
-    // 4. Четвертый клик: Открываем меню быстрых сообщений
-    Tools.SmartClick(hWnd, 1250, 700);
-
-    // 5. Пятый клик: Открываем вкладку данных разведки
-    Tools.SmartClick(hWnd, 80, 400);
-
-    // 6. Шестой клик: Выбираем статус-сообщение "Scout"
-    Tools.SmartClick(hWnd, 300, 600);
-
-    // 7. Седьмой клик: Нажимаем кнопку "Отправить"
-    Tools.SmartClick(hWnd, 450, 255);
-
-    // 8. Восьмой клик: Закрываем интерфейс чатов
-    Tools.SmartClick(hWnd, 625, 225);
-
-    Logger.Log("Цепочка кликов экстренного оповещения AliChatWarning успешно выполнена.", LogType.Success);
-
-    // Сбрасываем контекст логгера
-    _currentAccount = null;
-}
 
 #endregion
 

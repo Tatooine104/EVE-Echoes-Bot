@@ -21,6 +21,7 @@ namespace EVEEchoesBot
         public string Script      { get; set; } = "";
         public string FirstTask   { get; set; } = "";
         public string EVESystem   { get; set; } = "";
+        public string EVEShip     { get; set; } = "";
 
         // <-- 2. СЮДА ДОБАВЛЯЕМ АТРИБУТ СВЯЗИ С JSON
         [JsonPropertyName("WindowSettings")]
@@ -104,12 +105,12 @@ namespace EVEEchoesBot
                 [
                     new WindowSettings
                     {
-                        Name = "Lana Muc",
+                        Name = "Somebody",
                         WindowTitle = "BlueStacks_EVE.01",
                         Script = "LocalWatcher",
                         FirstTask = "CheckSecurity",
-                        EVESystem = "Z-K495",
-
+                        EVESystem = "Jita",
+                        EVEShip = "Covetor",
                         // ИСПРАВЛЕНО: возвращаем имя свойства Size. 
                         // Атрибут [JsonPropertyName] сам запишет его в JSON как "WindowSettings"
                         Size = new TargetSize
