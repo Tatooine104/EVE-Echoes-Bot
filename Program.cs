@@ -1,4 +1,6 @@
 ﻿using OpenCvSharp;
+using static EVEEchoesBot.Program;
+using EVEEchoesBot;
 
 namespace EVEEchoesBot
 {
@@ -70,6 +72,23 @@ namespace EVEEchoesBot
         Unloading,        // Выгрузить руду на станцию
         CheckSecurity,    // Проверить статус безопастности
         CheckYourOwnState // Проверить текущее состояние
+    }
+
+    public enum GameUi
+    {
+        // ИмяЭлемента = (X * 10000) + Y (упаковываем X и Y в одно число для Enum)
+        // MenuButton = 500450,    // X: 50,  Y: 450 (Ваш пример)
+        ChatButtSend   =  4450685, // Кнопка чата "Send"
+        WindowCenter   =  8000250, // Точка чуть ниже и правее центра окна
+        ChatMessScout  =  3000600, // Сообщение "Scout"
+        ChatInform     =   800400, // Меню "Inform"
+        ChatFastInput  = 12500700, // Мню быстрого ввода
+        ChatInputMenu  =  3650700, // Меню ввода чата
+        ChatTabAli     =   500450, // Вкладка чата альянса
+        ChatsInterface =   250600  // Интерфейс чатов
+
+        // hWnd.ClickTo(GameUi.ChatTabAli); // Пример вызова
+
     }
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
@@ -280,64 +299,12 @@ namespace EVEEchoesBot
             // Считываем нажатую клавишу и скрываем её символ из консоли
             ConsoleKeyInfo key = Console.ReadKey(intercept: true);
 
-            // 1. Плавный выход из программы
+            // Плавный выход из программы
             if (key.Key == ConsoleKey.Escape)
             {
                 Logger.Log("Получен сигнал отмены. Завершаем текущий круг и выходим...", LogType.Warning);
                 _cts.Cancel();
                 break;
-            }
-
-            // 2. Мгновенный отладочный клик
-            if (key.Key == ConsoleKey.F10)
-            {
-                Logger.Log("Нажата клавиша F10! Запуск экспресс-проверки клика...", LogType.Test);
-
-                try
-                {
-                    BotConfig config = ConfigManager.Load();
-                    WindowSettings? testAccount = config.Accounts.FirstOrDefault();
-
-                    if (testAccount == null)
-                    {
-                        Logger.Log("Ошибка теста: Аккаунты в файле конфигурации не найдены.", LogType.Error);
-                        continue;
-                    }
-
-                    // Переключаем глобальный контекст логгера на тестовый аккаунт
-                    _currentAccount = testAccount;
-
-                    // Получаем хэндл окна через обновленный менеджер
-                    IntPtr hWnd = Tools.GetWindow(testAccount);
-                    if (hWnd == IntPtr.Zero)
-                    {
-                        Logger.Log($"Ошибка теста: Окно '{testAccount.WindowTitle}' не найдено в ОС.", LogType.Error);
-                        continue;
-                    }
-
-                    // Находим внутреннее окно ввода эмулятора
-                    IntPtr inputWindow = WinAPI.GetInputWindow(hWnd);
-
-                    // Координаты для быстрой проверки клика
-                    const int testX = 60;
-                    const int testY = 680;
-
-                    Logger.Log($"Отправляю тестовый клик в окно {inputWindow} (X: {testX}, Y: {testY})...", LogType.Test);
-
-                    // Вызываем клик через оптимизированный класс эмулятора драйвера
-                    Tools.SmartClick(hWnd, testX, testY, minSec: 0, maxSec: 0, offset: 3);
-
-                    Logger.Log("Тестовый клик успешно сгенерирован и отправлен.", LogType.Success);
-                }
-                catch (Exception ex)
-                {
-                    Logger.Log($"Сбой при симуляции отладочного клика: {ex.Message}", LogType.Error);
-                }
-                finally
-                {
-                    // Сбрасываем контекст логов после окончания теста
-                    _currentAccount = null;
-                }
             }
         }
     }
@@ -382,7 +349,7 @@ namespace EVEEchoesBot
             string pathImg1 = Path.Combine(TemplatesDir, "imgLocalChatHead.png");
             string pathImg2 = Path.Combine(TemplatesDir, "imgLocalChatIcon.png");
 
-            // [ ] TODO Области поиска (настройте под координаты вашей игры)
+            // [v] TODO Области поиска (настройте под координаты вашей игры)
             Rect localRegion1 = new(5, 5, 500, 715);
             Rect localRegion2 = new(5, 650, 100, 120);
 
@@ -406,7 +373,7 @@ namespace EVEEchoesBot
                 // Если регионы получились нулевыми или некорректными — логируем проблему размеров
                 if (safeRegion1.Width <= 0 || safeRegion1.Height <= 0 || safeRegion2.Width <= 0 || safeRegion2.Height <= 0)
                 {
-                    Logger.Log($"[КРИТИЧЕСКИЙ СБОЙ] Заданные Rect выходят за рамки окна! Размер скриншота: {screenshot.Width}x{screenshot.Height}", LogType.Error);
+                    Logger.Log($"Заданные Rect выходят за рамки окна! Размер скриншота: {screenshot.Width}x{screenshot.Height}", LogType.Error);
                     IsSave = false;
                     return;
                 }
@@ -418,7 +385,7 @@ namespace EVEEchoesBot
 
                 if (foundImg1.HasValue)
                 {
-                    Logger.Log($"[УСПЕХ] Изображение 1 НАЙДЕНО в точке X={foundImg1.Value.X}, Y={foundImg1.Value.Y}.", LogType.Info);
+                    Logger.Log($"{pathImg1} НАЙДЕНО в точке X={foundImg1.Value.X}, Y={foundImg1.Value.Y}.", LogType.Test);
 
 #if DEBUG
                     try
@@ -427,7 +394,7 @@ namespace EVEEchoesBot
                         Directory.CreateDirectory(debugDir);
                         Cv2.ImWrite(Path.Combine(debugDir, "imgLocalChatHead_FOUND.png"), cropped);
                     }
-                    catch (Exception ex) { Logger.Log($"[Debug] Ошибка сохранения кадра: {ex.Message}", LogType.Warning); }
+                    catch (Exception ex) { Logger.Log($"Ошибка сохранения кадра: {ex.Message}", LogType.Warning); }
 #endif
 
                     if (RunLocalCheck(screenshot, safeRegion1)) return;
@@ -460,7 +427,7 @@ namespace EVEEchoesBot
                         Directory.CreateDirectory(debugDir);
                         Cv2.ImWrite(Path.Combine(debugDir, "imgLocalChatIcon_FOUND.png"), cropped);
                     }
-                    catch (Exception ex) { Logger.Log($"[Debug] Ошибка сохранения кадра: {ex.Message}", LogType.Warning); }
+                    catch (Exception ex) { Logger.Log($"Ошибка сохранения кадра: {ex.Message}", LogType.Warning); }
 #endif
 
                     Tools.SmartClick(hWnd, foundImg2.Value.X, foundImg2.Value.Y, minSec: 0, maxSec: 0, offset: 2);
@@ -487,7 +454,7 @@ namespace EVEEchoesBot
                             Directory.CreateDirectory(debugDir);
                             Cv2.ImWrite(Path.Combine(debugDir, "imgLocalChatHead_AFTER_CLICK_NOT_FOUND.png"), cropped);
                         }
-                        catch (Exception ex) { Logger.Log($"[Debug] Ошибка сохранения кадра: {ex.Message}", LogType.Warning); }
+                        catch (Exception ex) { Logger.Log($"Ошибка сохранения кадра: {ex.Message}", LogType.Warning); }
 #endif
                     }
 
@@ -501,7 +468,7 @@ namespace EVEEchoesBot
                     Directory.CreateDirectory(debugDir);
                     Cv2.ImWrite(Path.Combine(debugDir, "imgLocalChatIcon_NOT_FOUND.png"), cropped);
                 }
-                catch (Exception ex) { Logger.Log($"[Debug] Ошибка сохранения кадра: {ex.Message}", LogType.Warning); }
+                catch (Exception ex) { Logger.Log($"Ошибка сохранения кадра: {ex.Message}", LogType.Warning); }
 #endif
 
                 Logger.Log("КРИТИЧЕСКИЙ СБОЙ: Изображение 1 и Изображение 2 не найдены. Полная остановка бота!", LogType.Error);
@@ -622,7 +589,8 @@ namespace EVEEchoesBot
         /// Выполняет цепочку из 8 кликов для автоматической отправки предупреждения в чат альянса.
         /// На втором шаге производит валидацию экрана через OpenCV, проверяя, открылось ли меню чатов.
         /// </summary>
-        // [ ] TODO Добавить всем кликам +5 по Y для компенсации рамки (кроме кнопки "Отправить") 
+        // [x] TODO Добавить всем кликам +5 по Y для компенсации рамки (кроме кнопки "Отправить") 
+        // [ ] TODO 2026.05.27 Проверить работоспособность (опять) 
         private static void AliChatWarning()
         {
             Logger.Log("[Диагностика] Запуск метода AliChatWarning.", LogType.Info);
@@ -648,9 +616,9 @@ namespace EVEEchoesBot
                 return;
             }
 
-#if DEBUG
+        #if DEBUG
             Logger.Log("Запуск цепочки кликов оповещения альянса...", LogType.Test);
-#endif
+        #endif
 
             // 1. Первый клик: Открываем меню чатов
             Tools.SmartClick(hWnd, 25, 600, 1, 3, 3);
@@ -699,7 +667,7 @@ namespace EVEEchoesBot
                 {
                     Logger.Log("Шаблоны чата не обнаружены. Интерфейс не готов. Прерывание!", LogType.Error);
 
-#if DEBUG
+        #if DEBUG
                     // Сохраняем область, где бот пытался найти маркеры чата, для отладки координат
                     try
                     {
@@ -710,12 +678,31 @@ namespace EVEEchoesBot
                         Logger.Log($"[Debug] Область поиска чата сохранена: {Path.Combine(debugDir, "imgAliChat_NOT_FOUND.png")}", LogType.Info);
                     }
                     catch (Exception ex) { Logger.Log($"[Debug] Ошибка сохранения кадра: {ex.Message}", LogType.Warning); }
-#endif
+        #endif
                     return;
                 }
 
-                if (foundEng.HasValue) Logger.Log($"[Диагностика чата] УСПЕХ: Найден ENG чат в точке X={foundEng.Value.X}, Y={foundEng.Value.Y}", LogType.Info);
-                if (foundRus.HasValue) Logger.Log($"[Диагностика чата] УСПЕХ: Найден RUS чат в точке X={foundRus.Value.X}, Y={foundRus.Value.Y}", LogType.Info);
+                // Переменная для хранения итоговой точки клика
+                Point targetPoint = new();
+
+                if (foundEng.HasValue)
+                {
+                    Logger.Log($"[Диагностика чата] УСПЕХ: Найден ENG чат в точке X={foundEng.Value.X}, Y={foundEng.Value.Y}", LogType.Info);
+                    // Корректируем локальные координаты региона в глобальные + сдвиг к центру шаблона (подберите под размер imgAliChatENG.png)
+                    targetPoint = new Point(foundEng.Value.X + safeSearchRegion.X + 30, foundEng.Value.Y + safeSearchRegion.Y + 15);
+                }
+                else if (foundRus.HasValue)
+                {
+                    Logger.Log($"[Диагностика чата] УСПЕХ: Найден RUS чат в точке X={foundRus.Value.X}, Y={foundRus.Value.Y}", LogType.Info);
+                    // Корректируем локальные координаты региона в глобальные + сдвиг к центру шаблона (подберите под размер imgAliChatRUS.png)
+                    targetPoint = new Point(foundRus.Value.X + safeSearchRegion.X + 30, foundRus.Value.Y + safeSearchRegion.Y + 15);
+                }
+
+                // ================= КОНЕЦ АВТОНОМНОЙ ПРОВЕРКИ ИНТЕРФЕЙСА =================
+
+                // 2. Второй клик: Активируем чат альянса по динамическим координатам
+                Logger.Log($"[Клик] Отправка клика по динамическим координатам: X={targetPoint.X}, Y={targetPoint.Y}", LogType.Info);
+                Tools.SmartClick(hWnd, targetPoint.X, targetPoint.Y, 1, 3, 3);
             }
             catch (Exception ex)
             {
@@ -727,11 +714,6 @@ namespace EVEEchoesBot
                 // Гарантированно освобождаем неуправляемую память OpenCV
                 currentScreenshot.Dispose();
             }
-
-            // ================= КОНЕЦ АВТОНОМНОЙ ПРОВЕРКИ ИНТЕРФЕЙСА =================
-
-            // 2. Второй клик: Активируем чат альянса
-            Tools.SmartClick(hWnd, 50, 450, 1, 3, 3);
 
             // 3. Третий клик: Открываем меню ввода чата
             Tools.SmartClick(hWnd, 365, 700, 1, 3, 3);
@@ -749,7 +731,7 @@ namespace EVEEchoesBot
             Tools.SmartClick(hWnd, 800, 250, 1, 3, 10);
 
             // 8. Восьмой клик: Нажимаем кнопку "Отправить"
-            Tools.SmartClick(hWnd, 450, 690, 3, 5, 2);
+            Tools.SmartClick(hWnd, 445, 685, 3, 5, 2);
 
             // 9. Девятый клик: Закрываем интерфейс чатов
             Tools.SmartClick(hWnd, 625, 225, 1, 3, 3);
@@ -760,10 +742,24 @@ namespace EVEEchoesBot
             _currentAccount = null;
         }
 
-
 #endregion
 
     }
+
+    public static class GameUiExtensions
+    {
+        internal static void ClickTo(this IntPtr hWnd, GameUi element, int minSec = 1, int maxSec = 3, int offset = 3)
+        {
+            // Распаковываем координаты обратно в X и Y
+            int rawValue = (int)element;
+            int x = rawValue / 10000;
+            int y = rawValue % 10000;
+
+            // Вызываем ваш оригинальный метод
+            Tools.SmartClick(hWnd, x, y, minSec, maxSec, offset);
+        }
+    }
+
 }
 
 

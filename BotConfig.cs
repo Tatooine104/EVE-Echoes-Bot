@@ -18,6 +18,7 @@ namespace EVEEchoesBot
     {
         public string Name        { get; set; } = "";
         public string WindowTitle { get; set; } = "";
+        public string Emulator    { get; set; } = "";
         public string Script      { get; set; } = "";
         public string FirstTask   { get; set; } = "";
         public string EVESystem   { get; set; } = "";
@@ -107,6 +108,7 @@ namespace EVEEchoesBot
                     {
                         Name = "Somebody",
                         WindowTitle = "BlueStacks_EVE.01",
+                        Emulator = "BlueStacks",
                         Script = "LocalWatcher",
                         FirstTask = "CheckSecurity",
                         EVESystem = "Jita",

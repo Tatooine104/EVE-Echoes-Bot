@@ -268,15 +268,16 @@ namespace EVEEchoesBot
             // 3. Выводим окно эмулятора на передний план (SendInput работает только с активным окном)
             WinAPI.SetForegroundWindow(hWnd);
 
-            // 4. Переводим относительные координаты окна в реальные экранные пиксели
-            if (!WinAPI.GetWindowRect(hWnd, out WinAPI.RECT rect))
+            // 4. Переводим относительные координаты рабочей области окна в реальные экранные пиксели
+            WinAPI.POINT point = new() { X = finalX, Y = finalY };
+            if (!WinAPI.ClientToScreen(hWnd, ref point))
             {
-                Logger.Log($"Не удалось получить координаты границ окна для hWnd: {hWnd}", LogType.Error);
+                Logger.Log($"Не удалось перевести координаты ClientToScreen для hWnd: {hWnd}", LogType.Error);
                 return;
             }
 
-            int screenX = rect.Left + finalX;
-            int screenY = rect.Top + finalY;
+            int screenX = point.X;
+            int screenY = point.Y;
 
             // 5. Мгновенно перемещаем курсор в точку клика
             WinAPI.SetCursorPos(screenX, screenY);
