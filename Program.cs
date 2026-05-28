@@ -6,6 +6,7 @@ namespace EVEEchoesBot
 {
 
 // [ ] TODO Проверить все методы и добавить новый метод Logger.Log() 
+// [v] TODO 2026.05.27 Заменить все SmartClick с координатами на вызовы по енуму 
 
     static partial class Program
     {
@@ -78,7 +79,7 @@ namespace EVEEchoesBot
     {
         // ИмяЭлемента = (X * 10000) + Y (упаковываем X и Y в одно число для Enum)
         // MenuButton = 500450,    // X: 50,  Y: 450 (Ваш пример)
-        ChatButtSend   =  4450685, // Кнопка чата "Send"
+        ChatButtSend   =  4450695, // Кнопка чата "Send"
         WindowCenter   =  8000250, // Точка чуть ниже и правее центра окна
         ChatMessScout  =  3000600, // Сообщение "Scout"
         ChatInform     =   800400, // Меню "Inform"
@@ -323,7 +324,7 @@ namespace EVEEchoesBot
         /// </summary>
         static void CheckSecurityStatus()
         {
-            Logger.Log("[Диагностика] Запуск метода CheckSecurityStatus.", LogType.Info);
+            Logger.Log("Запуск метода CheckSecurityStatus.", LogType.Test);
 
             BotConfig config = ConfigManager.Load();
             WindowSettings? testAccount = config.Accounts.FirstOrDefault();
@@ -385,7 +386,7 @@ namespace EVEEchoesBot
 
                 if (foundImg1.HasValue)
                 {
-                    Logger.Log($"{pathImg1} НАЙДЕНО в точке X={foundImg1.Value.X}, Y={foundImg1.Value.Y}.", LogType.Test);
+                    //Logger.Log($"{foundImg1} НАЙДЕНО в точке X={foundImg1.Value.X}, Y={foundImg1.Value.Y}.", LogType.Test);
 
 #if DEBUG
                     try
@@ -430,6 +431,7 @@ namespace EVEEchoesBot
                     catch (Exception ex) { Logger.Log($"Ошибка сохранения кадра: {ex.Message}", LogType.Warning); }
 #endif
 
+                    // Кликаем в найденную картинку
                     Tools.SmartClick(hWnd, foundImg2.Value.X, foundImg2.Value.Y, minSec: 0, maxSec: 0, offset: 2);
                     Thread.Sleep(3000);
 
@@ -471,9 +473,9 @@ namespace EVEEchoesBot
                 catch (Exception ex) { Logger.Log($"Ошибка сохранения кадра: {ex.Message}", LogType.Warning); }
 #endif
 
-                Logger.Log("КРИТИЧЕСКИЙ СБОЙ: Изображение 1 и Изображение 2 не найдены. Полная остановка бота!", LogType.Error);
-                IsSave = false;
-                _cts.Cancel();
+                Logger.Log("${pathImg1} и {pathImg2} не найдены. Полная остановка бота!", LogType.Error);
+                //IsSave = false;
+                //_cts.Cancel();
                 return;
             }
         }
@@ -593,7 +595,7 @@ namespace EVEEchoesBot
         // [ ] TODO 2026.05.27 Проверить работоспособность (опять) 
         private static void AliChatWarning()
         {
-            Logger.Log("[Диагностика] Запуск метода AliChatWarning.", LogType.Info);
+            Logger.Log("Запуск метода AliChatWarning.", LogType.Test);
 
             // Загружаем конфигурацию для определения целевого окна
             BotConfig config = ConfigManager.Load();
@@ -621,10 +623,8 @@ namespace EVEEchoesBot
         #endif
 
             // 1. Первый клик: Открываем меню чатов
-            Tools.SmartClick(hWnd, 25, 600, 1, 3, 3);
+            ClickTo(hWnd, GameUi.ChatsInterface);
             Thread.Sleep(3000); // Ожидаем анимацию открытия интерфейса
-
-            // ================= НАЧАЛО АВТОНОМНОЙ ПРОВЕРКИ ИНТЕРФЕЙСА =================
 
             // Делаем снимок экрана после первого клика
             Mat? currentScreenshot = Tools.CaptureWindow(hWnd);
@@ -642,12 +642,12 @@ namespace EVEEchoesBot
                 string imgPath1 = Path.Combine(TemplatesDir, "imgAliChatENG.png");
                 string imgPath2 = Path.Combine(TemplatesDir, "imgAliChatRUS.png");
 
-                Logger.Log($"[Диагностика чата] Путь ENG: {imgPath1}", LogType.Info);
-                Logger.Log($"[Диагностика чата] Путь RUS: {imgPath2}", LogType.Info);
+                Logger.Log($"Путь ENG: {imgPath1}", LogType.Test);
+                Logger.Log($"Путь RUS: {imgPath2}", LogType.Test);
 
                 if (!File.Exists(imgPath1) || !File.Exists(imgPath2))
                 {
-                    Logger.Log("[КРИТИЧЕСКАЯ ОШИБКА] Файлы шаблонов чата (ENG/RUS) отсутствуют на диске. Прерывание!", LogType.Error);
+                    Logger.Log("Файлы шаблонов чата (ENG/RUS) отсутствуют на диске. Прерывание!", LogType.Error);
                     return;
                 }
 
@@ -658,7 +658,7 @@ namespace EVEEchoesBot
                 Rect safeSearchRegion = ClampRegion(searchRegion, currentScreenshot.Width, currentScreenshot.Height);
 
                 // Ищем языковые маркеры меню чата
-                Logger.Log("[Диагностика чата] Ищу маркеры языков меню чата...", LogType.Info);
+                Logger.Log("Ищу маркеры языков меню чата...", LogType.Info);
                 Point? foundEng = Tools.FindTemplateInRegion(currentScreenshot, imgPath1, safeSearchRegion, 0.85);
                 Point? foundRus = Tools.FindTemplateInRegion(currentScreenshot, imgPath2, safeSearchRegion, 0.85);
 
@@ -685,18 +685,33 @@ namespace EVEEchoesBot
                 // Переменная для хранения итоговой точки клика
                 Point targetPoint = new();
 
-                if (foundEng.HasValue)
-                {
-                    Logger.Log($"[Диагностика чата] УСПЕХ: Найден ENG чат в точке X={foundEng.Value.X}, Y={foundEng.Value.Y}", LogType.Info);
-                    // Корректируем локальные координаты региона в глобальные + сдвиг к центру шаблона (подберите под размер imgAliChatENG.png)
-                    targetPoint = new Point(foundEng.Value.X + safeSearchRegion.X + 30, foundEng.Value.Y + safeSearchRegion.Y + 15);
-                }
-                else if (foundRus.HasValue)
-                {
-                    Logger.Log($"[Диагностика чата] УСПЕХ: Найден RUS чат в точке X={foundRus.Value.X}, Y={foundRus.Value.Y}", LogType.Info);
-                    // Корректируем локальные координаты региона в глобальные + сдвиг к центру шаблона (подберите под размер imgAliChatRUS.png)
-                    targetPoint = new Point(foundRus.Value.X + safeSearchRegion.X + 30, foundRus.Value.Y + safeSearchRegion.Y + 15);
-                }
+            if (foundEng.HasValue)
+            {
+                Logger.Log($"УСПЕХ Найден ENG чат в точке X={foundEng.Value.X}, Y={foundEng.Value.Y}", LogType.Info);
+                targetPoint = new Point(foundEng.Value.X, foundEng.Value.Y);
+                /*
+                // Переменная template удалится сама при выходе из метода
+                using Mat template = new(imgPath1);
+
+                targetPoint = new Point(
+                    foundEng.Value.X + safeSearchRegion.X + (template.Width / 2),
+                    foundEng.Value.Y + safeSearchRegion.Y + (template.Height / 2)
+                );
+                */
+            }
+            else if (foundRus.HasValue)
+            {
+                Logger.Log($"УСПЕХ Найден RUS чат в точке X={foundRus.Value.X}, Y={foundRus.Value.Y}", LogType.Info);
+                targetPoint = new Point(foundRus.Value.X, foundRus.Value.Y);
+                /*
+                using Mat template = new(imgPath2);
+
+                targetPoint = new Point(
+                    foundRus.Value.X + safeSearchRegion.X + (template.Width / 2),
+                    foundRus.Value.Y + safeSearchRegion.Y + (template.Height / 2)
+                );
+                */
+            }
 
                 // ================= КОНЕЦ АВТОНОМНОЙ ПРОВЕРКИ ИНТЕРФЕЙСА =================
 
@@ -716,38 +731,39 @@ namespace EVEEchoesBot
             }
 
             // 3. Третий клик: Открываем меню ввода чата
-            Tools.SmartClick(hWnd, 365, 700, 1, 3, 3);
+            ClickTo(hWnd, GameUi.ChatInputMenu);
 
             // 4. Четвертый клик: Открываем меню быстрых сообщений
-            Tools.SmartClick(hWnd, 1250, 700, 1, 3, 3);
+            ClickTo(hWnd, GameUi.ChatFastInput);
 
             // 5. Пятый клик: Открываем вкладку данных разведки
-            Tools.SmartClick(hWnd, 80, 400, 1, 3, 3);
+            ClickTo(hWnd, GameUi.ChatInform);
 
             // 6. Шестой клик: Выбираем статус-сообщение "Scout"
-            Tools.SmartClick(hWnd, 300, 600, 1, 3, 3);
+            ClickTo(hWnd, GameUi.ChatMessScout);
 
             // 7. Седьмой клик: Закрываем область ввода
-            Tools.SmartClick(hWnd, 800, 250, 1, 3, 10);
+            ClickTo(hWnd, GameUi.WindowCenter, 1, 3, 10);
+
+            Thread.Sleep(1000);
 
             // 8. Восьмой клик: Нажимаем кнопку "Отправить"
-            Tools.SmartClick(hWnd, 445, 685, 3, 5, 2);
+            ClickTo(hWnd, GameUi.ChatButtSend, 5, 7, 2);
+
+            Thread.Sleep(1000);
 
             // 9. Девятый клик: Закрываем интерфейс чатов
-            Tools.SmartClick(hWnd, 625, 225, 1, 3, 3);
+            ClickTo(hWnd, GameUi.WindowCenter, 1, 3, 10);
 
             Logger.Log("Цепочка кликов экстренного оповещения AliChatWarning успешно выполнена.", LogType.Success);
 
             // Сбрасываем контекст логгера
-            _currentAccount = null;
+            //_currentAccount = null;
         }
 
 #endregion
 
-    }
 
-    public static class GameUiExtensions
-    {
         internal static void ClickTo(this IntPtr hWnd, GameUi element, int minSec = 1, int maxSec = 3, int offset = 3)
         {
             // Распаковываем координаты обратно в X и Y

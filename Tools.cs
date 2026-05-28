@@ -100,15 +100,16 @@ namespace EVEEchoesBot
 
                     // Формируем имя файла с временной меткой
                     const string fileName = "debug_screenshot.png";
-                    string filePath = Path.Combine(projectDir, fileName);
+                    string targetFolder = Path.Combine(projectDir, "DebugScreenshots");
+                    string filePath = Path.Combine(targetFolder, fileName);
 
                     // Сохраняем матрицу на диск
                     Cv2.ImWrite(filePath, mat);
-                    Logger.Log($"[Debug] Скриншот сохранен: {filePath}", LogType.Info);
+                    Logger.Log($"Скриншот сохранен: {fileName}", LogType.Test);
                 }
                 catch (Exception dbgEx)
                 {
-                    Logger.Log($"[Debug] Не удалось сохранить скриншот на диск: {dbgEx.Message}", LogType.Warning);
+                    Logger.Log($"Не удалось сохранить скриншот на диск: {dbgEx.Message}", LogType.Test);
                 }
 #endif
 
@@ -191,21 +192,21 @@ namespace EVEEchoesBot
                 Cv2.MatchTemplate(grayScreen, grayTemplate, result, TemplateMatchModes.CCoeffNormed);
                 Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out Point maxLoc);
 
-    #if DEBUG
-                // Вывод отладочной информации через новый Test лог
-                Logger.Log($"Диагностика {Path.GetFileName(templatePath)}: Макс. совпадение = {maxVal * 100:F1}%", LogType.Test);
-    #endif
+                int offsetX = searchArea?.X ?? 0;
+                int offsetY = searchArea?.Y ?? 0;
+
+                // Вычисляем координаты центра найденного объекта на исходном полном скриншоте
+                int centerX = offsetX + maxLoc.X + (matTemplate.Width / 2);
+                int centerY = offsetY + maxLoc.Y + (matTemplate.Height / 2);
+
+        #if DEBUG
+                // Расширенный вывод отладочной информации: процент совпадения, точка локального совпадения и глобальный центр
+                Logger.Log($"{Path.GetFileName(templatePath)}: Совпадение = {maxVal * 100:F1}%, Точка X={maxLoc.X} Y={maxLoc.Y}, Центр X={centerX} Y={centerY}", LogType.Test);
+        #endif
 
                 // Проверяем, превысил ли результат установленный порог точности
                 if (maxVal >= threshold)
                 {
-                    int offsetX = searchArea?.X ?? 0;
-                    int offsetY = searchArea?.Y ?? 0;
-
-                    // Вычисляем координаты центра найденного объекта на исходном полном скриншоте
-                    int centerX = offsetX + maxLoc.X + (matTemplate.Width / 2);
-                    int centerY = offsetY + maxLoc.Y + (matTemplate.Height / 2);
-
                     return new Point(centerX, centerY);
                 }
 
@@ -225,6 +226,7 @@ namespace EVEEchoesBot
                 }
             }
         }
+
 
 #endregion
 
