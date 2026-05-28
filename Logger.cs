@@ -20,27 +20,43 @@ namespace EVEEchoesBot
         public static void Log(
             string message,
             LogType type = LogType.Info,
-            string? accountName = null, // Меняем дефолт на null
+            string? accountName = null,
             [CallerMemberName] string callerMethod = "")
         {
-            // 1. Если имя не передано явно, пытаемся взять его из глобальной переменной
+            // 1. Потокобезопасный разбор имени аккаунта
             if (string.IsNullOrEmpty(accountName))
             {
-                // Проверяем, что объект _currentAccount не равен null
-                // Замените .Name на реальное свойство вашего класса WindowSettings (например, .AccountName)
-                accountName = Program._currentAccount?.Name ?? "System";
+                // Если сообщение уже начинается с имени бота в скобках, например "[EveAcc_1] Текст"
+                if (message.StartsWith('[') && message.Contains(']'))
+                {
+                    int closeBracketIndex = message.IndexOf(']');
+                    // Извлекаем имя бота из скобок
+                    accountName = message[1..closeBracketIndex];
+                    // Очищаем само сообщение от дублирующегося имени бота и пробелов
+                    message = message[(closeBracketIndex + 1)..].Trim();
+                }
+                else
+                {
+                    // Если имени нет нигде, это системный лог
+                    accountName = "System";
+                }
             }
 
-            // 2. Строго по порядку: Дата -> Тип сообщения -> Вызвавший метод -> Аккаунт -> Текст
+            // 2. Строго по порядку: Дата -> Аккаунт -> Тип сообщения -> Вызвавший метод -> Текст
             string formattedMessage = $"[{DateTime.Now:HH:mm:ss}] [{accountName}] -> [{type.ToString().ToUpper()}] -> [{callerMethod}]: {message}";
             ConsoleColor color = GetColorForType(type);
 
         #if DEBUG
-            PrintToConsole(formattedMessage, color);
+            // Защищаем вывод в консоль от одновременной записи из разных потоков
+            lock (Console.Out)
+            {
+                PrintToConsole(formattedMessage, color);
+            }
         #else
             RouteReleaseLog(formattedMessage, color, type);
         #endif
         }
+
 
 #if !DEBUG
         private static void RouteReleaseLog(string message, ConsoleColor color, LogType type)

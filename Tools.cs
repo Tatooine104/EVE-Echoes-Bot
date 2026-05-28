@@ -16,8 +16,9 @@ namespace EVEEchoesBot
         // --- Глобальные утилиты ---
         private static readonly Random _random = new();
 
-        // Глобальный список аккаунтов, для которых размер окна уже был успешно подогнан
-        public static readonly System.Collections.Generic.HashSet<string> _resizedAccounts = [];
+        // Используем ConcurrentDictionary вместо HashSet для полной потокобезопасности
+        public static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _resizedAccounts = new();
+
 
 #endregion
 
@@ -230,6 +231,24 @@ namespace EVEEchoesBot
 
 #endregion
 
+#region ClampRegion
+
+        /// <summary>
+        /// Корректирует прямоугольник под фактические размеры изображения, предотвращая вылет OpenCV.
+        /// </summary>
+        public static Rect ClampRegion(Rect region, int maxWidth, int maxHeight)
+        {
+            int x = Math.Max(0, Math.Min(region.X, maxWidth - 1));
+            int y = Math.Max(0, Math.Min(region.Y, maxHeight - 1));
+
+            int width = Math.Min(region.Width, maxWidth - x);
+            int height = Math.Min(region.Height, maxHeight - y);
+
+            return new Rect(x, y, width, height);
+        }
+
+#endregion
+
 #region SmartClick
 
         /// <summary>
@@ -350,49 +369,51 @@ namespace EVEEchoesBot
 
 #region GetWindow
 
-public static IntPtr GetWindow(WindowSettings settings)
-{
-    // Привязываем контекст логгера к текущему обрабатываемому аккаунту
-    Program._currentAccount = settings;
+        public static IntPtr GetWindow(WindowSettings settings)
+        {
+            IntPtr hWnd = WinAPI.FindWindow(null, settings.WindowTitle);
 
-    IntPtr hWnd = WinAPI.FindWindow(null, settings.WindowTitle);
+            if (hWnd == IntPtr.Zero)
+            {
+                Logger.Log($"[{settings.Name}] Окно '{settings.WindowTitle}' не найдено.", LogType.Error);
+                return IntPtr.Zero;
+            }
 
-    if (hWnd == IntPtr.Zero)
-    {
-        Logger.Log($"Окно '{settings.WindowTitle}' не найдено.", LogType.Error);
-        return IntPtr.Zero;
-    }
+            // Проверяем, есть ли уже ключ в словаре
+            if (_resizedAccounts.ContainsKey(settings.Name))
+            {
+        #if DEBUG
+                Logger.Log($"[{settings.Name}] Окно уже подгонялось в этой сессии. Шаг пропущен.", LogType.Test);
+        #endif
+                return hWnd;
+            }
 
-    if (_resizedAccounts.Contains(settings.Name))
-    {
-#if DEBUG
-        Logger.Log("Окно уже подгонялось в этой сессии. Шаг пропущен.", LogType.Test);
-#endif
-        return hWnd;
-    }
+            if (settings.Size == null)
+            {
+                Logger.Log($"[{settings.Name}] В конфигурации отсутствует блок WindowSettings (Size)!", LogType.Error);
+                return hWnd;
+            }
 
-    if (settings.Size == null)
-    {
-        Logger.Log("В конфигурации отсутствует блок WindowSettings (Size)!", LogType.Error);
-        return hWnd;
-    }
+            int targetW = settings.Size.TargetWidth;
+            int targetH = settings.Size.TargetHeight;
 
-    int targetW = settings.Size.TargetWidth;
-    int targetH = settings.Size.TargetHeight;
+            if (ResizeWindow(hWnd, targetW, targetH))
+            {
+                Logger.Log($"[{settings.Name}] Окно подогнано под размер {targetW}x{targetH}", LogType.Test);
 
-    if (ResizeWindow(hWnd, targetW, targetH))
-    {
-        Logger.Log($"Окно подогнано под размер {targetW}x{targetH}", LogType.Test);
-        _resizedAccounts.Add(settings.Name);
-        Thread.Sleep(300);
-    }
-    else
-    {
-        Logger.Log("Не удалось изменить размер окна эмулятора.", LogType.Warning);
-    }
+                // Безопасно добавляем имя аккаунта в словарь (0 — просто заглушка)
+                _resizedAccounts.TryAdd(settings.Name, 0);
 
-    return hWnd;
-}
+                Thread.Sleep(300);
+            }
+            else
+            {
+                Logger.Log($"[{settings.Name}] Не удалось изменить размер окна эмулятора.", LogType.Warning);
+            }
+
+            return hWnd;
+        }
+
 
 
 
