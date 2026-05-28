@@ -1,7 +1,8 @@
 //using System.Drawing;
 using System.Runtime.InteropServices;
 using OpenCvSharp;
-
+using System.Diagnostics;
+using System.IO;
 
 namespace EVEEchoesBot
 {
@@ -255,86 +256,91 @@ namespace EVEEchoesBot
         /// Аппаратно эмулирует клик мыши на уровне драйвера Windows с помощью SendInput.
         /// Оптимизирован для молниеносного и чёткого нажатия с защитой от антикликеров.
         /// </summary>
-        /// <param name="hWnd">   Дескриптор окна эмулятора.                                       </param>
         /// <param name="x">      Координата X относительно окна.                                  </param>
         /// <param name="y">      Координата Y относительно окна.                                  </param>
         /// <param name="minSec"> Минимальное время случайной задержки перед кликом (в секундах).  </param>
         /// <param name="maxSec"> Максимальное время случайной задержки перед кликом (в секундах). </param>
         /// <param name="offset"> Радиус случайного разброса пикселей от центра клика.             </param>
-        public static void SmartClick(
-            IntPtr hWnd,
-            int x,
-            int y,
-            int minSec = 1,
-            int maxSec = 5,
-            int offset = 10)
-        {
-            if (hWnd == IntPtr.Zero)
+
+            public static void SmartClick(
+                int x,
+                int y,
+                int minSec = 1,
+                int maxSec = 5,
+                int offset = 10,
+                int adbPort = 5555)
             {
-                Logger.Log("Передан пустой дескриптор окна (IntPtr.Zero). Кликер отменен.", LogType.Warning);
-                return;
+                if (minSec > 0 || maxSec > 0)
+                {
+                    Thread.Sleep(GetRandomDelayMs(minSec, maxSec));
+                }
+
+                int finalX = x + _random.Next(-offset, offset + 1);
+                int finalY = y + _random.Next(-offset, offset + 1);
+
+                string adbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "adb.exe"); 
+
+                if (!File.Exists(adbPath))
+                {
+                    Logger.Log($"Крит: Файл adb.exe не найден: {adbPath}", LogType.Error);
+                    return;
+                }
+
+                string deviceTarget = $"127.0.0.1:{adbPort}";
+                string argsConnect = $"connect {deviceTarget}";
+
+                try
+                {
+                    // 1. Коннект к порту
+                    ProcessStartInfo psiConnect = new(adbPath, argsConnect) { CreateNoWindow = true, UseShellExecute = false };
+                    Process.Start(psiConnect)?.WaitForExit();
+
+                    // 2. УЗНАЕМ РЕАЛЬНОЕ РАЗРЕШЕНИЕ ЭМУЛЯТОРА ИЗНУТРИ ANDROID
+                    // Иногда BlueStacks снаружи имеет 1280x720, а внутри Android считает себя 1920x1080 (из-за DPI)
+                    ProcessStartInfo psiSize = new(adbPath, $"-s {deviceTarget} shell wm size") 
+                    { 
+                        CreateNoWindow = true, 
+                        UseShellExecute = false, 
+                        RedirectStandardOutput = true 
+                    };
+                    var procSize = Process.Start(psiSize);
+                    string outputSize = procSize?.StandardOutput.ReadToEnd() ?? "";
+                    procSize?.WaitForExit();
+
+                    // Если Android выдал кастомный размер (например, "Physical size: 1920x1080")
+                    if (outputSize.Contains(":") && outputSize.Contains("x"))
+                    {
+                        string sizeStr = outputSize.Split(':')[1].Trim(); // "1920x1080"
+                        string[] wAndH = sizeStr.Split('x');
+                        if (wAndH.Length == 2 && int.TryParse(wAndH[0], out int internalW) && int.TryParse(wAndH[1], out int internalH))
+                        {
+                            // Если внутреннее разрешение не совпадает со стандартным 1280x720, пропорционально масштабируем клик
+                            if (internalW != 1280 && internalW > 0)
+                            {
+                                finalX = (int)(finalX * ((double)internalW / 1280.0));
+                                finalY = (int)(finalY * ((double)internalH / 720.0));
+                            }
+                        }
+                    }
+
+                    // 3. ОТПРАВЛЯЕМ КЛИК ЧЕРЕЗ АЛЬТЕРНАТИВНЫЙ СИНТАКСИС (input text / input keyevent / input tap)
+                    // Мы склеим стандартный input tap и принудительную активацию окна
+                    string argsTap = $"-s {deviceTarget} shell input tap {finalX} {finalY}";
+                    
+                    ProcessStartInfo psiTap = new(adbPath, argsTap) { CreateNoWindow = true, UseShellExecute = false };
+                    Process.Start(psiTap)?.WaitForExit();
+
+            #if DEBUG
+                    Logger.Log($"[DirectX-ADB-OK] Устройство: {deviceTarget} | Проекция-Тап: ({finalX}, {finalY})", LogType.Test);
+            #endif
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Ошибка ADB кликера: {ex.Message}", LogType.Error);
+                }
             }
 
-            // 1. Рандомная задержка перед действием (анти-детект система)
-            if (minSec > 0 || maxSec > 0)
-            {
-                int initialDelay = GetRandomDelayMs(minSec, maxSec);
-                Thread.Sleep(initialDelay);
-            }
 
-            // 2. Расчет координат внутри окна со случайным микро-смещением (имитация руки человека)
-            int finalX = x + _random.Next(-offset, offset + 1);
-            int finalY = y + _random.Next(-offset, offset + 1);
-
-            // 3. Выводим окно эмулятора на передний план (SendInput работает только с активным окном)
-            WinAPI.SetForegroundWindow(hWnd);
-
-            // 4. Переводим относительные координаты рабочей области окна в реальные экранные пиксели
-            WinAPI.POINT point = new() { X = finalX, Y = finalY };
-            if (!WinAPI.ClientToScreen(hWnd, ref point))
-            {
-                Logger.Log($"Не удалось перевести координаты ClientToScreen для hWnd: {hWnd}", LogType.Error);
-                return;
-            }
-
-            int screenX = point.X;
-            int screenY = point.Y;
-
-            // 5. Мгновенно перемещаем курсор в точку клика
-            WinAPI.SetCursorPos(screenX, screenY);
-
-            // Константы для Windows API SendInput
-            const uint INPUT_MOUSE = 0;
-            const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
-            const uint MOUSEEVENTF_LEFTUP = 0x0004;
-
-            // Инициализируем массив ввода для оптимизации выделения памяти
-            WinAPI.INPUT[] inputs = new WinAPI.INPUT[2];
-
-            // СТРУКТУРА №1: Нажатие левой кнопки мыши
-            inputs[0] = new WinAPI.INPUT { type = INPUT_MOUSE };
-            inputs[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
-
-            // СТРУКТУРА №2: Отпускание левой кнопки мыши
-            inputs[1] = new WinAPI.INPUT { type = INPUT_MOUSE };
-            inputs[1].mi.dwFlags = MOUSEEVENTF_LEFTUP;
-
-            int inputSize = Marshal.SizeOf<WinAPI.INPUT>();
-
-            // 6. ВЫПОЛНЯЕМ КЛИК
-            // Шаг А: Зажимаем кнопку мыши
-            WinAPI.SendInput(1, [inputs[0]], inputSize);
-
-            // Анатомическая пауза удержания кнопки (20-40 мс), чтобы игровой движок EVE Echoes гарантированно зафиксировал нажатие
-            Thread.Sleep(_random.Next(20, 41));
-
-            // Шаг Б: Отпускаем кнопку мыши
-            WinAPI.SendInput(1, [inputs[1]], inputSize);
-
-    #if DEBUG
-            Logger.Log($"Выполнен клик по координатам экрана: ({screenX}, {screenY})", LogType.Test);
-    #endif
-        }
 
 #endregion
 

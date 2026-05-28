@@ -1,6 +1,8 @@
 ﻿using OpenCvSharp;
 using static EVEEchoesBot.Program;
 using EVEEchoesBot;
+using static System.Diagnostics.Process;
+using System.Diagnostics;
 
 namespace EVEEchoesBot
 {
@@ -89,68 +91,75 @@ namespace EVEEchoesBot
 
 #region StartMultiBotSystem
 
-    private static void StartMultiBotSystem()
-    {
-        try
+        private static void StartMultiBotSystem()
         {
-            // 1. Загружаем конфигурацию один раз при старте
-            _config = ConfigManager.Load();
-
-            if (_config?.Accounts == null || _config.Accounts.Count == 0)
+            try
             {
-                Logger.Log("В конфигурации нет доступных аккаунтов. Запуск отменен.", LogType.Error);
-                _cts.Cancel();
-                return;
-            }
-
-            // Пересоздаем токен отмены на случай повторного перезапуска системы
-            if (_cts.IsCancellationRequested)
-            {
-                _cts = new CancellationTokenSource();
-            }
-
-            _activeBots.Clear();
-
-            // 2. Проходим по каждому аккаунту из конфига и готовим его к запуску
-            foreach (WindowSettings accountSettings in _config.Accounts)
-            {
-                // Находим окно эмулятора по его WindowTitle из JSON
-                IntPtr hWnd = WinAPI.FindWindow(null, accountSettings.WindowTitle);
-
-                if (hWnd == IntPtr.Zero)
+                // 1. Перезапускаем ADB сервер в чистом режиме
+                string adbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "adb.exe");
+                if (File.Exists(adbPath))
                 {
-                    Logger.Log($"[Ошибка] Не найдено запущенное окно '{accountSettings.WindowTitle}' для аккаунта '{accountSettings.Name}'. Пропускаем.", LogType.Error);
-                    continue;
+                    Process.Start(new ProcessStartInfo(adbPath, "kill-server") { CreateNoWindow = true, UseShellExecute = false })?.WaitForExit();
+                    Process.Start(new ProcessStartInfo(adbPath, "start-server") { CreateNoWindow = true, UseShellExecute = false })?.WaitForExit();
                 }
 
-                // Создаем экземпляр нашего нового класса. 
-                // Он сам внутри себя переведет строку FirstTask в нужный Enum.
-                var bot = new ActiveBotAccount(accountSettings)
+                _config = ConfigManager.Load();
+
+                if (_config?.Accounts == null || _config.Accounts.Count == 0)
                 {
-                    Hwnd = hWnd
-                };
+                    Logger.Log("В конфигурации нет доступных аккаунтов. Запуск отменен.", LogType.Error);
+                    return;
+                }
 
-                // Запускаем бота в индивидуальном фоновом потоке
-                bot.Start(_cts.Token);
+                if (_cts.IsCancellationRequested) _cts = new CancellationTokenSource();
+                _activeBots.Clear();
 
-                // Сохраняем ссылку на работающего бота в список управления
-                _activeBots.Add(bot);
+                foreach (WindowSettings accountSettings in _config.Accounts)
+                {
+                    IntPtr hWnd = WinAPI.FindWindow(null, accountSettings.WindowTitle);
+                    if (hWnd == IntPtr.Zero)
+                    {
+                        Logger.Log($"[Ошибка] Не найдено окно '{accountSettings.WindowTitle}' для аккаунта '{accountSettings.Name}'.", LogType.Error);
+                        continue;
+                    }
+
+                    // БЕРЕМ ПОРТ НАПРЯМУЮ ИЗ ВАШЕГО JSON И СРАЗУ АКТИВИРУЕМ ИНЖЕНЕРНУЮ СЕТКУ
+                    if (File.Exists(adbPath))
+                    {
+                        string targetDevice = $"127.0.0.1:{accountSettings.AdbPort}";
+                        
+                        // Коннектим эмулятор по порту, который вы нашли глазами в настройках
+                        Process.Start(new ProcessStartInfo(adbPath, $"connect {targetDevice}") { CreateNoWindow = true, UseShellExecute = false })?.WaitForExit();
+                        
+                        // Включаем сетку
+                        Process.Start(new ProcessStartInfo(adbPath, $"-s {targetDevice} shell settings put system pointer_location 1") { CreateNoWindow = true, UseShellExecute = false })?.WaitForExit();
+                    }
+
+                    var bot = new ActiveBotAccount(accountSettings)
+                    {
+                        Hwnd = hWnd
+                    };
+
+                    bot.Start(_cts.Token);
+                    _activeBots.Add(bot);
+                }
+
+                Logger.Log($"Мультибот запущен. Аккаунтов в работе: {_activeBots.Count}", LogType.Success);
             }
+            catch (Exception ex)
+            {
+                Logger.Log($"Критическая ошибка старта: {ex.Message}", LogType.Error);
+                _cts.Cancel();
+            }
+        }
 
-            Logger.Log($"Многопоточная система успешно запущена. Аккаунтов в работе: {_activeBots.Count} из {_config.Accounts.Count}", LogType.Success);
-        }
-        catch (Exception ex)
-        {
-            Logger.Log($"Критическая ошибка при запуске мультибота: {ex.Message}", LogType.Error);
-            _cts.Cancel();
-        }
-    }
+
 
     private static void StopMultiBotSystem()
     {
         _cts.Cancel();
         Logger.Log("Всем фоновым потокам ботов отправлен сигнал на остановку.", LogType.Warning);
-}
+    }
 
 #region ListenForCancelKey
 
@@ -182,15 +191,19 @@ namespace EVEEchoesBot
 
 #endregion
 
-        internal static void ClickTo(this IntPtr hWnd, GameUi element, int minSec = 1, int maxSec = 3, int offset = 3)
+        internal static void ClickTo(this ActiveBotAccount bot, GameUi element, int minSec = 1, int maxSec = 3, int offset = 3)
         {
-            // Распаковываем координаты обратно в X и Y
-            int rawValue = (int)element;
-            int x = rawValue / 10000;
-            int y = rawValue % 10000;
+            // Распаковываем координаты X и Y из вашего Enum GameUi
+            int packed = (int)element;
+            int x = packed / 10000;
+            int y = packed % 10000;
 
-            // Вызываем ваш оригинальный метод
-            Tools.SmartClick(hWnd, x, y, minSec, maxSec, offset);
+            // Вызываем обновленный ADB-кликер, передавая порт этого конкретного бота
+            Tools.SmartClick(x, y, minSec, maxSec, offset, adbPort: bot.Settings.AdbPort);
+
+        #if DEBUG
+            Logger.Log($"[{bot.Settings.Name}|{bot.Settings.EVESystem}] Отправлен клик по элементу {element} (X={x}, Y={y})", LogType.Test);
+        #endif
         }
     }
 
