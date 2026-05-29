@@ -1,7 +1,8 @@
 //using System.Drawing;
 using System.Runtime.InteropServices;
 using OpenCvSharp;
-
+using System.Diagnostics;
+using System.IO;
 
 namespace EVEEchoesBot
 {
@@ -16,8 +17,9 @@ namespace EVEEchoesBot
         // --- Глобальные утилиты ---
         private static readonly Random _random = new();
 
-        // Глобальный список аккаунтов, для которых размер окна уже был успешно подогнан
-        public static readonly System.Collections.Generic.HashSet<string> _resizedAccounts = [];
+        // Используем ConcurrentDictionary вместо HashSet для полной потокобезопасности
+        public static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _resizedAccounts = new();
+
 
 #endregion
 
@@ -25,6 +27,7 @@ namespace EVEEchoesBot
 
         /// <summary>
         /// Делает скриншот целевого окна и возвращает его в формате матрицы OpenCV (Mat).
+        /// В режиме отладки (DEBUG) автоматически сохраняет снимок в папку проекта.
         /// </summary>
         /// <param name="hWnd">Дескриптор окна эмулятора.</param>
         /// <returns>Матрица <see cref="Mat"/> с изображением, или null в случае ошибки.</returns>
@@ -86,6 +89,32 @@ namespace EVEEchoesBot
                 mat = new Mat(height, width, MatType.CV_8UC4);
                 Marshal.Copy(rawPixels, 0, mat.Data, rawPixels.Length);
 
+#if DEBUG
+                try
+                {
+                    // Находим путь к папке проекта (на 3 уровня выше bin/Debug/netX.X)
+                    string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                    string projectDir = Path.GetFullPath(Path.Combine(baseDir, @"..\..\..\"));
+
+                    // Создаем папку DebugScreenshots внутри проекта
+                    //string saveDir = Path.Combine(projectDir, "DebugScreenshots");
+                    //Directory.CreateDirectory(saveDir);
+
+                    // Формируем имя файла с временной меткой
+                    const string fileName = "debug_screenshot.png";
+                    string targetFolder = Path.Combine(projectDir, "DebugScreenshots");
+                    string filePath = Path.Combine(targetFolder, fileName);
+
+                    // Сохраняем матрицу на диск
+                    Cv2.ImWrite(filePath, mat);
+                    Logger.Log($"Скриншот сохранен: {fileName}", LogType.Test);
+                }
+                catch (Exception dbgEx)
+                {
+                    Logger.Log($"Не удалось сохранить скриншот на диск: {dbgEx.Message}", LogType.Test);
+                }
+#endif
+
                 return mat;
             }
             catch (Exception ex)
@@ -106,11 +135,11 @@ namespace EVEEchoesBot
                 // Проверяем успешность освобождения контекста устройства (DC)
                 if (WinAPI.ReleaseDC(hWnd, hdcWindow) == 0)
                 {
-                    // Используем Logger.Log без указания аккаунта, он определится автоматически
                     Logger.Log($"Не удалось освободить контекст устройства (ReleaseDC) для hWnd: {hWnd}", LogType.Warning);
                 }
             }
         }
+
 
 #endregion
 
@@ -165,21 +194,21 @@ namespace EVEEchoesBot
                 Cv2.MatchTemplate(grayScreen, grayTemplate, result, TemplateMatchModes.CCoeffNormed);
                 Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out Point maxLoc);
 
-    #if DEBUG
-                // Вывод отладочной информации через новый Test лог
-                Logger.Log($"Диагностика {Path.GetFileName(templatePath)}: Макс. совпадение = {maxVal * 100:F1}%", LogType.Test);
-    #endif
+                int offsetX = searchArea?.X ?? 0;
+                int offsetY = searchArea?.Y ?? 0;
+
+                // Вычисляем координаты центра найденного объекта на исходном полном скриншоте
+                int centerX = offsetX + maxLoc.X + (matTemplate.Width / 2);
+                int centerY = offsetY + maxLoc.Y + (matTemplate.Height / 2);
+
+        #if DEBUG
+                // Расширенный вывод отладочной информации: процент совпадения, точка локального совпадения и глобальный центр
+                Logger.Log($"{Path.GetFileName(templatePath)}: Совпадение = {maxVal * 100:F1}%, Точка X={maxLoc.X} Y={maxLoc.Y}, Центр X={centerX} Y={centerY}", LogType.Test);
+        #endif
 
                 // Проверяем, превысил ли результат установленный порог точности
                 if (maxVal >= threshold)
                 {
-                    int offsetX = searchArea?.X ?? 0;
-                    int offsetY = searchArea?.Y ?? 0;
-
-                    // Вычисляем координаты центра найденного объекта на исходном полном скриншоте
-                    int centerX = offsetX + maxLoc.X + (matTemplate.Width / 2);
-                    int centerY = offsetY + maxLoc.Y + (matTemplate.Height / 2);
-
                     return new Point(centerX, centerY);
                 }
 
@@ -200,6 +229,25 @@ namespace EVEEchoesBot
             }
         }
 
+
+#endregion
+
+#region ClampRegion
+
+        /// <summary>
+        /// Корректирует прямоугольник под фактические размеры изображения, предотвращая вылет OpenCV.
+        /// </summary>
+        public static Rect ClampRegion(Rect region, int maxWidth, int maxHeight)
+        {
+            int x = Math.Max(0, Math.Min(region.X, maxWidth - 1));
+            int y = Math.Max(0, Math.Min(region.Y, maxHeight - 1));
+
+            int width = Math.Min(region.Width, maxWidth - x);
+            int height = Math.Min(region.Height, maxHeight - y);
+
+            return new Rect(x, y, width, height);
+        }
+
 #endregion
 
 #region SmartClick
@@ -208,85 +256,91 @@ namespace EVEEchoesBot
         /// Аппаратно эмулирует клик мыши на уровне драйвера Windows с помощью SendInput.
         /// Оптимизирован для молниеносного и чёткого нажатия с защитой от антикликеров.
         /// </summary>
-        /// <param name="hWnd">   Дескриптор окна эмулятора.                                       </param>
         /// <param name="x">      Координата X относительно окна.                                  </param>
         /// <param name="y">      Координата Y относительно окна.                                  </param>
         /// <param name="minSec"> Минимальное время случайной задержки перед кликом (в секундах).  </param>
         /// <param name="maxSec"> Максимальное время случайной задержки перед кликом (в секундах). </param>
         /// <param name="offset"> Радиус случайного разброса пикселей от центра клика.             </param>
-        public static void SmartClick(
-            IntPtr hWnd,
-            int x,
-            int y,
-            int minSec = 1,
-            int maxSec = 5,
-            int offset = 10)
-        {
-            if (hWnd == IntPtr.Zero)
+
+            public static void SmartClick(
+                int x,
+                int y,
+                int minSec = 1,
+                int maxSec = 5,
+                int offset = 10,
+                int adbPort = 5555)
             {
-                Logger.Log("Передан пустой дескриптор окна (IntPtr.Zero). Кликер отменен.", LogType.Warning);
-                return;
+                if (minSec > 0 || maxSec > 0)
+                {
+                    Thread.Sleep(GetRandomDelayMs(minSec, maxSec));
+                }
+
+                int finalX = x + _random.Next(-offset, offset + 1);
+                int finalY = y + _random.Next(-offset, offset + 1);
+
+                string adbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "adb.exe"); 
+
+                if (!File.Exists(adbPath))
+                {
+                    Logger.Log($"Крит: Файл adb.exe не найден: {adbPath}", LogType.Error);
+                    return;
+                }
+
+                string deviceTarget = $"127.0.0.1:{adbPort}";
+                string argsConnect = $"connect {deviceTarget}";
+
+                try
+                {
+                    // 1. Коннект к порту
+                    ProcessStartInfo psiConnect = new(adbPath, argsConnect) { CreateNoWindow = true, UseShellExecute = false };
+                    Process.Start(psiConnect)?.WaitForExit();
+
+                    // 2. УЗНАЕМ РЕАЛЬНОЕ РАЗРЕШЕНИЕ ЭМУЛЯТОРА ИЗНУТРИ ANDROID
+                    // Иногда BlueStacks снаружи имеет 1280x720, а внутри Android считает себя 1920x1080 (из-за DPI)
+                    ProcessStartInfo psiSize = new(adbPath, $"-s {deviceTarget} shell wm size") 
+                    { 
+                        CreateNoWindow = true, 
+                        UseShellExecute = false, 
+                        RedirectStandardOutput = true 
+                    };
+                    var procSize = Process.Start(psiSize);
+                    string outputSize = procSize?.StandardOutput.ReadToEnd() ?? "";
+                    procSize?.WaitForExit();
+
+                    // Если Android выдал кастомный размер (например, "Physical size: 1920x1080")
+                    if (outputSize.Contains(":") && outputSize.Contains("x"))
+                    {
+                        string sizeStr = outputSize.Split(':')[1].Trim(); // "1920x1080"
+                        string[] wAndH = sizeStr.Split('x');
+                        if (wAndH.Length == 2 && int.TryParse(wAndH[0], out int internalW) && int.TryParse(wAndH[1], out int internalH))
+                        {
+                            // Если внутреннее разрешение не совпадает со стандартным 1280x720, пропорционально масштабируем клик
+                            if (internalW != 1280 && internalW > 0)
+                            {
+                                finalX = (int)(finalX * ((double)internalW / 1280.0));
+                                finalY = (int)(finalY * ((double)internalH / 720.0));
+                            }
+                        }
+                    }
+
+                    // 3. ОТПРАВЛЯЕМ КЛИК ЧЕРЕЗ АЛЬТЕРНАТИВНЫЙ СИНТАКСИС (input text / input keyevent / input tap)
+                    // Мы склеим стандартный input tap и принудительную активацию окна
+                    string argsTap = $"-s {deviceTarget} shell input tap {finalX} {finalY}";
+                    
+                    ProcessStartInfo psiTap = new(adbPath, argsTap) { CreateNoWindow = true, UseShellExecute = false };
+                    Process.Start(psiTap)?.WaitForExit();
+
+            #if DEBUG
+                    Logger.Log($"[DirectX-ADB-OK] Устройство: {deviceTarget} | Проекция-Тап: ({finalX}, {finalY})", LogType.Test);
+            #endif
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Ошибка ADB кликера: {ex.Message}", LogType.Error);
+                }
             }
 
-            // 1. Рандомная задержка перед действием (анти-детект система)
-            if (minSec > 0 || maxSec > 0)
-            {
-                int initialDelay = GetRandomDelayMs(minSec, maxSec);
-                Thread.Sleep(initialDelay);
-            }
 
-            // 2. Расчет координат внутри окна со случайным микро-смещением (имитация руки человека)
-            int finalX = x + _random.Next(-offset, offset + 1);
-            int finalY = y + _random.Next(-offset, offset + 1);
-
-            // 3. Выводим окно эмулятора на передний план (SendInput работает только с активным окном)
-            WinAPI.SetForegroundWindow(hWnd);
-
-            // 4. Переводим относительные координаты окна в реальные экранные пиксели
-            if (!WinAPI.GetWindowRect(hWnd, out WinAPI.RECT rect))
-            {
-                Logger.Log($"Не удалось получить координаты границ окна для hWnd: {hWnd}", LogType.Error);
-                return;
-            }
-
-            int screenX = rect.Left + finalX;
-            int screenY = rect.Top + finalY;
-
-            // 5. Мгновенно перемещаем курсор в точку клика
-            WinAPI.SetCursorPos(screenX, screenY);
-
-            // Константы для Windows API SendInput
-            const uint INPUT_MOUSE = 0;
-            const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
-            const uint MOUSEEVENTF_LEFTUP = 0x0004;
-
-            // Инициализируем массив ввода для оптимизации выделения памяти
-            WinAPI.INPUT[] inputs = new WinAPI.INPUT[2];
-
-            // СТРУКТУРА №1: Нажатие левой кнопки мыши
-            inputs[0] = new WinAPI.INPUT { type = INPUT_MOUSE };
-            inputs[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
-
-            // СТРУКТУРА №2: Отпускание левой кнопки мыши
-            inputs[1] = new WinAPI.INPUT { type = INPUT_MOUSE };
-            inputs[1].mi.dwFlags = MOUSEEVENTF_LEFTUP;
-
-            int inputSize = Marshal.SizeOf<WinAPI.INPUT>();
-
-            // 6. ВЫПОЛНЯЕМ КЛИК
-            // Шаг А: Зажимаем кнопку мыши
-            WinAPI.SendInput(1, [inputs[0]], inputSize);
-
-            // Анатомическая пауза удержания кнопки (20-40 мс), чтобы игровой движок EVE Echoes гарантированно зафиксировал нажатие
-            Thread.Sleep(_random.Next(20, 41));
-
-            // Шаг Б: Отпускаем кнопку мыши
-            WinAPI.SendInput(1, [inputs[1]], inputSize);
-
-    #if DEBUG
-            Logger.Log($"Выполнен клик по координатам экрана: ({screenX}, {screenY})", LogType.Test);
-    #endif
-        }
 
 #endregion
 
@@ -321,49 +375,51 @@ namespace EVEEchoesBot
 
 #region GetWindow
 
-public static IntPtr GetWindow(WindowSettings settings)
-{
-    // Привязываем контекст логгера к текущему обрабатываемому аккаунту
-    Program._currentAccount = settings;
+        public static IntPtr GetWindow(WindowSettings settings)
+        {
+            IntPtr hWnd = WinAPI.FindWindow(null, settings.WindowTitle);
 
-    IntPtr hWnd = WinAPI.FindWindow(null, settings.WindowTitle);
+            if (hWnd == IntPtr.Zero)
+            {
+                Logger.Log($"[{settings.Name}] Окно '{settings.WindowTitle}' не найдено.", LogType.Error);
+                return IntPtr.Zero;
+            }
 
-    if (hWnd == IntPtr.Zero)
-    {
-        Logger.Log($"Окно '{settings.WindowTitle}' не найдено.", LogType.Error);
-        return IntPtr.Zero;
-    }
+            // Проверяем, есть ли уже ключ в словаре
+            if (_resizedAccounts.ContainsKey(settings.Name))
+            {
+        #if DEBUG
+                Logger.Log($"[{settings.Name}] Окно уже подгонялось в этой сессии. Шаг пропущен.", LogType.Test);
+        #endif
+                return hWnd;
+            }
 
-    if (_resizedAccounts.Contains(settings.Name))
-    {
-#if DEBUG
-        Logger.Log("Окно уже подгонялось в этой сессии. Шаг пропущен.", LogType.Test);
-#endif
-        return hWnd;
-    }
+            if (settings.Size == null)
+            {
+                Logger.Log($"[{settings.Name}] В конфигурации отсутствует блок WindowSettings (Size)!", LogType.Error);
+                return hWnd;
+            }
 
-    if (settings.Size == null)
-    {
-        Logger.Log("В конфигурации отсутствует блок WindowSettings (Size)!", LogType.Error);
-        return hWnd;
-    }
+            int targetW = settings.Size.TargetWidth;
+            int targetH = settings.Size.TargetHeight;
 
-    int targetW = settings.Size.TargetWidth;
-    int targetH = settings.Size.TargetHeight;
+            if (ResizeWindow(hWnd, targetW, targetH))
+            {
+                Logger.Log($"[{settings.Name}] Окно подогнано под размер {targetW}x{targetH}", LogType.Test);
 
-    if (ResizeWindow(hWnd, targetW, targetH))
-    {
-        Logger.Log($"Окно подогнано под размер {targetW}x{targetH}", LogType.Test);
-        _resizedAccounts.Add(settings.Name);
-        Thread.Sleep(300);
-    }
-    else
-    {
-        Logger.Log("Не удалось изменить размер окна эмулятора.", LogType.Warning);
-    }
+                // Безопасно добавляем имя аккаунта в словарь (0 — просто заглушка)
+                _resizedAccounts.TryAdd(settings.Name, 0);
 
-    return hWnd;
-}
+                Thread.Sleep(300);
+            }
+            else
+            {
+                Logger.Log($"[{settings.Name}] Не удалось изменить размер окна эмулятора.", LogType.Warning);
+            }
+
+            return hWnd;
+        }
+
 
 
 

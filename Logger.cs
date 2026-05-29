@@ -20,27 +20,71 @@ namespace EVEEchoesBot
         public static void Log(
             string message,
             LogType type = LogType.Info,
-            string? accountName = null, // Меняем дефолт на null
-            [CallerMemberName] string callerMethod = "")
+            string? accountName = null,
+            [System.Runtime.CompilerServices.CallerMemberName] string callerMethod = "")
         {
-            // 1. Если имя не передано явно, пытаемся взять его из глобальной переменной
+            string eveSystem = "Unknown";
+
+            // 1. Потокобезопасный разбор имени аккаунта и игровой системы из сообщения
             if (string.IsNullOrEmpty(accountName))
             {
-                // Проверяем, что объект _currentAccount не равен null
-                // Замените .Name на реальное свойство вашего класса WindowSettings (например, .AccountName)
-                accountName = Program._currentAccount?.Name ?? "System";
+                // Если сообщение начинается с составного тега, например: "[EveAcc_1|Jita] Текст"
+                if (message.StartsWith('[') && message.Contains(']'))
+                {
+                    int closeBracketIndex = message.IndexOf(']');
+                    string rawTag = message[1..closeBracketIndex]; // Извлекаем "EveAcc_1|Jita"
+
+                    // Очищаем текст сообщения от тега и пробелов по краям
+                    message = message[(closeBracketIndex + 1)..].Trim();
+
+                    // Проверяем, есть ли внутри разделитель '|'
+                    if (rawTag.Contains('|'))
+                    {
+                        string[] parts = rawTag.Split('|');
+                        accountName = parts[0]; // Имя бота (до черты)
+                        eveSystem = parts[1];   // Имя системы (после черты)
+                    }
+                    else
+                    {
+                        accountName = rawTag;
+                        eveSystem = "System"; // Если системы нет в теге
+                    }
+                }
+                else
+                {
+                    accountName = "System";
+                    eveSystem = "System";
+                }
+            }
+            else
+            {
+                // Если accountName был явно передан в аргументы метода как "Имя|Система"
+                if (accountName.Contains('|'))
+                {
+                    string[] parts = accountName.Split('|');
+                    accountName = parts[0];
+                    eveSystem = parts[1];
+                }
             }
 
-            // 2. Строго по порядку: Дата -> Тип сообщения -> Вызвавший метод -> Аккаунт -> Текст
-            string formattedMessage = $"[{DateTime.Now:HH:mm:ss}] [{accountName}] -> [{type.ToString().ToUpper()}] -> [{callerMethod}]: {message}";
+            // 2. Новый строгий порядок вывода по вашему запросу: 
+            // Дата -> Вызвавший метод -> Аккаунт -> EVESystem -> Тип сообщения -> Текст
+            string formattedMessage = $"[{DateTime.Now:HH:mm:ss}] [{callerMethod}] [{accountName}] [{eveSystem}] [{type.ToString().ToUpper()}]: {message}";
             ConsoleColor color = GetColorForType(type);
 
         #if DEBUG
-            PrintToConsole(formattedMessage, color);
+            // Защищаем вывод в консоль от одновременной записи из разных параллельных потоков
+            lock (Console.Out)
+            {
+                PrintToConsole(formattedMessage, color);
+            }
         #else
+            // Отправка логов в релизную систему обработки/файл
             RouteReleaseLog(formattedMessage, color, type);
         #endif
         }
+
+
 
 #if !DEBUG
         private static void RouteReleaseLog(string message, ConsoleColor color, LogType type)

@@ -5,7 +5,8 @@
       "WindowTitle": "BlueStacks_EVE.01",
       "Script": "LocalWatcher",
       "FirstTask": "CheckSecurity",
-      "EVESystem": "Z-K495",
+      "EVESystem": "XM-4L0",
+      "AdbPort":5565,
       "WindowSettings": {
         "TargetWidth": 1280,
         "TargetHeight": 720

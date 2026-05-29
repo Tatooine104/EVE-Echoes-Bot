@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using static EVEEchoesBot.Logger;
 
 // ЗАМЕТКА: Убедитесь, что это пространство имен (namespace) совпадает с вашим основным файлом!
 namespace EVEEchoesBot
@@ -18,9 +19,12 @@ namespace EVEEchoesBot
     {
         public string Name        { get; set; } = "";
         public string WindowTitle { get; set; } = "";
+        public string Emulator    { get; set; } = "";
         public string Script      { get; set; } = "";
         public string FirstTask   { get; set; } = "";
         public string EVESystem   { get; set; } = "";
+        public string EVEShip     { get; set; } = "";
+        public int    AdbPort     { get; set; }
 
         // <-- 2. СЮДА ДОБАВЛЯЕМ АТРИБУТ СВЯЗИ С JSON
         [JsonPropertyName("WindowSettings")]
@@ -64,7 +68,7 @@ namespace EVEEchoesBot
                 BotConfig defaultConfig = CreateDefaultConfig();
                 Save(defaultConfig);
 
-                Logger.Log($"Создан новый файл конфигурации по умолчанию: {ConfigPath}", LogType.Info);
+                Log($"Создан новый файл конфигурации по умолчанию: {ConfigPath}", LogType.Info);
                 return defaultConfig;
             }
 
@@ -84,7 +88,7 @@ namespace EVEEchoesBot
             catch (Exception ex)
             {
                 // Переведено на вашу новую систему логирования
-                Logger.Log($"Не удалось прочитать или десериализовать конфиг: {ex.Message}", LogType.Error);
+                Log($"Не удалось прочитать или десериализовать конфиг: {ex.Message}", LogType.Error);
                 return new BotConfig();
             }
         }
@@ -104,12 +108,14 @@ namespace EVEEchoesBot
                 [
                     new WindowSettings
                     {
-                        Name = "Lana Muc",
+                        Name = "Somebody",
                         WindowTitle = "BlueStacks_EVE.01",
+                        Emulator = "BlueStacks",
                         Script = "LocalWatcher",
                         FirstTask = "CheckSecurity",
-                        EVESystem = "Z-K495",
-
+                        EVESystem = "Jita",
+                        EVEShip = "Covetor",
+                        AdbPort = 5555,
                         // ИСПРАВЛЕНО: возвращаем имя свойства Size. 
                         // Атрибут [JsonPropertyName] сам запишет его в JSON как "WindowSettings"
                         Size = new TargetSize
@@ -145,13 +151,13 @@ namespace EVEEchoesBot
 
     #if DEBUG
                 // Выводим информацию об успешном сохранении только в режиме отладки
-                Logger.Log($"Конфигурация успешно сохранена в файл: {ConfigPath}", LogType.Test);
+                Log($"Конфигурация успешно сохранена в файл: {ConfigPath}", LogType.Test);
     #endif
             }
             catch (Exception ex)
             {
                 // Переведено на вашу единую систему логирования ошибок
-                Logger.Log($"Не удалось сохранить конфигурацию в файл {ConfigPath}: {ex.Message}", LogType.Error);
+                Log($"Не удалось сохранить конфигурацию в файл {ConfigPath}: {ex.Message}", LogType.Error);
             }
         }
 

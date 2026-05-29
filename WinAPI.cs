@@ -6,6 +6,19 @@ namespace EVEEchoesBot
 {
     internal static partial class WinAPI
     {
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct POINT
+        {
+            public int X;
+            public int Y;
+        }
+
+        [LibraryImport("user32.dll")] // Генератор сам подставит EntryPoint, если имя совпадает
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static partial bool ClientToScreen(IntPtr hWnd, ref POINT lpPoint);
+
+
         // === Системные структуры данных ===
 
         [StructLayout(LayoutKind.Sequential)]
