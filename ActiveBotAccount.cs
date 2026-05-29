@@ -10,6 +10,9 @@ namespace EVEEchoesBot
 
     public class ActiveBotAccount
     {
+
+#region BOT params
+
         public WindowSettings Settings { get; }
         public IntPtr Hwnd { get; set; }
 
@@ -24,16 +27,21 @@ namespace EVEEchoesBot
             string firstTaskStr = settings.FirstTask ?? "Undocking";
             CurrentTask = firstTaskStr switch
             {
-                "Undocking"         => AccountTask.Undocking,
-                "GoToBelt"          => AccountTask.GoToBelt,
-                "Mining"            => AccountTask.Mining,
-                "GoToStation"       => AccountTask.GoToStation,
-                "Unloading"         => AccountTask.Unloading,
-                "CheckSecurity"     => AccountTask.CheckSecurity,
-                "CheckYourOwnState" => AccountTask.CheckYourOwnState,
-                _                   => AccountTask.CheckYourOwnState
+                "Undocking"          => AccountTask.Undocking,
+                "GoToBelt"           => AccountTask.GoToBelt,
+                "Mining"             => AccountTask.Mining,
+                "GoToStation"        => AccountTask.GoToStation,
+                "Unloading"          => AccountTask.Unloading,
+                "CheckSecurity"      => AccountTask.CheckSecurity,
+                "CheckYourOwnState"  => AccountTask.CheckYourOwnState,
+                "SendAliChatWarning" => AccountTask.SendAliChatWarning,
+                _                    => AccountTask.CheckYourOwnState
             };
         }
+
+#endregion
+
+#region Start
 
         public void Start(CancellationToken globalToken)
         {
@@ -43,12 +51,20 @@ namespace EVEEchoesBot
             Task.Run(() => RunLoopAsync(_accountCts.Token), _accountCts.Token);
         }
 
+#endregion
+
+#region Stop
+
         public void Stop() => _accountCts?.Cancel();
+
+#endregion
+
+#region RunLoopAsync
 
         private async Task RunLoopAsync(CancellationToken token)
         {
             Logger.Log($"[{Settings.Name}|{Settings.EVESystem}] Поток запущен. Начинаю непрерывный мониторинг безопасности...", LogType.Info);
-            
+
             // Принудительно стартуем с проверки безопасности
             CurrentTask = AccountTask.CheckSecurity;
 
@@ -71,19 +87,19 @@ namespace EVEEchoesBot
                             {
                                 // Сработает, если хотя бы один маркер пропал (найден минус или нейтрал)
                                 Logger.Log($"[{Settings.Name}|{Settings.EVESystem}] ОБНАРУЖЕНА УГРОЗА! Приостанавливаю мониторинг. Перехожу к оповещению альянса.", LogType.Error);
-                                
+
                                 // Инициализируем действие: переключаем стейт-машину на задачу отправки варнинга
                                 // (Используем стейт CheckYourOwnState как триггер макроса оповещения)
-                                CurrentTask = AccountTask.CheckYourOwnState; 
+                                CurrentTask = AccountTask.CheckYourOwnState;
                             }
                             break;
 
-                        case AccountTask.CheckYourOwnState:
+                        case AccountTask.SendAliChatWarning:
                             // ВЫПОЛНЯЕМ ЦЕПОЧКУ КЛИКОВ ОПОВЕЩЕНИЯ В АЛЬЯНС-ЧАТ
                             // Ключевое слово 'await' заставит этот поток ЖДАТЬ (около 15 секунд), 
                             // пока бот полностью прокликает все меню. Проверка локала в этот момент полностью остановлена!
                             await RunAliChatWarningAsync(token);
-                            
+
                             // После того, как варнинг успешно отправлен, возвращаем бота обратно на мониторинг локала
                             CurrentTask = AccountTask.CheckSecurity;
                             break;
@@ -110,11 +126,7 @@ namespace EVEEchoesBot
             Logger.Log($"[{Settings.Name}|{Settings.EVESystem}] Поток мониторинга остановлен.", LogType.Info);
         }
 
-
-
-
-
-
+#endregion
 
 #region CheckSecurityStatus 
 
@@ -309,13 +321,11 @@ namespace EVEEchoesBot
 
             // 3. СБОЙ ИНТЕРФЕЙСА: foundCount == 0 (Ни один маркер не найден, чат перекрылся или закрылся)
             Logger.Log($"[{Settings.Name}|{Settings.EVESystem}] Маркеры безопасности полностью пропали с экрана. Интерфейс не готов!", LogType.Warning);
-            
+
             // При полном пропадании интерфейса мы тоже обязаны вернуть false, 
             // чтобы бот не думал, что всё безопасно, а повторил попытку анализа или развернул чат заново.
-            return false; 
+            return false;
         }
-
-
 
 #endregion
 
@@ -471,7 +481,10 @@ private async Task RunAliChatWarningAsync(CancellationToken token)
 
 #endregion
 
+#region _isSaveLocal
+
         private bool? _isSaveLocal;
+
         public bool? IsSaveLocal
         {
             get => _isSaveLocal;
@@ -494,19 +507,25 @@ private async Task RunAliChatWarningAsync(CancellationToken token)
 
     }
 
+#endregion
+
+#region AccountTask
+
     // Перечисление для задач (что делать боту дальше) 
     // [v] Продумать список возможных действий
     // [v] Добавить действие "Осмотреться"
     public enum AccountTask
     {
-        Undocking,        // Выйти из дока
-        GoToBelt,         // Отправиться в зону добычи
-        Mining,           // Добывать руду
-        GoToStation,      // Вернуться на станцию
-        Unloading,        // Выгрузить руду на станцию
-        CheckSecurity,    // Проверить статус безопастности
-        CheckYourOwnState // Проверить текущее состояние
+        Undocking,         // Выйти из дока
+        GoToBelt,          // Отправиться в зону добычи
+        Mining,            // Добывать руду
+        GoToStation,       // Вернуться на станцию
+        Unloading,         // Выгрузить руду на станцию
+        CheckSecurity,     // Проверить статус безопастности
+        CheckYourOwnState, // Проверить текущее состояние
+        SendAliChatWarning
     }
 
+#endregion
 
 }
