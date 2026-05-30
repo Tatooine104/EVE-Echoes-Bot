@@ -4,6 +4,8 @@ using OpenCvSharp;
 using System.Diagnostics;
 using System.IO;
 
+// [v] TODO 2026.05.30 Привести все тексты логгера к единому стилю 
+
 namespace EVEEchoesBot
 {
 
@@ -11,6 +13,8 @@ namespace EVEEchoesBot
 
     public static class Tools
     {
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 #region Globals
 
@@ -22,6 +26,8 @@ namespace EVEEchoesBot
 
 
 #endregion
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 #region CaptureWindow
 
@@ -35,13 +41,13 @@ namespace EVEEchoesBot
         {
             if (hWnd == IntPtr.Zero)
             {
-                Logger.Log("Неверный дескриптор окна (IntPtr.Zero)", LogType.Warning);
+                Logger.Log("Неверный дескриптор целевого окна.", LogType.Warning);
                 return null;
             }
 
             if (!WinAPI.GetWindowRect(hWnd, out WinAPI.RECT rect))
             {
-                Logger.Log($"Не удалось получить размеры окна для hWnd: {hWnd}", LogType.Error);
+                Logger.Log($"Не удалось получить геометрические размеры окна {hWnd}", LogType.Error);
                 return null;
             }
 
@@ -50,7 +56,7 @@ namespace EVEEchoesBot
 
             if (width <= 0 || height <= 0)
             {
-                Logger.Log($"Некорректные размеры окна: {width}x{height}", LogType.Warning);
+                Logger.Log($"Обнаружены некорректные размеры окна: {width}x{height}.", LogType.Warning);
                 return null;
             }
 
@@ -67,7 +73,7 @@ namespace EVEEchoesBot
                 // Рендеринг содержимого окна в контекст памяти
                 if (!WinAPI.PrintWindow(hWnd, hdcMem, WinAPI.PW_RENDERFULLCONTENT))
                 {
-                    Logger.Log("WinAPI.PrintWindow вернул ошибку при захвате кадра", LogType.Warning);
+                    Logger.Log("Функция захвата окна вернула ошибку при копировании графического буфера.", LogType.Warning);
                 }
 
                 // Настройка структуры BITMAPINFOHEADER (отрицательная высота переворачивает изображение правильно)
@@ -107,11 +113,11 @@ namespace EVEEchoesBot
 
                     // Сохраняем матрицу на диск
                     Cv2.ImWrite(filePath, mat);
-                    Logger.Log($"Скриншот сохранен: {fileName}", LogType.Test);
+                    Logger.Log($"Снимок экрана сохранен по пути '{fileName}'.", LogType.Test);
                 }
                 catch (Exception dbgEx)
                 {
-                    Logger.Log($"Не удалось сохранить скриншот на диск: {dbgEx.Message}", LogType.Test);
+                    Logger.Log($"Не удалось сохранить снимок экрана на диск: {dbgEx.Message}", LogType.Test);
                 }
 #endif
 
@@ -119,7 +125,7 @@ namespace EVEEchoesBot
             }
             catch (Exception ex)
             {
-                Logger.Log($"Критическая ошибка при создании скриншота: {ex.Message}", LogType.Error);
+                Logger.Log($"Критический сбой при захвате экрана: {ex.Message}", LogType.Error);
 
                 // Защита от утечки памяти: если матрица была создана, но упал Marshal.Copy
                 mat?.Dispose();
@@ -135,13 +141,15 @@ namespace EVEEchoesBot
                 // Проверяем успешность освобождения контекста устройства (DC)
                 if (WinAPI.ReleaseDC(hWnd, hdcWindow) == 0)
                 {
-                    Logger.Log($"Не удалось освободить контекст устройства (ReleaseDC) для hWnd: {hWnd}", LogType.Warning);
+                    Logger.Log("Не удалось освободить графический контекст устройства.", LogType.Warning);
                 }
             }
         }
 
 
 #endregion
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 #region FindTemplateInRegion
 
@@ -161,54 +169,47 @@ namespace EVEEchoesBot
         {
             if (screen?.Empty() is not false) return null;
 
-            // Определяем рабочую область (весь экран или ROI под-матрица)
             Mat croppedScreen = searchArea.HasValue
                 ? new Mat(screen, searchArea.Value)
                 : screen;
 
             try
             {
-                // Загружаем файл шаблона с диска
                 using var matTemplate = Cv2.ImRead(templatePath, ImreadModes.Color);
                 if (matTemplate.Empty())
                 {
-                    Logger.Log($"Не удалось загрузить шаблон: {templatePath}", LogType.Error);
+                    Logger.Log($"Не удалось загрузить файл шаблона по пути '{templatePath}'.", LogType.Error);
                     return null;
                 }
 
-                // Проверяем, помещается ли шаблон в выбранную область поиска
                 if (matTemplate.Width > croppedScreen.Width || matTemplate.Height > croppedScreen.Height)
                 {
-                    Logger.Log($"Шаблон {Path.GetFileName(templatePath)} ({matTemplate.Width}x{matTemplate.Height}) больше области поиска ({croppedScreen.Width}x{croppedScreen.Height})!", LogType.Warning);
+                    Logger.Log($"Файл шаблона '{Path.GetFileName(templatePath)}' ({matTemplate.Width}x{matTemplate.Height}) превышает размеры области поиска ({croppedScreen.Width}x{croppedScreen.Height}).", LogType.Warning);
                     return null;
                 }
 
-                // Переводим изображения в оттенки серого для повышения скорости и точности поиска
                 using Mat grayScreen = new();
                 using Mat grayTemplate = new();
                 Cv2.CvtColor(croppedScreen, grayScreen, ColorConversionCodes.BGR2GRAY);
                 Cv2.CvtColor(matTemplate, grayTemplate, ColorConversionCodes.BGR2GRAY);
 
-                // Выполняем сопоставление шаблонов (Template Matching)
                 using Mat result = new();
                 Cv2.MatchTemplate(grayScreen, grayTemplate, result, TemplateMatchModes.CCoeffNormed);
                 Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out Point maxLoc);
 
-                int offsetX = searchArea?.X ?? 0;
-                int offsetY = searchArea?.Y ?? 0;
-
-                // Вычисляем координаты центра найденного объекта на исходном полном скриншоте
-                int centerX = offsetX + maxLoc.X + (matTemplate.Width / 2);
-                int centerY = offsetY + maxLoc.Y + (matTemplate.Height / 2);
-
-        #if DEBUG
-                // Расширенный вывод отладочной информации: процент совпадения, точка локального совпадения и глобальный центр
-                Logger.Log($"{Path.GetFileName(templatePath)}: Совпадение = {maxVal * 100:F1}%, Точка X={maxLoc.X} Y={maxLoc.Y}, Центр X={centerX} Y={centerY}", LogType.Test);
-        #endif
-
                 // Проверяем, превысил ли результат установленный порог точности
                 if (maxVal >= threshold)
                 {
+                    int offsetX = searchArea?.X ?? 0;
+                    int offsetY = searchArea?.Y ?? 0;
+
+                    int centerX = offsetX + maxLoc.X + (matTemplate.Width / 2);
+                    int centerY = offsetY + maxLoc.Y + (matTemplate.Height / 2);
+
+#if DEBUG
+                    // Пишем в лог ТОЛЬКО если картинка действительно прошла порог и мы её возвращаем
+                    Logger.Log($"Анализ шаблона '{Path.GetFileName(templatePath)}': совпадение = {maxVal * 100:F1}%, локация (X={maxLoc.X}, Y={maxLoc.Y}), центр (X={centerX}, Y={centerY}).", LogType.Test);
+#endif
                     return new Point(centerX, centerY);
                 }
 
@@ -216,12 +217,11 @@ namespace EVEEchoesBot
             }
             catch (Exception ex)
             {
-                Logger.Log($"Ошибка при поиске шаблона {Path.GetFileName(templatePath)}: {ex.Message}", LogType.Error);
+                Logger.Log($"Сбой при сопоставлении шаблона '{Path.GetFileName(templatePath)}': {ex.Message}", LogType.Error);
                 return null;
             }
             finally
             {
-                // Гарантированное освобождение памяти под-матрицы в одном месте без дублирования
                 if (searchArea.HasValue)
                 {
                     croppedScreen.Dispose();
@@ -231,6 +231,8 @@ namespace EVEEchoesBot
 
 
 #endregion
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 #region ClampRegion
 
@@ -249,6 +251,8 @@ namespace EVEEchoesBot
         }
 
 #endregion
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 #region SmartClick
 
@@ -278,11 +282,11 @@ namespace EVEEchoesBot
                 int finalX = x + _random.Next(-offset, offset + 1);
                 int finalY = y + _random.Next(-offset, offset + 1);
 
-                string adbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "adb.exe"); 
+                string adbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "adb.exe");
 
                 if (!File.Exists(adbPath))
                 {
-                    Logger.Log($"Крит: Файл adb.exe не найден: {adbPath}", LogType.Error);
+                    Logger.Log($"Файл 'adb.exe' не найден по пути '{adbPath}'.", LogType.Error);
                     return;
                 }
 
@@ -297,18 +301,18 @@ namespace EVEEchoesBot
 
                     // 2. УЗНАЕМ РЕАЛЬНОЕ РАЗРЕШЕНИЕ ЭМУЛЯТОРА ИЗНУТРИ ANDROID
                     // Иногда BlueStacks снаружи имеет 1280x720, а внутри Android считает себя 1920x1080 (из-за DPI)
-                    ProcessStartInfo psiSize = new(adbPath, $"-s {deviceTarget} shell wm size") 
-                    { 
-                        CreateNoWindow = true, 
-                        UseShellExecute = false, 
-                        RedirectStandardOutput = true 
+                    ProcessStartInfo psiSize = new(adbPath, $"-s {deviceTarget} shell wm size")
+                    {
+                        CreateNoWindow = true,
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true
                     };
                     var procSize = Process.Start(psiSize);
                     string outputSize = procSize?.StandardOutput.ReadToEnd() ?? "";
                     procSize?.WaitForExit();
 
                     // Если Android выдал кастомный размер (например, "Physical size: 1920x1080")
-                    if (outputSize.Contains(":") && outputSize.Contains("x"))
+                    if (outputSize.Contains(':') && outputSize.Contains('x'))
                     {
                         string sizeStr = outputSize.Split(':')[1].Trim(); // "1920x1080"
                         string[] wAndH = sizeStr.Split('x');
@@ -326,23 +330,25 @@ namespace EVEEchoesBot
                     // 3. ОТПРАВЛЯЕМ КЛИК ЧЕРЕЗ АЛЬТЕРНАТИВНЫЙ СИНТАКСИС (input text / input keyevent / input tap)
                     // Мы склеим стандартный input tap и принудительную активацию окна
                     string argsTap = $"-s {deviceTarget} shell input tap {finalX} {finalY}";
-                    
+
                     ProcessStartInfo psiTap = new(adbPath, argsTap) { CreateNoWindow = true, UseShellExecute = false };
                     Process.Start(psiTap)?.WaitForExit();
 
             #if DEBUG
-                    Logger.Log($"[DirectX-ADB-OK] Устройство: {deviceTarget} | Проекция-Тап: ({finalX}, {finalY})", LogType.Test);
+                    Logger.Log($"Отправка команды клика на устройство '{deviceTarget}': координаты (X={finalX}, Y={finalY}).", LogType.Test);
             #endif
                 }
                 catch (Exception ex)
                 {
-                    Logger.Log($"Ошибка ADB кликера: {ex.Message}", LogType.Error);
+                    Logger.Log($"Сбой при отправке команды клика через ADB: {ex.Message}", LogType.Error);
                 }
             }
 
 
 
 #endregion
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 #region GetRandomDelayMs
 
@@ -371,11 +377,11 @@ namespace EVEEchoesBot
 
 #endregion
 
-
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 #region GetWindow
 
-        public static IntPtr GetWindow(WindowSettings settings)
+        public static IntPtr GetWindow(AccSettings settings)
         {
             IntPtr hWnd = WinAPI.FindWindow(null, settings.WindowTitle);
 
@@ -389,14 +395,14 @@ namespace EVEEchoesBot
             if (_resizedAccounts.ContainsKey(settings.Name))
             {
         #if DEBUG
-                Logger.Log($"[{settings.Name}] Окно уже подгонялось в этой сессии. Шаг пропущен.", LogType.Test);
+                Logger.Log($"[{settings.Name}] Окно уже настроено в текущей сессии. Коррекция размеров пропущена.", LogType.Test);
         #endif
                 return hWnd;
             }
 
             if (settings.Size == null)
             {
-                Logger.Log($"[{settings.Name}] В конфигурации отсутствует блок WindowSettings (Size)!", LogType.Error);
+                Logger.Log($"[{settings.Name}] В файле конфигурации отсутствует блок настроек размеров 'AccSettings'.", LogType.Error);
                 return hWnd;
             }
 
@@ -405,7 +411,7 @@ namespace EVEEchoesBot
 
             if (ResizeWindow(hWnd, targetW, targetH))
             {
-                Logger.Log($"[{settings.Name}] Окно подогнано под размер {targetW}x{targetH}", LogType.Test);
+                Logger.Log($"[{settings.Name}] Размеры окна скорректированы под разрешение {targetW}x{targetH}.", LogType.Test);
 
                 // Безопасно добавляем имя аккаунта в словарь (0 — просто заглушка)
                 _resizedAccounts.TryAdd(settings.Name, 0);
@@ -414,17 +420,15 @@ namespace EVEEchoesBot
             }
             else
             {
-                Logger.Log($"[{settings.Name}] Не удалось изменить размер окна эмулятора.", LogType.Warning);
+                Logger.Log($"[{settings.Name}] Не удалось изменить геометрические размеры окна эмулятора.", LogType.Warning);
             }
 
             return hWnd;
         }
 
-
-
-
 #endregion
 
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 #region ResizeWindow
 
@@ -451,7 +455,7 @@ namespace EVEEchoesBot
             {
                 if (!WinAPI.GetWindowRect(hWnd, out currentRect))
                 {
-                    Logger.Log($"Не удалось определить текущие координаты окна для hWnd: {hWnd}", LogType.Error);
+                    Logger.Log($"Не удалось определить текущие координаты целевого окна: {hWnd}", LogType.Error);
                     return false;
                 }
             }
@@ -473,13 +477,15 @@ namespace EVEEchoesBot
 
             if (!success)
             {
-                Logger.Log($"WinAPI.MoveWindow вернул ошибку при изменении геометрии окна {hWnd}", LogType.Warning);
+                Logger.Log("Функция изменения геометрии окна вернула ошибку.", LogType.Warning);
             }
 
             return success;
         }
 
 #endregion
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
     }
 }

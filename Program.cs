@@ -7,57 +7,64 @@ using System.Diagnostics;
 namespace EVEEchoesBot
 {
 
-// [ ] TODO Проверить все методы и добавить новый метод Logger.Log() 
+// [v] TODO Проверить все методы и добавить новый метод Logger.Log() 
+// [v] TODO 2026.05.30 Привести все тексты логгера к единому стилю 
 // [v] TODO 2026.05.27 Заменить все SmartClick с координатами на вызовы по енуму 
 
     static partial class Program
     {
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
         #region Constants & Fields
 
         // 1. Создаем глобальный источник токена отмены
         private static CancellationTokenSource _cts = new();
 
-        #endregion
+        // Флаг для предотвращения повторного входа в метод остановки
+        private static int _isStopping = 0;
 
+        // 1. Глобальные переменные для управления состоянием
+        public static readonly List<ActiveBotAccount> _activeBots = [];
+        private static BotConfig? _config;
 
-    // 1. Глобальные переменные для управления состоянием
-    private static readonly List<ActiveBotAccount> _activeBots = [];
-    private static BotConfig? _config;
+        /// <summary>
+        /// Глобальный путь к папке Images в корне проекта.
+        /// </summary>
+        public static string TemplatesDir => Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\..\..\Images"));
 
-    /// <summary>
-    /// Глобальный путь к папке Images в корне проекта.
-    /// </summary>
-    public static string TemplatesDir => Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\..\..\Images"));
+        public enum GameUi
+        {
+            // ИмяЭлемента = (X * 10000) + Y (упаковываем X и Y в одно число для Enum)
+            // MenuButton = 500450,    // X: 50,  Y: 450 (Ваш пример)
+            ChatButtSend   =  4450695, // Кнопка чата "Send"
+            WindowCenter   =  8000250, // Точка чуть ниже и правее центра окна
+            ChatMessScout  =  3000600, // Сообщение "Scout"
+            ChatInform     =   800400, // Меню "Inform"
+            ChatFastInput  = 11900685, // Мню быстрого ввода
+            ChatInputMenu  =  3650700, // Меню ввода чата
+            ChatTabAli     =   500450, // Вкладка чата альянса
+            ChatsInterface =   250625  // Интерфейс чатов
 
-    public enum GameUi
-    {
-        // ИмяЭлемента = (X * 10000) + Y (упаковываем X и Y в одно число для Enum)
-        // MenuButton = 500450,    // X: 50,  Y: 450 (Ваш пример)
-        ChatButtSend   =  4450695, // Кнопка чата "Send"
-        WindowCenter   =  8000250, // Точка чуть ниже и правее центра окна
-        ChatMessScout  =  3000600, // Сообщение "Scout"
-        ChatInform     =   800400, // Меню "Inform"
-        ChatFastInput  = 12500700, // Мню быстрого ввода
-        ChatInputMenu  =  3650700, // Меню ввода чата
-        ChatTabAli     =   500450, // Вкладка чата альянса
-        ChatsInterface =   250600  // Интерфейс чатов
+            // hWnd.ClickTo(GameUi.ChatTabAli); // Пример вызова
 
-        // hWnd.ClickTo(GameUi.ChatTabAli); // Пример вызова
+        }
 
-    }
+#endregion
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-// - + - + - + - + - |  Основная программа   | - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 #region Main
 
-
     public static void Main()
     {
-        Logger.Log("Бот успешно запущен.", LogType.Success);
-        Logger.Log("Нажмите [ESC] в любой момент для плавной остановки скрипта.", LogType.Info);
+
+        Console.OutputEncoding = System.Text.Encoding.UTF8;
+        Console.InputEncoding = System.Text.Encoding.UTF8;
+
+        Logger.Log("Бот успешно запущен.", LogType.Info);
+        Logger.Log("Нажмите [ESC] в любой момент для плавной остановки.", LogType.Info);
+
 
         // Запуск фонового потока для непрерывного отслеживания нажатия управляющих клавиш
         Thread inputThread = new(ListenForCancelKey) { IsBackground = true };
@@ -75,12 +82,12 @@ namespace EVEEchoesBot
         }
         catch (Exception ex)
         {
-            Logger.Log($"Ошибка в главном потоке: {ex.Message}", LogType.Error);
+            Logger.Log($"Критический сбой в главном потоке: {ex.Message}", LogType.Error);
         }
 
         // Перед выходом даем потокам ботов время на плавное закрытие
         StopMultiBotSystem();
-        Thread.Sleep(1000); 
+        Thread.Sleep(1000);
 
         Logger.Log("Бот остановлен. Сессия завершена.", LogType.Warning);
     }
@@ -89,7 +96,9 @@ namespace EVEEchoesBot
 
 #endregion
 
-#region StartMultiBotSystem
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
+#region Start Bot
 
         private static void StartMultiBotSystem()
         {
@@ -114,12 +123,12 @@ namespace EVEEchoesBot
                 if (_cts.IsCancellationRequested) _cts = new CancellationTokenSource();
                 _activeBots.Clear();
 
-                foreach (WindowSettings accountSettings in _config.Accounts)
+                foreach (AccSettings accountSettings in _config.Accounts)
                 {
                     IntPtr hWnd = WinAPI.FindWindow(null, accountSettings.WindowTitle);
                     if (hWnd == IntPtr.Zero)
                     {
-                        Logger.Log($"[Ошибка] Не найдено окно '{accountSettings.WindowTitle}' для аккаунта '{accountSettings.Name}'.", LogType.Error);
+                        Logger.Log($"Окно '{accountSettings.WindowTitle}' для аккаунта '{accountSettings.Name}' не найдено.", LogType.Error);
                         continue;
                     }
 
@@ -127,10 +136,10 @@ namespace EVEEchoesBot
                     if (File.Exists(adbPath))
                     {
                         string targetDevice = $"127.0.0.1:{accountSettings.AdbPort}";
-                        
+
                         // Коннектим эмулятор по порту, который вы нашли глазами в настройках
                         Process.Start(new ProcessStartInfo(adbPath, $"connect {targetDevice}") { CreateNoWindow = true, UseShellExecute = false })?.WaitForExit();
-                        
+
                         // Включаем сетку
                         Process.Start(new ProcessStartInfo(adbPath, $"-s {targetDevice} shell settings put system pointer_location 1") { CreateNoWindow = true, UseShellExecute = false })?.WaitForExit();
                     }
@@ -144,52 +153,122 @@ namespace EVEEchoesBot
                     _activeBots.Add(bot);
                 }
 
-                Logger.Log($"Мультибот запущен. Аккаунтов в работе: {_activeBots.Count}", LogType.Success);
+                Logger.Log($"Мультисистема запущена. Аккаунтов в работе: {_activeBots.Count}", LogType.Info);
             }
             catch (Exception ex)
             {
-                Logger.Log($"Критическая ошибка старта: {ex.Message}", LogType.Error);
+                Logger.Log($"Критический сбой при запуске мультисистемы: {ex.Message}", LogType.Error);
                 _cts.Cancel();
             }
         }
 
+#endregion
+
+#region Stop Bot
+
+        private static async void StopMultiBotSystem()
+        {
+
+            // Если значение _isStopping уже равно 1, метод сразу завершает работу без повторного лога
+            // Если значение было 0, оно атомарно меняется на 1, и код идет дальше
+            if (System.Threading.Interlocked.CompareExchange(ref _isStopping, 1, 0) == 1)
+            {
+                return;
+            }
+
+            // 1. Отправляем сигнал отмены всем потокам
+            _cts.Cancel();
+            Logger.Log("Всем фоновым потокам отправлен сигнал остановки. Ожидание завершения...", LogType.Warning);
+
+            try
+            {
+                // 2. Даем потокам время проснуться от Task.Delay, выполнить блок finally и вызвать SaveStats()
+                await Task.Delay(2000);
+            }
+            catch { /* Игнорируем возможные ошибки таймера */ }
+
+            // 3. Только ТЕПЕРЬ, когда потоки гарантированно засыпают или уже закрылись, очищаем список
+            _activeBots.Clear();
+
+            Logger.Log("Список активных аккаунтов очищен. Система полностью остановлена.", LogType.Warning);
+        }
 
 
-    private static void StopMultiBotSystem()
-    {
-        _cts.Cancel();
-        Logger.Log("Всем фоновым потокам ботов отправлен сигнал на остановку.", LogType.Warning);
-    }
+#endregion
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 #region ListenForCancelKey
 
-    /// <summary>
-    /// Постоянно работает в фоновом потоке, отслеживая нажатия управляющих клавиш:
-    /// <list type="bullet">
-    /// <item><description><c>ConsoleKey.Escape</c> — инициирует плавную остановку всех процессов бота.</description></item>
-    /// <item><description><c>ConsoleKey.F10</c> — запускает мгновенный изолированный тест эмуляции клика драйвером.</description></item>
-    /// </list>
-    /// </summary>
+        /// <summary>
+        /// Постоянно работает в фоновом потоке, отслеживая нажатия управляющих клавиш:
+        /// <list type="bullet">
+        /// <item><description><c>ConsoleKey.Escape</c> — инициирует плавную остановку всех процессов бота.</description></item>
+        /// <item><description><c>ConsoleKey.F10</c> — запускает мгновенный изолированный тест эмуляции клика драйвером.</description></item>
+        /// </list>
+        /// </summary>
         private static void ListenForCancelKey()
         {
             while (!_cts.Token.IsCancellationRequested)
             {
-                // Проверяем, нажата ли клавиша ESC
-                if (Console.KeyAvailable && Console.ReadKey(true).Key == ConsoleKey.Escape)
+                if (Console.KeyAvailable)
                 {
-                    Logger.Log("Обнаружено нажатие [ESC]. Инициирую остановку всех ботов...", LogType.Warning);
+                    ConsoleKey pressedKey = Console.ReadKey(true).Key;
 
-                    // Вызываем наш новый метод остановки, который плавно гасит все задачи Task
-                    StopMultiBotSystem(); 
-                    break;
+                    // СЦЕНАРИЙ 1: Нажата строго клавиша ESC
+                    if (pressedKey == ConsoleKey.Escape)
+                    {
+                        Logger.Log("Обнаружено нажатие [ESC]. Запуск остановки всех аккаунтов.", LogType.Warning);
+                        StopMultiBotSystem();
+                        break;
+                    }
+                    // СЦЕНАРИЙ 2: Нажата строго клавиша F10 (без дублирования ESC)
+                    else if (pressedKey == ConsoleKey.F10)
+                    {
+                        Logger.Log("Обнаружено нажатие [F10]. Создание экстренных снимков экрана и запуск остановки.", LogType.Warning);
+
+                        string debugDir = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "DebugScreenshots"));
+
+                        try
+                        {
+                            Directory.CreateDirectory(debugDir);
+
+                            foreach (var bot in _activeBots.ToList())
+                            {
+                                if (bot.Hwnd == IntPtr.Zero) continue;
+
+                                using OpenCvSharp.Mat? screenshot = Tools.CaptureWindow(bot.Hwnd);
+
+                                if (screenshot?.Empty() is false && screenshot.Width > 0 && screenshot.Height > 0)
+                                {
+                                    string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                                    string fileName = $"{bot.Settings.Name}_F10_Emergency_{timestamp}.png";
+                                    string fullPath = Path.Combine(debugDir, fileName);
+
+                                    OpenCvSharp.Cv2.ImWrite(fullPath, screenshot);
+                                    Logger.Log($"Снимок экрана для аккаунта '{bot.Settings.Name}' сохранен: {fileName}", LogType.Info);
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.Log($"Не удалось выполнить экстренное сохранение снимков: {ex.Message}", LogType.Warning);
+                        }
+
+                        StopMultiBotSystem();
+                        break;
+                    }
                 }
-                Thread.Sleep(100); // Небольшая пауза, чтобы не нагружать ядро процессора циклом
+
+                Thread.Sleep(100);
             }
         }
 
 #endregion
 
-#endregion
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
+#region ClickTo
 
         internal static void ClickTo(this ActiveBotAccount bot, GameUi element, int minSec = 1, int maxSec = 3, int offset = 3)
         {
@@ -202,9 +281,12 @@ namespace EVEEchoesBot
             Tools.SmartClick(x, y, minSec, maxSec, offset, adbPort: bot.Settings.AdbPort);
 
         #if DEBUG
-            Logger.Log($"[{bot.Settings.Name}|{bot.Settings.EVESystem}] Отправлен клик по элементу {element} (X={x}, Y={y})", LogType.Test);
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Отправлен клик по элементу '{element}' (X={x}, Y={y}).", LogType.Test);
         #endif
         }
+
+#endregion
+
     }
 
 }

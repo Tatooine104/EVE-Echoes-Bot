@@ -1,11 +1,15 @@
 using System.Runtime.InteropServices;
 using System.Text;
 
+// [ ] TODO 2026.05.30 Привести все тексты логгера к единому стилю 
+
 // Замените "LowMiner" на пространство имен вашего проекта, если оно называется иначе
 namespace EVEEchoesBot
 {
     internal static partial class WinAPI
     {
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
         [StructLayout(LayoutKind.Sequential)]
         public struct POINT
@@ -219,6 +223,8 @@ namespace EVEEchoesBot
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static partial bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
     /// <summary>
     /// Автоматически находит дочернее окно ввода/рендера внутри главного окна эмулятора.
     /// </summary>
@@ -254,6 +260,7 @@ namespace EVEEchoesBot
         return mainHWnd;
     }
 
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
     }
 }
