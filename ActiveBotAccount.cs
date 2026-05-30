@@ -91,6 +91,8 @@ namespace EVEEchoesBot
         // Кэшируем настройки сериализации для повторного использования во всех потоках
         private static readonly JsonSerializerOptions _jsonOptions = new() { WriteIndented = true };
 
+        // Флаг для принудительного пропуска первого лога при старте
+        private bool _isFirstSecurityCheck = true;
 
 #endregion
 
@@ -338,6 +340,8 @@ EnqueueTasks(miningCycle);
         private async Task RunLoopAsync(CancellationToken token)
         {
             Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Поток запущен. Начало работы по сценарию: '{Settings.Script ?? "mining"}'.", LogType.Info);
+            
+            var sessionStart = System.DateTime.UtcNow;
 
             // Включаем высокоточный секундомер времени работы для этого окна
             var sessionStopwatch = System.Diagnostics.Stopwatch.StartNew();
@@ -395,11 +399,11 @@ EnqueueTasks(miningCycle);
                         switch (CurrentTask)
                         {
                             case AccountTask.CheckSecurity:
-                                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Плановый цикл мониторинга завершен.", LogType.Info);
+                                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Плановый цикл мониторинга завершен.", LogType.Test);
                                 break;
 
                             case AccountTask.SendAliChatWarning:
-                                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Запуск макроса оповещения альянса.", LogType.Error);
+                                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Запуск макроса оповещения альянса.", LogType.Warning);
                                 await RunAliChatWarningAsync(token);
                                 break;
 
@@ -452,7 +456,9 @@ EnqueueTasks(miningCycle);
                 {
                     SaveStats();
                 }
-                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Состояние сохранено на диск. Рабочий поток остановлен. Время работы (сек): {_accumulatedSeconds}", LogType.Info);
+                int sessionSeconds = (int)(System.DateTime.UtcNow - sessionStart).TotalSeconds;
+
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Состояние сохранено на диск. Рабочий поток остановлен. Время работы в сессии (сек): {sessionSeconds}", LogType.Info);
             }
         }
 
@@ -521,8 +527,8 @@ public void ForceSaveStats()
                     Directory.CreateDirectory(debugDir);
                     Cv2.ImWrite(Path.Combine(debugDir, $"{Settings.Name}_imgLocalChatHead_FOUND.png"), cropped);
                 }
-                catch (Exception ex) { 
-                    Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось сохранить отладочный кадр: {ex.Message}", LogType.Warning); 
+                catch (Exception ex) {
+                    Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось сохранить отладочный кадр: {ex.Message}", LogType.Warning);
                 }
         #endif
                 // Чат открыт — запускаем глубокую проверку пилотов
@@ -545,8 +551,8 @@ public void ForceSaveStats()
                     Directory.CreateDirectory(debugDir);
                     Cv2.ImWrite(Path.Combine(debugDir, $"{Settings.Name}_imgLocalChatIcon_FOUND.png"), cropped);
                 }
-                catch (Exception ex) { 
-                    Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось сохранить отладочный кадр: {ex.Message}", LogType.Warning); 
+                catch (Exception ex) {
+                    Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось сохранить отладочный кадр: {ex.Message}", LogType.Warning);
                 }
         #endif
 
@@ -784,12 +790,13 @@ public void ForceSaveStats()
                 (GameUi.WindowCenter,  0)     // Закрываем общий интерфейс чатов
             };
 
-            foreach (var step in macroSteps)
+            // Деконструкция кортежа прямо в объявлении цикла foreach
+            foreach (var (element, delayMs) in macroSteps)
             {
-                this.ClickTo(step.Element);
-                if (step.DelayMs > 0)
+                this.ClickTo(element);
+                if (delayMs > 0)
                 {
-                    await Task.Delay(step.DelayMs, token);
+                    await Task.Delay(delayMs, token);
                 }
             }
 
@@ -808,17 +815,26 @@ public void ForceSaveStats()
             get => SystemSafetyManager.GetSystemState(EVESystem).IsSafe;
             set
             {
-                if (string.IsNullOrEmpty(EVESystem) || EVESystem == "Неизвестно") return;
+                if (string.IsNullOrEmpty(EVESystem) || EVESystem == "Неизвестно" || value == null) return;
 
                 var systemState = SystemSafetyManager.GetSystemState(EVESystem);
                 bool? currentStatus = systemState.IsSafe;
 
-                if (currentStatus == value) return;
+                // МОДИФИЦИРОВАННЫЙ ФИЛЬТР: Если статус совпадает И это НЕ первая проверка, то выходим.
+                // Если это первый запуск (_isFirstSecurityCheck == true), мы игнорируем return и пишем лог!
+                if (currentStatus == value && !_isFirstSecurityCheck) return;
 
+                // Сбрасываем флаг — первая проверка успешно зафиксирована, следующие пойдут по строгому фильтру изменений
+                _isFirstSecurityCheck = false;
+
+                // ========================================================
+                // СЦЕНАРИЙ 1: Система перешла в статус ОПАСНО (value is false)
+                // ========================================================
                 if (value is false)
                 {
                     bool shouldSendAllianceAlert = systemState.SetDanger();
                     _triggerCount++;
+                    
                     Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Обнаружена опасность. В системе присутствуют посторонние пилоты.", LogType.Warning);
 
                     if (shouldSendAllianceAlert)
@@ -827,11 +843,8 @@ public void ForceSaveStats()
                     }
 
                     var botsInSystem = Program._activeBots.ToList();
-
-                    // Раздаем команду эвакуации ВСЕМ ОСТАЛЬНЫМ ботам в этой же системе
                     foreach (var bot in botsInSystem)
                     {
-                        // КРИТИЧЕСКИ ВАЖНО: Себе задачу через цикл не добавляем, чтобы не было зацикливания
                         if (bot == this) continue;
 
                         if (bot.EVESystem == this.EVESystem)
@@ -841,17 +854,18 @@ public void ForceSaveStats()
                         }
                     }
 
-                    // Себе добавляем задачу отдельно и один раз
                     this.EnqueueTasks(["WarpToStation", "Dock"], addToFront: true);
                 }
+                // ========================================================
+                // СЦЕНАРИЙ 2: Система перешла в статус БЕЗОПАСНО (value is true)
+                // ========================================================
                 else if (value is true)
                 {
                     systemState.SetSafe();
-                    Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Проверка завершена. В системе отсутствуют посторонние пилоты.", LogType.Success);
+                    Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Проверка завершена. В системе отсутствуют посторонние пилоты.", LogType.Info);
                 }
             }
         }
-
 
     }
 

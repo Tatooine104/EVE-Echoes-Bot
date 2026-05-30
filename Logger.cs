@@ -86,7 +86,7 @@ namespace EVEEchoesBot
 // [ ] TODO 2026.05.30 Добавить сохранения в файл ИНФО 
 
                 // В файл CSV пишем ТОЛЬКО важное (Warning и Error)
-                if (type == LogType.Warning || type == LogType.Error)
+                if (type == LogType.Warning || type == LogType.Error || type == LogType.Info)
                 {
                     AppendToFile(timestamp, icon, accountName, eveSystem, eveShip, callerMethod, message);
                 }
@@ -112,26 +112,38 @@ namespace EVEEchoesBot
 
 #region AppendToFile
 
+        private static readonly System.Threading.Lock _fileLock = new();
+
         private static void AppendToFile(string timestamp, string icon, string account, string system, string ship, string method, string message)
         {
-            try
+            lock (_fileLock) // Защита от сбоев при одновременной записи из нескольких аккаунтов
             {
-                if (!File.Exists(LogFilePath))
+                try
                 {
-                    string header = "Дата;Статус;Аккаунт;Система;Корабль;Метод;Сообщение" + Environment.NewLine;
-                    File.WriteAllText(LogFilePath, header);
+                    bool fileExists = File.Exists(LogFilePath);
+                    string safeMessage = message.Replace(";", ",");
+                    string csvLine = $"{timestamp};{icon};{account};{system};{ship};{method};{safeMessage}";
+
+                    // Используем UTF8Encoding со специальным флагом 'true', который заставляет C# внедрить BOM-маркер
+                    var utf8WithBom = new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true);
+
+                    if (!fileExists)
+                    {
+                        // Если файла нет, создаем его и сразу пишем шапку с BOM-маркером
+                        string header = "Дата;Статус;Аккаунт;Система;Корабль;Метод;Сообщение" + Environment.NewLine;
+                        File.WriteAllText(LogFilePath, header, utf8WithBom);
+                    }
+
+                    // Дописываем строку лога, строго сохраняя кодировку UTF-8 с BOM
+                    File.AppendAllText(LogFilePath, csvLine + Environment.NewLine, utf8WithBom);
                 }
-
-                string safeMessage = message.Replace(";", ",");
-                string csvLine = $"{timestamp};{icon};{account};{system};{ship};{method};{safeMessage}";
-
-                File.AppendAllText(LogFilePath, csvLine + Environment.NewLine, System.Text.Encoding.UTF8);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[ERROR] Ошибка записи в CSV: {ex.Message}");
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[ERROR] Ошибка записи в CSV: {ex.Message}");
+                }
             }
         }
+
 
 #endregion
 

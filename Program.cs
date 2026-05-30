@@ -21,6 +21,9 @@ namespace EVEEchoesBot
         // 1. Создаем глобальный источник токена отмены
         private static CancellationTokenSource _cts = new();
 
+        // Флаг для предотвращения повторного входа в метод остановки
+        private static int _isStopping = 0;
+
         // 1. Глобальные переменные для управления состоянием
         public static readonly List<ActiveBotAccount> _activeBots = [];
         private static BotConfig? _config;
@@ -59,7 +62,7 @@ namespace EVEEchoesBot
         Console.OutputEncoding = System.Text.Encoding.UTF8;
         Console.InputEncoding = System.Text.Encoding.UTF8;
 
-        Logger.Log("Бот успешно запущен.", LogType.Success);
+        Logger.Log("Бот успешно запущен.", LogType.Info);
         Logger.Log("Нажмите [ESC] в любой момент для плавной остановки.", LogType.Info);
 
 
@@ -150,7 +153,7 @@ namespace EVEEchoesBot
                     _activeBots.Add(bot);
                 }
 
-                Logger.Log($"Мультисистема запущена. Аккаунтов в работе: {_activeBots.Count}", LogType.Success);
+                Logger.Log($"Мультисистема запущена. Аккаунтов в работе: {_activeBots.Count}", LogType.Info);
             }
             catch (Exception ex)
             {
@@ -165,6 +168,14 @@ namespace EVEEchoesBot
 
         private static async void StopMultiBotSystem()
         {
+
+            // Если значение _isStopping уже равно 1, метод сразу завершает работу без повторного лога
+            // Если значение было 0, оно атомарно меняется на 1, и код идет дальше
+            if (System.Threading.Interlocked.CompareExchange(ref _isStopping, 1, 0) == 1)
+            {
+                return;
+            }
+
             // 1. Отправляем сигнал отмены всем потокам
             _cts.Cancel();
             Logger.Log("Всем фоновым потокам отправлен сигнал остановки. Ожидание завершения...", LogType.Warning);
@@ -189,74 +200,69 @@ namespace EVEEchoesBot
 
 #region ListenForCancelKey
 
-    /// <summary>
-    /// Постоянно работает в фоновом потоке, отслеживая нажатия управляющих клавиш:
-    /// <list type="bullet">
-    /// <item><description><c>ConsoleKey.Escape</c> — инициирует плавную остановку всех процессов бота.</description></item>
-    /// <item><description><c>ConsoleKey.F10</c> — запускает мгновенный изолированный тест эмуляции клика драйвером.</description></item>
-    /// </list>
-    /// </summary>
-    private static void ListenForCancelKey()
-    {
-        while (!_cts.Token.IsCancellationRequested)
+        /// <summary>
+        /// Постоянно работает в фоновом потоке, отслеживая нажатия управляющих клавиш:
+        /// <list type="bullet">
+        /// <item><description><c>ConsoleKey.Escape</c> — инициирует плавную остановку всех процессов бота.</description></item>
+        /// <item><description><c>ConsoleKey.F10</c> — запускает мгновенный изолированный тест эмуляции клика драйвером.</description></item>
+        /// </list>
+        /// </summary>
+        private static void ListenForCancelKey()
         {
-            // Проверяем, нажата ли какая-нибудь клавиша в консоли
-            if (Console.KeyAvailable)
+            while (!_cts.Token.IsCancellationRequested)
             {
-                ConsoleKey pressedKey = Console.ReadKey(true).Key;
-
-                // СЦЕНАРИЙ 1: Нажатие ESC — просто плавная остановка
-                if (pressedKey == ConsoleKey.Escape)
+                if (Console.KeyAvailable)
                 {
-                    Logger.Log("Обнаружено нажатие [ESC]. Запуск остановки всех аккаунтов.", LogType.Warning);
-                    StopMultiBotSystem();
-                    break;
-                }
+                    ConsoleKey pressedKey = Console.ReadKey(true).Key;
 
-                // СЦЕНАРИЙ 2: Нажатие F10 — экстренное сохранение скриншотов и остановка
-                if (pressedKey == ConsoleKey.Escape || pressedKey == ConsoleKey.F10)
-                {
-                    Logger.Log("Обнаружено нажатие [F10]. Создание экстренных снимков экрана и запуск остановки.", LogType.Warning);
-
-                    string debugDir = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "DebugScreenshots"));
-                    
-                    try
+                    // СЦЕНАРИЙ 1: Нажата строго клавиша ESC
+                    if (pressedKey == ConsoleKey.Escape)
                     {
-                        Directory.CreateDirectory(debugDir);
+                        Logger.Log("Обнаружено нажатие [ESC]. Запуск остановки всех аккаунтов.", LogType.Warning);
+                        StopMultiBotSystem();
+                        break;
+                    }
+                    // СЦЕНАРИЙ 2: Нажата строго клавиша F10 (без дублирования ESC)
+                    else if (pressedKey == ConsoleKey.F10)
+                    {
+                        Logger.Log("Обнаружено нажатие [F10]. Создание экстренных снимков экрана и запуск остановки.", LogType.Warning);
 
-                        // Делаем скриншоты для каждого работающего в данный момент аккаунта
-                        foreach (var bot in _activeBots.ToList())
+                        string debugDir = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "DebugScreenshots"));
+
+                        try
                         {
-                            if (bot.Hwnd == IntPtr.Zero) continue;
+                            Directory.CreateDirectory(debugDir);
 
-                            // Используем ваш графический метод захвата окна
-                            using OpenCvSharp.Mat? screenshot = Tools.CaptureWindow(bot.Hwnd);
-                            
-                            if (screenshot?.Empty() is false && screenshot.Width > 0 && screenshot.Height > 0)
+                            foreach (var bot in _activeBots.ToList())
                             {
-                                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                                string fileName = $"{bot.Settings.Name}_F10_Emergency_{timestamp}.png";
-                                string fullPath = Path.Combine(debugDir, fileName);
+                                if (bot.Hwnd == IntPtr.Zero) continue;
 
-                                OpenCvSharp.Cv2.ImWrite(fullPath, screenshot);
-                                Logger.Log($"Снимок экрана для аккаунта '{bot.Settings.Name}' сохранен: {fileName}", LogType.Info);
+                                using OpenCvSharp.Mat? screenshot = Tools.CaptureWindow(bot.Hwnd);
+
+                                if (screenshot?.Empty() is false && screenshot.Width > 0 && screenshot.Height > 0)
+                                {
+                                    string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                                    string fileName = $"{bot.Settings.Name}_F10_Emergency_{timestamp}.png";
+                                    string fullPath = Path.Combine(debugDir, fileName);
+
+                                    OpenCvSharp.Cv2.ImWrite(fullPath, screenshot);
+                                    Logger.Log($"Снимок экрана для аккаунта '{bot.Settings.Name}' сохранен: {fileName}", LogType.Info);
+                                }
                             }
                         }
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.Log($"Не удалось выполнить экстренное сохранение снимков: {ex.Message}", LogType.Warning);
-                    }
+                        catch (Exception ex)
+                        {
+                            Logger.Log($"Не удалось выполнить экстренное сохранение снимков: {ex.Message}", LogType.Warning);
+                        }
 
-                    // После сохранения скриншотов принудительно останавливаем систему и выходим
-                    StopMultiBotSystem();
-                    break;
+                        StopMultiBotSystem();
+                        break;
+                    }
                 }
+
+                Thread.Sleep(100);
             }
-            
-            Thread.Sleep(100); // Небольшая пауза, чтобы не нагружать ядро процессора циклом
         }
-    }
 
 #endregion
 

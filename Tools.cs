@@ -47,7 +47,7 @@ namespace EVEEchoesBot
 
             if (!WinAPI.GetWindowRect(hWnd, out WinAPI.RECT rect))
             {
-                Logger.Log($"Не удалось получить геометрические размеры окна.", LogType.Error);
+                Logger.Log($"Не удалось получить геометрические размеры окна {hWnd}", LogType.Error);
                 return null;
             }
 
