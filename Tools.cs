@@ -278,7 +278,7 @@ namespace EVEEchoesBot
                 int finalX = x + _random.Next(-offset, offset + 1);
                 int finalY = y + _random.Next(-offset, offset + 1);
 
-                string adbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "adb.exe"); 
+                string adbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "adb.exe");
 
                 if (!File.Exists(adbPath))
                 {
@@ -297,18 +297,18 @@ namespace EVEEchoesBot
 
                     // 2. УЗНАЕМ РЕАЛЬНОЕ РАЗРЕШЕНИЕ ЭМУЛЯТОРА ИЗНУТРИ ANDROID
                     // Иногда BlueStacks снаружи имеет 1280x720, а внутри Android считает себя 1920x1080 (из-за DPI)
-                    ProcessStartInfo psiSize = new(adbPath, $"-s {deviceTarget} shell wm size") 
-                    { 
-                        CreateNoWindow = true, 
-                        UseShellExecute = false, 
-                        RedirectStandardOutput = true 
+                    ProcessStartInfo psiSize = new(adbPath, $"-s {deviceTarget} shell wm size")
+                    {
+                        CreateNoWindow = true,
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true
                     };
                     var procSize = Process.Start(psiSize);
                     string outputSize = procSize?.StandardOutput.ReadToEnd() ?? "";
                     procSize?.WaitForExit();
 
                     // Если Android выдал кастомный размер (например, "Physical size: 1920x1080")
-                    if (outputSize.Contains(":") && outputSize.Contains("x"))
+                    if (outputSize.Contains(':') && outputSize.Contains('x'))
                     {
                         string sizeStr = outputSize.Split(':')[1].Trim(); // "1920x1080"
                         string[] wAndH = sizeStr.Split('x');
@@ -326,7 +326,7 @@ namespace EVEEchoesBot
                     // 3. ОТПРАВЛЯЕМ КЛИК ЧЕРЕЗ АЛЬТЕРНАТИВНЫЙ СИНТАКСИС (input text / input keyevent / input tap)
                     // Мы склеим стандартный input tap и принудительную активацию окна
                     string argsTap = $"-s {deviceTarget} shell input tap {finalX} {finalY}";
-                    
+
                     ProcessStartInfo psiTap = new(adbPath, argsTap) { CreateNoWindow = true, UseShellExecute = false };
                     Process.Start(psiTap)?.WaitForExit();
 
@@ -375,7 +375,7 @@ namespace EVEEchoesBot
 
 #region GetWindow
 
-        public static IntPtr GetWindow(WindowSettings settings)
+        public static IntPtr GetWindow(AccSettings settings)
         {
             IntPtr hWnd = WinAPI.FindWindow(null, settings.WindowTitle);
 
@@ -396,7 +396,7 @@ namespace EVEEchoesBot
 
             if (settings.Size == null)
             {
-                Logger.Log($"[{settings.Name}] В конфигурации отсутствует блок WindowSettings (Size)!", LogType.Error);
+                Logger.Log($"[{settings.Name}] В конфигурации отсутствует блок AccSettings (Size)!", LogType.Error);
                 return hWnd;
             }
 

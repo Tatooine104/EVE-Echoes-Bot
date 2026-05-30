@@ -38,10 +38,10 @@ namespace EVEEchoesBot
         WindowCenter   =  8000250, // Точка чуть ниже и правее центра окна
         ChatMessScout  =  3000600, // Сообщение "Scout"
         ChatInform     =   800400, // Меню "Inform"
-        ChatFastInput  = 12500700, // Мню быстрого ввода
+        ChatFastInput  = 11900685, // Мню быстрого ввода
         ChatInputMenu  =  3650700, // Меню ввода чата
         ChatTabAli     =   500450, // Вкладка чата альянса
-        ChatsInterface =   250600  // Интерфейс чатов
+        ChatsInterface =   250625  // Интерфейс чатов
 
         // hWnd.ClickTo(GameUi.ChatTabAli); // Пример вызова
 
@@ -80,7 +80,7 @@ namespace EVEEchoesBot
 
         // Перед выходом даем потокам ботов время на плавное закрытие
         StopMultiBotSystem();
-        Thread.Sleep(1000); 
+        Thread.Sleep(1000);
 
         Logger.Log("Бот остановлен. Сессия завершена.", LogType.Warning);
     }
@@ -89,7 +89,7 @@ namespace EVEEchoesBot
 
 #endregion
 
-#region StartMultiBotSystem
+#region Start Bot
 
         private static void StartMultiBotSystem()
         {
@@ -114,7 +114,7 @@ namespace EVEEchoesBot
                 if (_cts.IsCancellationRequested) _cts = new CancellationTokenSource();
                 _activeBots.Clear();
 
-                foreach (WindowSettings accountSettings in _config.Accounts)
+                foreach (AccSettings accountSettings in _config.Accounts)
                 {
                     IntPtr hWnd = WinAPI.FindWindow(null, accountSettings.WindowTitle);
                     if (hWnd == IntPtr.Zero)
@@ -127,10 +127,10 @@ namespace EVEEchoesBot
                     if (File.Exists(adbPath))
                     {
                         string targetDevice = $"127.0.0.1:{accountSettings.AdbPort}";
-                        
+
                         // Коннектим эмулятор по порту, который вы нашли глазами в настройках
                         Process.Start(new ProcessStartInfo(adbPath, $"connect {targetDevice}") { CreateNoWindow = true, UseShellExecute = false })?.WaitForExit();
-                        
+
                         // Включаем сетку
                         Process.Start(new ProcessStartInfo(adbPath, $"-s {targetDevice} shell settings put system pointer_location 1") { CreateNoWindow = true, UseShellExecute = false })?.WaitForExit();
                     }
@@ -153,13 +153,15 @@ namespace EVEEchoesBot
             }
         }
 
-
+#region Stop Bot
 
     private static void StopMultiBotSystem()
     {
         _cts.Cancel();
         Logger.Log("Всем фоновым потокам ботов отправлен сигнал на остановку.", LogType.Warning);
     }
+
+#endregion
 
 #region ListenForCancelKey
 
@@ -180,7 +182,7 @@ namespace EVEEchoesBot
                     Logger.Log("Обнаружено нажатие [ESC]. Инициирую остановку всех ботов...", LogType.Warning);
 
                     // Вызываем наш новый метод остановки, который плавно гасит все задачи Task
-                    StopMultiBotSystem(); 
+                    StopMultiBotSystem();
                     break;
                 }
                 Thread.Sleep(100); // Небольшая пауза, чтобы не нагружать ядро процессора циклом
@@ -202,7 +204,7 @@ namespace EVEEchoesBot
             Tools.SmartClick(x, y, minSec, maxSec, offset, adbPort: bot.Settings.AdbPort);
 
         #if DEBUG
-            Logger.Log($"[{bot.Settings.Name}|{bot.Settings.EVESystem}] Отправлен клик по элементу {element} (X={x}, Y={y})", LogType.Test);
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Отправлен клик по элементу {element} (X={x}, Y={y})", LogType.Test);
         #endif
         }
     }

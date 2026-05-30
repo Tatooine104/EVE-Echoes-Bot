@@ -7,27 +7,27 @@ namespace EVEEchoesBot
 {
 
 // [v] Проверить все методы и добавить новый метод Logger.Log() 
+// [ ] TODO 2026.05.30 Добавить класс сохранения статистики по ботам (отдельно для каждого акка stat_accountname.json)
+// [ ] TODO 2026.05.30 Перенести EVESystem и EVEShip в файл статистики. 
 
     // Главный класс конфигурации
     public class BotConfig
     {
-        public List<WindowSettings> Accounts { get; set; } = [];
+        public List<AccSettings> Accounts { get; set; } = [];
     }
 
     // Класс настроек конкретного аккаунта (ЗАМЕНИТЕ СВОЙ СТАРЫЙ НА ЭТОТ)
-    public class WindowSettings
+    public class AccSettings
     {
         public string Name        { get; set; } = "";
         public string WindowTitle { get; set; } = "";
         public string Emulator    { get; set; } = "";
         public string Script      { get; set; } = "";
         public string FirstTask   { get; set; } = "";
-        public string EVESystem   { get; set; } = "";
-        public string EVEShip     { get; set; } = "";
         public int    AdbPort     { get; set; }
 
         // <-- 2. СЮДА ДОБАВЛЯЕМ АТРИБУТ СВЯЗИ С JSON
-        [JsonPropertyName("WindowSettings")]
+        [JsonPropertyName("AccSettings")]
         public TargetSize? Size { get; set; }
     }
 
@@ -38,7 +38,19 @@ namespace EVEEchoesBot
         public int TargetHeight { get; set; }
     }
 
-/// <summary>
+    public class AccountStateDto
+    {
+        public string AccountName     { get; set; } = "";
+        public long Triggers          { get; set; }
+        public double RuntimeSeconds  { get; set; }
+        public string CurrentTask     { get; set; } = "";
+        public List<string> TaskQueue { get; set; } = [];
+        public DateTime LastUpdate    { get; set; }
+        public string EVESystem       { get; set; } = "";
+        public string EVEShip         { get; set; } = "";
+    }
+
+    /// <summary>
     /// Класс управления конфигурацией всего бота.
     /// </summary>
     public static class ConfigManager
@@ -106,18 +118,18 @@ namespace EVEEchoesBot
             {
                 Accounts =
                 [
-                    new WindowSettings
+                    new AccSettings
                     {
                         Name = "Somebody",
                         WindowTitle = "BlueStacks_EVE.01",
                         Emulator = "BlueStacks",
                         Script = "LocalWatcher",
                         FirstTask = "CheckSecurity",
-                        EVESystem = "Jita",
-                        EVEShip = "Covetor",
-                        AdbPort = 5555,
+                        //EVESystem = "Jita",
+                        //EVEShip = "Covetor",
+                        AdbPort = 5565,
                         // ИСПРАВЛЕНО: возвращаем имя свойства Size. 
-                        // Атрибут [JsonPropertyName] сам запишет его в JSON как "WindowSettings"
+                        // Атрибут [JsonPropertyName] сам запишет его в JSON как "AccSettings"
                         Size = new TargetSize
                         {
                             TargetWidth = 1280,
