@@ -7,8 +7,8 @@ namespace EVEEchoesBot
 {
 
 // [v] Проверить все методы и добавить новый метод Logger.Log() 
-// [ ] TODO 2026.05.30 Добавить класс сохранения статистики по ботам (отдельно для каждого акка stat_accountname.json)
-// [ ] TODO 2026.05.30 Перенести EVESystem и EVEShip в файл статистики. 
+// [v] TODO 2026.05.30 Добавить класс сохранения статистики по ботам (отдельно для каждого акка stat_accountname.json)
+// [v] TODO 2026.05.30 Перенести EVESystem и EVEShip в файл статистики. 
 
     // Главный класс конфигурации
     public class BotConfig
@@ -38,6 +38,7 @@ namespace EVEEchoesBot
         public int TargetHeight { get; set; }
     }
 
+    // [ ] TODO 2026.05.30 Добавить параметр В космосе/В доке, статус безопастности, и подумать что еще нужно  
     public class AccountStateDto
     {
         public string AccountName     { get; set; } = "";

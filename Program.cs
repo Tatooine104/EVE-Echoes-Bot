@@ -153,6 +153,8 @@ namespace EVEEchoesBot
             }
         }
 
+#endregion
+
 #region Stop Bot
 
     private static void StopMultiBotSystem()
@@ -191,7 +193,7 @@ namespace EVEEchoesBot
 
 #endregion
 
-#endregion
+#region ClickTo
 
         internal static void ClickTo(this ActiveBotAccount bot, GameUi element, int minSec = 1, int maxSec = 3, int offset = 3)
         {
@@ -207,6 +209,9 @@ namespace EVEEchoesBot
             Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Отправлен клик по элементу {element} (X={x}, Y={y})", LogType.Test);
         #endif
         }
+
+#endregion
+
     }
 
 }

@@ -36,11 +36,14 @@ namespace EVEEchoesBot
             // 4. Если файла нет или загрузка не удалась, используем вашу дефолтную логику первого запуска
             if (!isLoaded || CurrentTask == AccountTask.CheckYourOwnState) // или проверка на "Нет задачи"
             {
+                // [ ] TODO 2026.05.30 Продумать и реализовать какие еще задачи могут быть у бота 
                 string firstTaskStr = settings.FirstTask ?? "Undocking";
                 CurrentTask = firstTaskStr switch
                 {
                     "Undocking"          => AccountTask.Undocking,
                     "GoToBelt"           => AccountTask.GoToBelt,
+                    "GoToMoon"           => AccountTask.GoToMoon,
+                    "GoToCondensed"      => AccountTask.GoToCondensed,
                     "Mining"             => AccountTask.Mining,
                     "GoToStation"        => AccountTask.GoToStation,
                     "Unloading"          => AccountTask.Unloading,
@@ -86,14 +89,49 @@ namespace EVEEchoesBot
 
 #endregion
 
-        public void EnqueueTasks(IEnumerable<string> tasks)
+#region EnqueueTasks
+
+        public void EnqueueTasks(IEnumerable<string> tasks, bool addToFront = false)
         {
-            lock (_taskLock) // Ипользуем новое имя
+            if (tasks == null) return;
+
+            lock (_taskLock)
             {
-                _taskQueue.AddRange(tasks);
+                if (addToFront)
+                {
+                    _taskQueue.InsertRange(0, tasks); // В начало (сохраняя порядок переданных задач)
+                }
+                else
+                {
+                    _taskQueue.AddRange(tasks); // В конец
+                }
+
+                SaveStats(); // Сохраняем состояние под защитой lock
             }
-            SaveStats();
         }
+
+/*
+// Добавляем одну конкретную задачу в конец очереди
+EnqueueTasks(["WarpToStation"]);
+
+// Добавляем одну конкретную задачу в начало очереди
+EnqueueTasks(["WarpToStation"], true);
+
+// Добавляем цепочку задач
+var miningCycle = new List<string>
+{
+    "Undock",
+    "WarpToBelt",
+    "MineAsteroids",
+    "WarpToStation",
+    "Dock"
+};
+EnqueueTasks(miningCycle);
+*/
+
+#endregion
+
+#region AdvanceToNextTask
 
         // Главный метод логики: Берет следующую задачу из очереди
         public bool AdvanceToNextTask()
@@ -103,7 +141,7 @@ namespace EVEEchoesBot
                 if (_taskQueue.Count > 0)
                 {
                     string nextTaskStr = _taskQueue[0]; // Берем первую строку из очереди
-                    _taskQueue.RemoveAt(0);            // Сразу удаляем её оттуда
+                    _taskQueue.RemoveAt(0);             // Сразу удаляем её оттуда
 
                     // Пытаемся превратить строку в ваш Enum AccountTask
                     if (Enum.TryParse(nextTaskStr, out AccountTask parsedTask))
@@ -127,6 +165,10 @@ namespace EVEEchoesBot
                 return false;
             }
         }
+
+#endregion
+
+#region TryLoadLastStatsAndQueue
 
         private bool TryLoadLastStatsAndQueue()
         {
@@ -172,7 +214,9 @@ namespace EVEEchoesBot
             return false;
         }
 
+#endregion
 
+#region SaveStats
 
         // Сохранение статистики на диск
         public void SaveStats()
@@ -206,7 +250,7 @@ namespace EVEEchoesBot
             }
         }
 
-
+#endregion
 
 
 #region Start
@@ -687,6 +731,8 @@ private async Task RunAliChatWarningAsync(CancellationToken token)
     {
         Undocking,         // Выйти из дока
         GoToBelt,          // Отправиться в зону добычи
+        GoToMoon,          // Отправиться копать луну
+        GoToCondensed,     // Отправиться копать сжатку
         Mining,            // Добывать руду
         GoToStation,       // Вернуться на станцию
         Unloading,         // Выгрузить руду на станцию
