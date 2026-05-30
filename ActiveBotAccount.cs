@@ -6,6 +6,7 @@ using static EVEEchoesBot.Program;
 using static EVEEchoesBot.Tools;
 using System.Diagnostics;
 using System.Text.Json;
+using System.Collections.Concurrent;
 
 namespace EVEEchoesBot
 {
@@ -26,7 +27,7 @@ namespace EVEEchoesBot
 
         public ActiveBotAccount(AccSettings settings)
         {
-            // 1. Присваиваем настройки (убедитесь, что имя свойства совпадает: Settings или AccSettings)
+            // 1. Присваиваем настройки
             Settings = settings;
 
             // 2. Формируем путь к файлу состояния для конкретного аккаунта
@@ -35,27 +36,26 @@ namespace EVEEchoesBot
             // 3. Пытаемся загрузить сохраненную статистику и ОЧЕРЕДЬ из файла
             bool isLoaded = TryLoadLastStatsAndQueue();
 
-            // 4. Если файла нет или загрузка не удалась, используем вашу дефолтную логику первого запуска
-            if (!isLoaded || CurrentTask == AccountTask.CheckYourOwnState) // или проверка на "Нет задачи"
+            // 4. Если файла нет или загрузка не удалась, накатываем сценарий из поля Script
+            if (!isLoaded || CurrentTask == AccountTask.CheckYourOwnState)
             {
-                // [ ] TODO 2026.05.30 Продумать и реализовать какие еще задачи могут быть у бота 
-                string firstTaskStr = settings.FirstTask ?? "Undocking";
-                CurrentTask = firstTaskStr switch
-                {
-                    "Undocking"          => AccountTask.Undocking,
-                    "GoToBelt"           => AccountTask.GoToBelt,
-                    "GoToMoon"           => AccountTask.GoToMoon,
-                    "GoToCondensed"      => AccountTask.GoToCondensed,
-                    "Mining"             => AccountTask.Mining,
-                    "GoToStation"        => AccountTask.GoToStation,
-                    "Unloading"          => AccountTask.Unloading,
-                    "CheckSecurity"      => AccountTask.CheckSecurity,
-                    "CheckYourOwnState"  => AccountTask.CheckYourOwnState,
-                    "SendAliChatWarning" => AccountTask.SendAliChatWarning,
-                    _                    => AccountTask.CheckYourOwnState
-                };
+                // Берем имя сценария напрямую из вашего конфига ("Script")
+                // Если там вдруг пусто, по умолчанию напишем "mining"
+                string currentScript = settings.Script ?? "mining";
+
+                // Обращаемся к нашей фабрике и получаем список ["CheckSecurity"]
+                List<string> defaultTasks = ScenarioFactory.GetDefaultTasks(currentScript);
+
+                // Закидываем этот список в самый конец нашей пустой очереди
+                // (Используем ваш метод EnqueueTasks, который мы писали в самом начале)
+                this.EnqueueTasks(defaultTasks, addToFront: false);
+
+                // Достаем самое первое действие для старта из только что наполненной очереди
+                // (Метод DequeueNextTask заберет "CheckSecurity", переведет в Enum и запишет в CurrentTask)
+                CurrentTask = DequeueNextTask();
             }
         }
+
 
         // Публичные свойства для чтения статистики (например, для вывода в UI)
         public long TriggerCount => Interlocked.Read(ref _triggerCount);
@@ -90,6 +90,39 @@ namespace EVEEchoesBot
 
 
 #endregion
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
+        private AccountTask DequeueNextTask()
+        {
+            // Используем ваш новый быстрый Lock из .NET 9 для потокобезопасности
+            lock (_taskLock)
+            {
+                // Если задач в очереди вообще нет, возвращаем дефолтную проверку состояния
+                if (_taskQueue.Count == 0)
+                {
+                    return AccountTask.CheckYourOwnState;
+                }
+
+                // 1. Берем самую первую текстовую задачу из начала списка
+                string nextTaskStr = _taskQueue[0];
+
+                // 2. Удаляем её из списка, так как мы её забрали в работу
+                _taskQueue.RemoveAt(0);
+
+                // 3. Сразу сохраняем измененную очередь на диск
+                SaveStats();
+
+                // 4. Переводим строку (например, "CheckSecurity") в ваш Enum (AccountTask.CheckSecurity)
+                if (Enum.TryParse(nextTaskStr, out AccountTask parsedTask))
+                {
+                    return parsedTask;
+                }
+
+                // Если перевод не удался (опечатка в строке), возвращаем дефолт
+                return AccountTask.CheckYourOwnState;
+            }
+        }
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
@@ -272,8 +305,9 @@ EnqueueTasks(miningCycle);
             _accountCts = CancellationTokenSource.CreateLinkedTokenSource(globalToken);
 
             // Передаем токен созданной связки вторым параметром в Task.Run
-            Task.Run(() => RunLoopAsync(_accountCts.Token), _accountCts.Token);
+            Task.Run(async () => await RunLoopAsync(_accountCts.Token), _accountCts.Token);
         }
+
 
 #endregion
 
@@ -291,53 +325,81 @@ EnqueueTasks(miningCycle);
 
         private async Task RunLoopAsync(CancellationToken token)
         {
-            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Поток запущен. Начинаю непрерывный мониторинг безопасности...", LogType.Info);
-
-            // Принудительно стартуем с проверки безопасности
-            CurrentTask = AccountTask.CheckSecurity;
+            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Поток запущен. Начинаю работу по сценарию: {Settings.Script ?? "mining"}", LogType.Info);
 
             while (!token.IsCancellationRequested)
             {
                 try
                 {
+                    // ========================================================
+                    // ЭТАП 1: ГЛОБАЛЬНЫЙ ДВУХЭТАПНЫЙ МОНИТОРИНГ БЕЗОПАСНОСТИ
+                    // ========================================================
+                    // Вызываем ваш метод. Он сам сделает скриншот, проверит шапку, 
+                    bool isEverythingSafe = await CheckSecurityStatusAsync(token);
+
+                    if (!isEverythingSafe)
+                    {
+                        // Если метод вернул false, значит либо в локале враг, либо интерфейс сломан.
+                        // В обоих случаях наш RunLocalCheck уже выставил IsSaveLocal = false, 
+                        // и все соседние боты получили команду отварпа в начало очереди.
+                        Logger.Log($"[{Settings.Name}] Система небезопасна или интерфейс разрушен! Ожидаю эвакуацию.", LogType.Warning);
+                    }
+
+                    // ========================================================
+                    // ЭТАП 2: УПРАВЛЕНИЕ БЕСКОНЕЧНОЙ ОЧЕРЕДЬЮ СЦЕНАРИЯ
+                    // ========================================================
+                    // Если текущая задача стала CheckYourOwnState, значит, 
+                    // все плановые задачи сценария закончились, и пора запускать круг заново.
+                    if (CurrentTask == AccountTask.CheckYourOwnState)
+                    {
+                        Logger.Log($"[{Settings.Name}] Сценарий '{Settings.Script ?? "mining"}' завершил круг. Перезапуск...", LogType.Info);
+
+                        string currentScript = Settings.Script ?? "mining";
+                        List<string> defaultTasks = ScenarioFactory.GetDefaultTasks(currentScript);
+
+                        // Закидываем дефолтные задачи сценария обратно в конец очереди
+                        this.EnqueueTasks(defaultTasks, addToFront: false);
+                    }
+
+                    // Достаем следующую задачу из очереди (из начала списка)
+                    CurrentTask = DequeueNextTask();
+
+                    // ========================================================
+                    // ЭТАП 3: ВЫПОЛНЕНИЕ ТЕКУЩЕЙ ЗАДАЧИ
+                    // ========================================================
                     switch (CurrentTask)
                     {
                         case AccountTask.CheckSecurity:
-                            // Проверяем безопасность локал-чата
-                            bool isSystemPerfectlySafe = await CheckSecurityStatusAsync(token);
-
-                            if (isSystemPerfectlySafe)
-                            {
-                                // Сработает ТОЛЬКО если найдены все 3 маркера (в системе только свои)
-                                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Локал-чат проверен. Всё спокойно.", LogType.Success);
-                            }
-                            else
-                            {
-                                // Сработает, если хотя бы один маркер пропал (найден минус или нейтрал)
-                                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] ОБНАРУЖЕНА УГРОЗА! Приостанавливаю мониторинг. Перехожу к оповещению альянса.", LogType.Error);
-
-                                // Инициализируем действие: переключаем стейт-машину на задачу отправки варнинга
-                                // (Используем стейт CheckYourOwnState как триггер макроса оповещения)
-                                CurrentTask = AccountTask.CheckYourOwnState;
-                            }
+                            // Плановая точка проверки. Так как мы и так проверяем локал 
+                            // на каждом тике в начале цикла, здесь можно просто выдать лог.
+                            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Плановый виток мониторинга завершен.", LogType.Info);
                             break;
 
                         case AccountTask.SendAliChatWarning:
-                            // ВЫПОЛНЯЕМ ЦЕПОЧКУ КЛИКОВ ОПОВЕЩЕНИЯ В АЛЬЯНС-ЧАТ
-                            // Ключевое слово 'await' заставит этот поток ЖДАТЬ (около 15 секунд), 
-                            // пока бот полностью прокликает все меню. Проверка локала в этот момент полностью остановлена!
+                            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] ВНИМАНИЕ: Запуск макроса оповещения альянса...", LogType.Error);
                             await RunAliChatWarningAsync(token);
+                            break;
 
-                            // После того, как варнинг успешно отправлен, возвращаем бота обратно на мониторинг локала
-                            CurrentTask = AccountTask.CheckSecurity;
+                        case AccountTask.GoToStation:
+                            Logger.Log($"[{Settings.Name}] ЭВАКУАЦИЯ: Выполняю команду отварпа на станцию!", LogType.Warning);
+                            // TODO: Здесь будет вызов вашего метода физического полета в док
+                            // await DoWarpToStationAsync(token);
+                            break;
+
+                        case AccountTask.Undocking:
+                            Logger.Log($"[{Settings.Name}] Шаг сценария: Выхожу из дока...", LogType.Info);
+                            break;
+
+                        case AccountTask.Mining:
+                            Logger.Log($"[{Settings.Name}] Шаг сценария: Начинаю добычу...", LogType.Info);
                             break;
 
                         default:
-                            CurrentTask = AccountTask.CheckSecurity;
+                            // Дефолтные или неизвестные стейты просто пропускаем
                             break;
                     }
 
-                    // Частота опроса стейт-машины (каждые 5 секунд бот заходит в свой текущий case)
+                    // Частота опроса нашей стейт-машины (каждые 5 секунд бот делает один шаг)
                     await Task.Delay(TimeSpan.FromSeconds(5), token);
                 }
                 catch (TaskCanceledException)
@@ -346,7 +408,7 @@ EnqueueTasks(miningCycle);
                 }
                 catch (Exception ex)
                 {
-                    Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Ошибка цикла мониторинга: {ex.Message}", LogType.Error);
+                    Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Критическая ошибка в главном цикле: {ex.Message}", LogType.Error);
                     await Task.Delay(5000, token);
                 }
             }
@@ -354,12 +416,12 @@ EnqueueTasks(miningCycle);
             Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Поток мониторинга остановлен.", LogType.Info);
         }
 
+
 #endregion
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 #region CheckSecurityStatus 
-
 
         private async Task<bool> CheckSecurityStatusAsync(CancellationToken token)
         {
@@ -506,7 +568,6 @@ EnqueueTasks(miningCycle);
         {
             Rect safeSearchRegion = ClampRegion(searchRegion, screenshot.Width, screenshot.Height);
 
-            // Список трех обязательных маркеров, которые должны быть ВСЕГДА для статуса "Безопасно"
             string[] templates = ["imgLocalCriminal.png", "imgLocalMinus.png", "imgLocalNeutral.png"];
             int foundCount = 0;
 
@@ -535,27 +596,34 @@ EnqueueTasks(miningCycle);
                     }
         #endif
                 }
+                else
+                {
+                    // ОПТИМИЗАЦИЯ: Если хотя бы одна обязательная картинка интерфейса пропала,
+                    // мы уже гарантированно не наберем 3 балла. Прерываем поиск ради экономии CPU.
+                    if (foundCount > 0) break;
+                }
             }
 
-            // 1. ИДЕАЛЬНАЯ БЕЗОПАСНОСТЬ: Найдены строго все 3 маркера
+            // 1. ИДЕАЛЬНАЯ БЕЗОПАСНОСТЬ: Найдена вся тройка маркеров интерфейса
             if (foundCount == 3)
             {
-                this.IsSaveLocal = true;
-                return true; // БЕЗОПАСНО, в системе только свои
+                this.IsSaveLocal = true; // Синхронно сообщает системе, что всё чисто
+                return true;
             }
 
-            // 2. ОПАСНОСТЬ: Часть маркеров пропала (хотя бы один отсутствует, но интерфейс частично виден)
+            // 2. ОПАСНОСТЬ: Какая-то часть интерфейса пропала (например, один из маркеров скрылся из-за появления "минуса")
             if (foundCount > 0 && foundCount < 3)
             {
-                this.IsSaveLocal = false; // Включает тревогу и ставит статус ОПАСНОСТЬ
-                return false; // НЕ БЕЗОПАСНО, уходим в панику
+                this.IsSaveLocal = false; // ВЗВОДИТ ТРЕВОГУ для всех окон в системе через наш Program._activeBots!
+                return false;
             }
 
-            // 3. СБОЙ ИНТЕРФЕЙСА: foundCount == 0 (Ни один маркер не найден, чат перекрылся или закрылся)
-            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Маркеры безопасности полностью пропали с экрана. Интерфейс не готов!", LogType.Warning);
+            // 3. СБОЙ ИНТЕРФЕЙСА: foundCount == 0 (Чат вообще закрыт, свернут или перекрыт другим окном)
+            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Интерфейс локального чата не найден (все 3 маркера отсутствуют)!", LogType.Warning);
 
-            // При полном пропадании интерфейса мы тоже обязаны вернуть false, 
-            // чтобы бот не думал, что всё безопасно, а повторил попытку анализа или развернул чат заново.
+            // КРИТИЧЕСКИ ВАЖНО: При закрытом чате мы тоже обязаны выставить false (опасность) для текущего бота,
+            // чтобы он не вздумал продолжать копку/хакинг вслепую, пока не откроет чат обратно.
+            this.IsSaveLocal = false;
             return false;
         }
 
@@ -719,22 +787,50 @@ private async Task RunAliChatWarningAsync(CancellationToken token)
 
 #region _isSaveLocal
 
-        private bool? _isSaveLocal;
-
         public bool? IsSaveLocal
         {
-            get => _isSaveLocal;
+            get => SystemSafetyManager.GetSystemState(EVESystem).IsSafe;
             set
             {
-                if (_isSaveLocal == value) return;
-                _isSaveLocal = value;
+                if (string.IsNullOrEmpty(EVESystem) || EVESystem == "Неизвестно") return;
 
-                if (_isSaveLocal is false)
+                var systemState = SystemSafetyManager.GetSystemState(EVESystem);
+                bool? currentStatus = systemState.IsSafe;
+
+                if (currentStatus == value) return;
+
+                if (value is false)
                 {
+                    bool shouldSendAllianceAlert = systemState.SetDanger();
+
                     Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] ОПАСНОСТЬ!!! В системе посторонние!", LogType.Warning);
+
+                    if (shouldSendAllianceAlert)
+                    {
+                        Logger.Log($"[ALLIANCE ALERT] В {EVESystem} замечен враг!", LogType.Error);
+                    }
+
+                    var botsInSystem = Program._activeBots.ToList();
+
+                    // Раздаем команду эвакуации ВСЕМ ОСТАЛЬНЫМ ботам в этой же системе
+                    foreach (var bot in botsInSystem)
+                    {
+                        // КРИТИЧЕСКИ ВАЖНО: Себе задачу через цикл не добавляем, чтобы не было зацикливания
+                        if (bot == this) continue;
+
+                        if (bot.EVESystem == this.EVESystem)
+                        {
+                            bot.EnqueueTasks(["WarpToStation", "Dock"], addToFront: true);
+                            Logger.Log($"[{bot.Settings.Name}] Получен экстренный сигнал тревоги для системы {EVESystem}! Отварп.", LogType.Warning);
+                        }
+                    }
+
+                    // Себе добавляем задачу отдельно и один раз
+                    this.EnqueueTasks(["WarpToStation", "Dock"], addToFront: true);
                 }
-                else if (_isSaveLocal is true)
+                else if (value is true)
                 {
+                    systemState.SetSafe();
                     Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] В системе нет посторонних.", LogType.Success);
                 }
             }
@@ -744,6 +840,58 @@ private async Task RunAliChatWarningAsync(CancellationToken token)
     }
 
 #endregion
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
+
+public static class SystemSafetyManager
+{
+    // Хранит статус безопасности для каждой системы EVE Online
+    private static readonly ConcurrentDictionary<string, SystemSafetyState> _systems = new();
+
+    public static SystemSafetyState GetSystemState(string eveSystem)
+    {
+        if (string.IsNullOrEmpty(eveSystem)) eveSystem = "Неизвестно";
+        return _systems.GetOrAdd(eveSystem, _ => new SystemSafetyState());
+    }
+}
+
+        public class SystemSafetyState
+        {
+            // Используем новый строго типизированный объект блокировки из C# 13
+            private readonly Lock _lock = new();
+            private bool? _isSafe = true;
+            private bool _allianceAlertSent = false;
+
+            public bool? IsSafe
+            {
+                get { lock (_lock) return _isSafe; }
+            }
+
+            public bool SetDanger()
+            {
+                lock (_lock) // Синтаксис lock остается прежним, но под капотом работает эффективнее
+                {
+                    _isSafe = false;
+                    if (!_allianceAlertSent)
+                    {
+                        _allianceAlertSent = true;
+                        return true;
+                    }
+                    return false;
+                }
+            }
+
+            public void SetSafe()
+            {
+                lock (_lock)
+                {
+                    _isSafe = true;
+                    _allianceAlertSent = false;
+                }
+            }
+        }
+
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 

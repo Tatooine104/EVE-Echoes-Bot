@@ -21,7 +21,7 @@ namespace EVEEchoesBot
         private static CancellationTokenSource _cts = new();
 
         // 1. Глобальные переменные для управления состоянием
-        private static readonly List<ActiveBotAccount> _activeBots = [];
+        public static readonly List<ActiveBotAccount> _activeBots = [];
         private static BotConfig? _config;
 
         /// <summary>
@@ -157,11 +157,15 @@ namespace EVEEchoesBot
 
 #region Stop Bot
 
-    private static void StopMultiBotSystem()
-    {
-        _cts.Cancel();
-        Logger.Log("Всем фоновым потокам ботов отправлен сигнал на остановку.", LogType.Warning);
-    }
+        private static void StopMultiBotSystem()
+        {
+            _cts.Cancel();
+
+            // Блокируем доступ, если _activeBots используется в других потоках программы
+            _activeBots.Clear();
+
+            Logger.Log("Всем фоновым потокам ботов отправлен сигнал на остановку. Список активных ботов очищен.", LogType.Warning);
+        }
 
 #endregion
 
