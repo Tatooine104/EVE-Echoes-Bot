@@ -8,7 +8,7 @@ namespace EVEEchoesBot
 {
 
 // [v] TODO Проверить все методы и добавить новый метод Logger.Log() 
-// [ ] TODO 2026.05.30 Привести все тексты логгера к единому стилю 
+// [v] TODO 2026.05.30 Привести все тексты логгера к единому стилю 
 // [v] TODO 2026.05.27 Заменить все SmartClick с координатами на вызовы по енуму 
 
     static partial class Program
@@ -55,6 +55,10 @@ namespace EVEEchoesBot
 
     public static void Main()
     {
+
+        Console.OutputEncoding = System.Text.Encoding.UTF8;
+        Console.InputEncoding = System.Text.Encoding.UTF8;
+
         Logger.Log("Бот успешно запущен.", LogType.Success);
         Logger.Log("Нажмите [ESC] в любой момент для плавной остановки.", LogType.Info);
 
@@ -192,22 +196,67 @@ namespace EVEEchoesBot
     /// <item><description><c>ConsoleKey.F10</c> — запускает мгновенный изолированный тест эмуляции клика драйвером.</description></item>
     /// </list>
     /// </summary>
-        private static void ListenForCancelKey()
+    private static void ListenForCancelKey()
+    {
+        while (!_cts.Token.IsCancellationRequested)
         {
-            while (!_cts.Token.IsCancellationRequested)
+            // Проверяем, нажата ли какая-нибудь клавиша в консоли
+            if (Console.KeyAvailable)
             {
-                // Проверяем, нажата ли клавиша ESC
-                if (Console.KeyAvailable && Console.ReadKey(true).Key == ConsoleKey.Escape)
+                ConsoleKey pressedKey = Console.ReadKey(true).Key;
+
+                // СЦЕНАРИЙ 1: Нажатие ESC — просто плавная остановка
+                if (pressedKey == ConsoleKey.Escape)
                 {
                     Logger.Log("Обнаружено нажатие [ESC]. Запуск остановки всех аккаунтов.", LogType.Warning);
-
-                    // Вызываем наш новый метод остановки, который плавно гасит все задачи Task
                     StopMultiBotSystem();
                     break;
                 }
-                Thread.Sleep(100); // Небольшая пауза, чтобы не нагружать ядро процессора циклом
+
+                // СЦЕНАРИЙ 2: Нажатие F10 — экстренное сохранение скриншотов и остановка
+                if (pressedKey == ConsoleKey.Escape || pressedKey == ConsoleKey.F10)
+                {
+                    Logger.Log("Обнаружено нажатие [F10]. Создание экстренных снимков экрана и запуск остановки.", LogType.Warning);
+
+                    string debugDir = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "DebugScreenshots"));
+                    
+                    try
+                    {
+                        Directory.CreateDirectory(debugDir);
+
+                        // Делаем скриншоты для каждого работающего в данный момент аккаунта
+                        foreach (var bot in _activeBots.ToList())
+                        {
+                            if (bot.Hwnd == IntPtr.Zero) continue;
+
+                            // Используем ваш графический метод захвата окна
+                            using OpenCvSharp.Mat? screenshot = Tools.CaptureWindow(bot.Hwnd);
+                            
+                            if (screenshot?.Empty() is false && screenshot.Width > 0 && screenshot.Height > 0)
+                            {
+                                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                                string fileName = $"{bot.Settings.Name}_F10_Emergency_{timestamp}.png";
+                                string fullPath = Path.Combine(debugDir, fileName);
+
+                                OpenCvSharp.Cv2.ImWrite(fullPath, screenshot);
+                                Logger.Log($"Снимок экрана для аккаунта '{bot.Settings.Name}' сохранен: {fileName}", LogType.Info);
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Log($"Не удалось выполнить экстренное сохранение снимков: {ex.Message}", LogType.Warning);
+                    }
+
+                    // После сохранения скриншотов принудительно останавливаем систему и выходим
+                    StopMultiBotSystem();
+                    break;
+                }
             }
+            
+            Thread.Sleep(100); // Небольшая пауза, чтобы не нагружать ядро процессора циклом
         }
+    }
 
 #endregion
 

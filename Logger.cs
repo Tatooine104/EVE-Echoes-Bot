@@ -57,6 +57,8 @@ namespace EVEEchoesBot
                 eveShip = parts.Length > 2 ? parts[2] : "Unknown";
             }
 
+// [ ] TODO 2026.05.30 Добавить иконку для ИНФО 
+
             // 2. Иконки статуса (Visual Anchors)
             string icon = type switch
             {
@@ -80,6 +82,8 @@ namespace EVEEchoesBot
             {
                 // В консоль пишем ВСЕГДА и ВСЁ (включая Test)
                 PrintToConsole(consoleMessage, color);
+
+// [ ] TODO 2026.05.30 Добавить сохранения в файл ИНФО 
 
                 // В файл CSV пишем ТОЛЬКО важное (Warning и Error)
                 if (type == LogType.Warning || type == LogType.Error)
@@ -110,7 +114,7 @@ namespace EVEEchoesBot
 
         private static void AppendToFile(string timestamp, string icon, string account, string system, string ship, string method, string message)
         {
-            try 
+            try
             {
                 if (!File.Exists(LogFilePath))
                 {
@@ -121,11 +125,11 @@ namespace EVEEchoesBot
                 string safeMessage = message.Replace(";", ",");
                 string csvLine = $"{timestamp};{icon};{account};{system};{ship};{method};{safeMessage}";
 
-                File.AppendAllText(LogFilePath, csvLine + Environment.NewLine); 
+                File.AppendAllText(LogFilePath, csvLine + Environment.NewLine, System.Text.Encoding.UTF8);
             }
-            catch (Exception ex) 
-            { 
-                Console.WriteLine($"[ERROR] Ошибка записи в CSV: {ex.Message}"); 
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] Ошибка записи в CSV: {ex.Message}");
             }
         }
 

@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using static EVEEchoesBot.Logger;
 
 // [v] TODO 2026.05.30 Привести все тексты логгера к единому стилю 
+// [v] TODO 2026.05.30 Сделать вызов окна ввода при создании дефолтного конфига 
 
 // ЗАМЕТКА: Убедитесь, что это пространство имен (namespace) совпадает с вашим основным файлом!
 namespace EVEEchoesBot
@@ -94,7 +95,7 @@ namespace EVEEchoesBot
                 BotConfig defaultConfig = CreateDefaultConfig();
                 Save(defaultConfig);
 
-                Logger.Log($"Создан файл конфигурации по умолчанию: {ConfigPath}", LogType.Info);
+                Logger.Log($"Создан файл конфигурации по умолчанию по пути '{ConfigPath}'.", LogType.Info);
                 return defaultConfig;
             }
 
@@ -105,7 +106,7 @@ namespace EVEEchoesBot
 
                 if (config == null)
                 {
-                    Logger.Log("Файл конфигурации пуст или поврежден. Создан новый объект.", LogType.Warning);
+                    Logger.Log("Файл конфигурации пуст или поврежден. Инициализирован новый объект.", LogType.Warning);
                     return new BotConfig();
                 }
 
@@ -176,7 +177,7 @@ namespace EVEEchoesBot
 
     #if DEBUG
                 // Выводим информацию об успешном сохранении только в режиме отладки
-                Logger.Log($"Конфигурация сохранена в файл: {ConfigPath}", LogType.Test);
+                Logger.Log($"Конфигурация сохранена в файл '{ConfigPath}'.", LogType.Test);
     #endif
             }
             catch (Exception ex)
