@@ -5,17 +5,16 @@ namespace EVEEchoesBot
 {
     public static class ScenarioFactory
     {
-        // Метод возвращает список стартовых задач для конкретного сценария
         public static List<string> GetDefaultTasks(string scenarioName)
         {
             return scenarioName?.ToLower() switch
             {
-                "mining" =>
+                "localwatcher" =>
                 [
-                    "CheckSecurity"
+                    "CheckSecurity" // Бот делает плановую проверку
                 ],
 
-                // Дефолтный сценарий, если в конфиге указано что-то непонятное
+                // Дефолтный сценарий
                 _ => ["CheckYourOwnState"]
             };
         }

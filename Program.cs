@@ -7,7 +7,8 @@ using System.Diagnostics;
 namespace EVEEchoesBot
 {
 
-// [ ] TODO Проверить все методы и добавить новый метод Logger.Log() 
+// [v] TODO Проверить все методы и добавить новый метод Logger.Log() 
+// [ ] TODO 2026.05.30 Привести все тексты логгера к единому стилю 
 // [v] TODO 2026.05.27 Заменить все SmartClick с координатами на вызовы по енуму 
 
     static partial class Program
@@ -55,7 +56,8 @@ namespace EVEEchoesBot
     public static void Main()
     {
         Logger.Log("Бот успешно запущен.", LogType.Success);
-        Logger.Log("Нажмите [ESC] в любой момент для плавной остановки скрипта.", LogType.Info);
+        Logger.Log("Нажмите [ESC] в любой момент для плавной остановки.", LogType.Info);
+
 
         // Запуск фонового потока для непрерывного отслеживания нажатия управляющих клавиш
         Thread inputThread = new(ListenForCancelKey) { IsBackground = true };
@@ -73,7 +75,7 @@ namespace EVEEchoesBot
         }
         catch (Exception ex)
         {
-            Logger.Log($"Ошибка в главном потоке: {ex.Message}", LogType.Error);
+            Logger.Log($"Критический сбой в главном потоке: {ex.Message}", LogType.Error);
         }
 
         // Перед выходом даем потокам ботов время на плавное закрытие
@@ -119,7 +121,7 @@ namespace EVEEchoesBot
                     IntPtr hWnd = WinAPI.FindWindow(null, accountSettings.WindowTitle);
                     if (hWnd == IntPtr.Zero)
                     {
-                        Logger.Log($"[Ошибка] Не найдено окно '{accountSettings.WindowTitle}' для аккаунта '{accountSettings.Name}'.", LogType.Error);
+                        Logger.Log($"Окно '{accountSettings.WindowTitle}' для аккаунта '{accountSettings.Name}' не найдено.", LogType.Error);
                         continue;
                     }
 
@@ -144,11 +146,11 @@ namespace EVEEchoesBot
                     _activeBots.Add(bot);
                 }
 
-                Logger.Log($"Мультибот запущен. Аккаунтов в работе: {_activeBots.Count}", LogType.Success);
+                Logger.Log($"Мультисистема запущена. Аккаунтов в работе: {_activeBots.Count}", LogType.Success);
             }
             catch (Exception ex)
             {
-                Logger.Log($"Критическая ошибка старта: {ex.Message}", LogType.Error);
+                Logger.Log($"Критический сбой при запуске мультисистемы: {ex.Message}", LogType.Error);
                 _cts.Cancel();
             }
         }
@@ -157,15 +159,25 @@ namespace EVEEchoesBot
 
 #region Stop Bot
 
-        private static void StopMultiBotSystem()
+        private static async void StopMultiBotSystem()
         {
+            // 1. Отправляем сигнал отмены всем потокам
             _cts.Cancel();
+            Logger.Log("Всем фоновым потокам отправлен сигнал остановки. Ожидание завершения...", LogType.Warning);
 
-            // Блокируем доступ, если _activeBots используется в других потоках программы
+            try
+            {
+                // 2. Даем потокам время проснуться от Task.Delay, выполнить блок finally и вызвать SaveStats()
+                await Task.Delay(2000);
+            }
+            catch { /* Игнорируем возможные ошибки таймера */ }
+
+            // 3. Только ТЕПЕРЬ, когда потоки гарантированно засыпают или уже закрылись, очищаем список
             _activeBots.Clear();
 
-            Logger.Log("Всем фоновым потокам ботов отправлен сигнал на остановку. Список активных ботов очищен.", LogType.Warning);
+            Logger.Log("Список активных аккаунтов очищен. Система полностью остановлена.", LogType.Warning);
         }
+
 
 #endregion
 
@@ -187,7 +199,7 @@ namespace EVEEchoesBot
                 // Проверяем, нажата ли клавиша ESC
                 if (Console.KeyAvailable && Console.ReadKey(true).Key == ConsoleKey.Escape)
                 {
-                    Logger.Log("Обнаружено нажатие [ESC]. Инициирую остановку всех ботов...", LogType.Warning);
+                    Logger.Log("Обнаружено нажатие [ESC]. Запуск остановки всех аккаунтов.", LogType.Warning);
 
                     // Вызываем наш новый метод остановки, который плавно гасит все задачи Task
                     StopMultiBotSystem();
@@ -214,7 +226,7 @@ namespace EVEEchoesBot
             Tools.SmartClick(x, y, minSec, maxSec, offset, adbPort: bot.Settings.AdbPort);
 
         #if DEBUG
-            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Отправлен клик по элементу {element} (X={x}, Y={y})", LogType.Test);
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Отправлен клик по элементу '{element}' (X={x}, Y={y}).", LogType.Test);
         #endif
         }
 

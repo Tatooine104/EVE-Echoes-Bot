@@ -1,6 +1,8 @@
 using System.Runtime.InteropServices;
 using System.Text;
 
+// [ ] TODO 2026.05.30 Привести все тексты логгера к единому стилю 
+
 // Замените "LowMiner" на пространство имен вашего проекта, если оно называется иначе
 namespace EVEEchoesBot
 {

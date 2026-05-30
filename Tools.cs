@@ -4,6 +4,8 @@ using OpenCvSharp;
 using System.Diagnostics;
 using System.IO;
 
+// [ ] TODO 2026.05.30 Привести все тексты логгера к единому стилю 
+
 namespace EVEEchoesBot
 {
 

@@ -1,26 +1,16 @@
-using System.Runtime.CompilerServices;
+using System;
+using System.IO;
 
 namespace EVEEchoesBot
 {
-
     public static class Logger
     {
+        private const string LogFilePath = "EVE_Echoes_Bot_log.csv";
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
-#if !DEBUG
-        private const string LogFilePath = "EVE_Echoes_Bot_log.txt";
-#endif
+#region Log
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
-
-        /// <summary>
-        /// Выводит форматированное сообщение в консоль и/или файл в зависимости от режима и типа.
-        /// </summary>
-        /// <param name="message">Текст сообщения.</param>
-        /// <param name="type">Тип сообщения.</param>
-        /// <param name="accountName">Имя активного аккаунта (по умолчанию System).</param>
-        /// <param name="callerMethod">Автоматически заполняется компилятором.</param>
         public static void Log(
             string message,
             LogType type = LogType.Info,
@@ -28,30 +18,29 @@ namespace EVEEchoesBot
             [System.Runtime.CompilerServices.CallerMemberName] string callerMethod = "")
         {
             string eveSystem = "Unknown";
+            string eveShip = "Unknown";
 
-            // 1. Потокобезопасный разбор имени аккаунта и игровой системы из сообщения
+            // 1. Потокобезопасный разбор тегов [Имя|Система|Корабль]
             if (string.IsNullOrEmpty(accountName))
             {
-                // Если сообщение начинается с составного тега, например: "[EveAcc_1|Jita] Текст"
                 if (message.StartsWith('[') && message.Contains(']'))
                 {
                     int closeBracketIndex = message.IndexOf(']');
-                    string rawTag = message[1..closeBracketIndex]; // Извлекаем "EveAcc_1|Jita"
+                    string rawTag = message[1..closeBracketIndex];
 
-                    // Очищаем текст сообщения от тега и пробелов по краям
                     message = message[(closeBracketIndex + 1)..].Trim();
 
-                    // Проверяем, есть ли внутри разделитель '|'
                     if (rawTag.Contains('|'))
                     {
                         string[] parts = rawTag.Split('|');
-                        accountName = parts[0]; // Имя бота (до черты)
-                        eveSystem = parts[1];   // Имя системы (после черты)
+                        accountName = parts[0];
+                        eveSystem = parts.Length > 1 ? parts[1] : "Unknown";
+                        eveShip = parts.Length > 2 ? parts[2] : "Unknown";
                     }
                     else
                     {
                         accountName = rawTag;
-                        eveSystem = "System"; // Если системы нет в теге
+                        eveSystem = "Unknown";
                     }
                 }
                 else
@@ -60,57 +49,51 @@ namespace EVEEchoesBot
                     eveSystem = "System";
                 }
             }
-            else
+            else if (accountName.Contains('|'))
             {
-                // Если accountName был явно передан в аргументы метода как "Имя|Система"
-                if (accountName.Contains('|'))
-                {
-                    string[] parts = accountName.Split('|');
-                    accountName = parts[0];
-                    eveSystem = parts[1];
-                }
+                string[] parts = accountName.Split('|');
+                accountName = parts[0];
+                eveSystem = parts.Length > 1 ? parts[1] : "Unknown";
+                eveShip = parts.Length > 2 ? parts[2] : "Unknown";
             }
 
-            // 2. Новый строгий порядок вывода по вашему запросу: 
-            // Дата -> Вызвавший метод -> Аккаунт -> EVESystem -> Тип сообщения -> Текст
-            string formattedMessage = $"[{DateTime.Now:HH:mm:ss}] [{callerMethod}] [{accountName}] [{eveSystem}] [{type.ToString().ToUpper()}]: {message}";
+            // 2. Иконки статуса (Visual Anchors)
+            string icon = type switch
+            {
+                LogType.Success => "✅",
+                LogType.Warning => "⚠️",
+                LogType.Error   => "🚨",
+                LogType.Test    => "⚙️",
+                _               => "🔹"
+            };
+
+            // 3. Форматируем дату по новому стандарту: ГГГГ.ММ.ДД чч:мм:сс
+            string timestamp = DateTime.Now.ToString("yyyy.MM.dd HH:mm:ss");
+
+            // 4. Собираем строгий и чистый вид для вывода на ЭКРАН КОНСОЛИ
+            string botContext = accountName == "System" ? "[SYSTEM]" : $"[{accountName} | {eveSystem} | {eveShip}]";
+            string consoleMessage = $"[{timestamp}] {icon} {botContext} [{callerMethod}]: {message}";
             ConsoleColor color = GetColorForType(type);
 
-        #if DEBUG
-            // Защищаем вывод в консоль от одновременной записи из разных параллельных потоков
+            // 5. ВАША ЖЕСТКАЯ МАРШРУТИЗАЦИЯ
             lock (Console.Out)
             {
-                PrintToConsole(formattedMessage, color);
+                // В консоль пишем ВСЕГДА и ВСЁ (включая Test)
+                PrintToConsole(consoleMessage, color);
+
+                // В файл CSV пишем ТОЛЬКО важное (Warning и Error)
+                if (type == LogType.Warning || type == LogType.Error)
+                {
+                    AppendToFile(timestamp, icon, accountName, eveSystem, eveShip, callerMethod, message);
+                }
             }
-        #else
-            // Отправка логов в релизную систему обработки/файл
-            RouteReleaseLog(formattedMessage, color, type);
-        #endif
         }
+
+#endregion
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
-#if !DEBUG
-        private static void RouteReleaseLog(string message, ConsoleColor color, LogType type)
-        {
-            switch (type)
-            {
-                case LogType.Test: 
-                    break;
-                case LogType.Info:
-                case LogType.Success:
-                    PrintToConsole(message, color);
-                    break;
-                case LogType.Warning:
-                case LogType.Error:
-                    PrintToConsole(message, color);
-                    AppendToFile(message);
-                    break;
-            }
-        }
-#endif
-
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+#region PrintToConsole
 
         private static void PrintToConsole(string message, ConsoleColor color)
         {
@@ -119,23 +102,38 @@ namespace EVEEchoesBot
             Console.ResetColor();
         }
 
+#endregion
+
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
-#if !DEBUG
-        private static void AppendToFile(string message)
+#region AppendToFile
+
+        private static void AppendToFile(string timestamp, string icon, string account, string system, string ship, string method, string message)
         {
             try 
-            { 
-                File.AppendAllText(LogFilePath, message + Environment.NewLine); 
+            {
+                if (!File.Exists(LogFilePath))
+                {
+                    string header = "Дата;Статус;Аккаунт;Система;Корабль;Метод;Сообщение" + Environment.NewLine;
+                    File.WriteAllText(LogFilePath, header);
+                }
+
+                string safeMessage = message.Replace(";", ",");
+                string csvLine = $"{timestamp};{icon};{account};{system};{ship};{method};{safeMessage}";
+
+                File.AppendAllText(LogFilePath, csvLine + Environment.NewLine); 
             }
             catch (Exception ex) 
             { 
-                Console.WriteLine($"[ERROR] Ошибка записи: {ex.Message}"); 
+                Console.WriteLine($"[ERROR] Ошибка записи в CSV: {ex.Message}"); 
             }
         }
-#endif
+
+#endregion
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
+#region GetColorForType
 
         private static ConsoleColor GetColorForType(LogType type)
         {
@@ -145,13 +143,17 @@ namespace EVEEchoesBot
                 LogType.Success => ConsoleColor.Green,
                 LogType.Warning => ConsoleColor.Yellow,
                 LogType.Error   => ConsoleColor.Red,
-                LogType.Test    => ConsoleColor.DarkBlue,
+                LogType.Test    => ConsoleColor.DarkGray,
                 _               => ConsoleColor.Gray
             };
         }
     }
 
+#endregion
+
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
+#region LogType
 
     public enum LogType
     {
@@ -161,5 +163,9 @@ namespace EVEEchoesBot
         Error,
         Test
     }
+
+#endregion
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 }

@@ -7,6 +7,9 @@ using static EVEEchoesBot.Tools;
 using System.Diagnostics;
 using System.Text.Json;
 using System.Collections.Concurrent;
+using static EVEEchoesBot.Logger;
+
+// [ ] TODO 2026.05.30 Привести все тексты логгера к единому стилю 
 
 namespace EVEEchoesBot
 {
@@ -59,7 +62,7 @@ namespace EVEEchoesBot
 
         // Публичные свойства для чтения статистики (например, для вывода в UI)
         public long TriggerCount => Interlocked.Read(ref _triggerCount);
-        public TimeSpan TotalRuntime => TimeSpan.FromSeconds(_accumulatedSeconds) + _runtimeStopwatch.Elapsed;
+        public TimeSpan TotalRuntime => TimeSpan.FromSeconds(_accumulatedSeconds);
 
         private string _eveSystem = "Неизвестно";
         private string _eveShip = "Неизвестно";
@@ -81,10 +84,10 @@ namespace EVEEchoesBot
 
         private long _triggerCount;
         private double _accumulatedSeconds;
-        private readonly Stopwatch _runtimeStopwatch = new();
         private readonly string _statsFilePath;
         private readonly System.Threading.Lock _taskLock = new();
         private List<string> _taskQueue = [];
+        //private long _triggerCount = 0;
         // Кэшируем настройки сериализации для повторного использования во всех потоках
         private static readonly JsonSerializerOptions _jsonOptions = new() { WriteIndented = true };
 
@@ -223,12 +226,12 @@ EnqueueTasks(miningCycle);
                 if (state != null)
                 {
                     _triggerCount = state.Triggers;
-                    _accumulatedSeconds = state.RuntimeSeconds;
+                    _accumulatedSeconds = (double)state.RuntimeSeconds;
 
-                    lock (_taskLock) // Защищаем запись в общие переменные потока
+                    lock (_taskLock) // Теперь отступ правильный и логичный
                     {
-                        // Восстанавливаем список задач из DTO
-                        _taskQueue = state.TaskQueue ?? [];
+                        // Восстанавливаем список задач из DTO обратно в чистый List<string>
+                        _taskQueue = state.TaskQueue?.ToList() ?? [];
 
                         // Восстанавливаем систему и корабль. Если в JSON пусто, пишем "Неизвестно"
                         _eveSystem = !string.IsNullOrEmpty(state.EVESystem) ? state.EVESystem : "Неизвестно";
@@ -244,6 +247,7 @@ EnqueueTasks(miningCycle);
                             CurrentTask = AccountTask.CheckYourOwnState;
                         }
                     }
+
                     return true;
                 }
             }
@@ -254,6 +258,7 @@ EnqueueTasks(miningCycle);
 
             return false;
         }
+
 
 #endregion
 
@@ -274,7 +279,12 @@ EnqueueTasks(miningCycle);
                     {
                         AccountName    = Settings.Name,
                         Triggers       = TriggerCount,
-                        RuntimeSeconds = TotalRuntime.TotalSeconds,
+
+                        // ИСПРАВЛЕНИЕ: Явно приводим double к типу long
+                        // Также убедитесь, что вы используете правильное поле времени 
+                        // (например, (long)TotalRuntime.TotalSeconds или просто переменную _accumulatedSeconds)
+                        RuntimeSeconds = _accumulatedSeconds,
+
                         CurrentTask    = CurrentTask.ToString(),
                         TaskQueue      = [.. _taskQueue],
                         EVESystem      = _eveSystem,
@@ -283,7 +293,8 @@ EnqueueTasks(miningCycle);
                     };
                 }
 
-                // ИСПРАВЛЕНИЕ: Передаем именно _jsonOptions вторым аргументом
+                // Сериализация и запись файла выполняются за пределами lock,
+                // не замораживая работу других потоков бота
                 string json = JsonSerializer.Serialize(dto, _jsonOptions);
                 File.WriteAllText(_statsFilePath, json);
             }
@@ -292,6 +303,7 @@ EnqueueTasks(miningCycle);
                 Logger.Log($"Ошибка сохранения статистики {Settings.Name}: {ex.Message}", LogType.Warning);
             }
         }
+
 
 #endregion
 
@@ -327,97 +339,135 @@ EnqueueTasks(miningCycle);
         {
             Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Поток запущен. Начинаю работу по сценарию: {Settings.Script ?? "mining"}", LogType.Info);
 
-            while (!token.IsCancellationRequested)
+            // Включаем высокоточный секундомер времени работы для этого окна
+            var sessionStopwatch = System.Diagnostics.Stopwatch.StartNew();
+            // Фиксируем стартовое значение, которое мы уже успели загрузить из JSON прошлых сессий
+            long baseSeconds = (long)_accumulatedSeconds;
+
+            try
             {
-                try
+                while (!token.IsCancellationRequested)
                 {
-                    // ========================================================
-                    // ЭТАП 1: ГЛОБАЛЬНЫЙ ДВУХЭТАПНЫЙ МОНИТОРИНГ БЕЗОПАСНОСТИ
-                    // ========================================================
-                    // Вызываем ваш метод. Он сам сделает скриншот, проверит шапку, 
-                    bool isEverythingSafe = await CheckSecurityStatusAsync(token);
-
-                    if (!isEverythingSafe)
+                    try
                     {
-                        // Если метод вернул false, значит либо в локале враг, либо интерфейс сломан.
-                        // В обоих случаях наш RunLocalCheck уже выставил IsSaveLocal = false, 
-                        // и все соседние боты получили команду отварпа в начало очереди.
-                        Logger.Log($"[{Settings.Name}] Система небезопасна или интерфейс разрушен! Ожидаю эвакуацию.", LogType.Warning);
-                    }
+                        // ОБНОВЛЕНИЕ ВРЕМЕНИ: Прибавляем секунды текущей сессии к базовому времени из файла
+                        _accumulatedSeconds = baseSeconds + (sessionStopwatch.ElapsedMilliseconds / 1000);
 
-                    // ========================================================
-                    // ЭТАП 2: УПРАВЛЕНИЕ БЕСКОНЕЧНОЙ ОЧЕРЕДЬЮ СЦЕНАРИЯ
-                    // ========================================================
-                    // Если текущая задача стала CheckYourOwnState, значит, 
-                    // все плановые задачи сценария закончились, и пора запускать круг заново.
-                    if (CurrentTask == AccountTask.CheckYourOwnState)
+                        // ========================================================
+                        // ЭТАП 1: ГЛОБАЛЬНЫЙ ДВУХЭТАПНЫЙ МОНИТОРИНГ БЕЗОПАСНОСТИ
+                        // ========================================================
+                        bool isEverythingSafe = await CheckSecurityStatusAsync(token);
+
+                        if (!isEverythingSafe)
+                        {
+                            Logger.Log($"[{Settings.Name}] Система небезопасна или интерфейс разрушен! Ожидаю эвакуацию.", LogType.Warning);
+                        }
+
+                        // ========================================================
+                        // ЭТАП 2: УПРАВЛЕНИЕ БЕСКОНЕЧНОЙ ОЧЕРЕДЬЮ СЦЕНАРИЯ
+                        // ========================================================
+                        bool isQueueEmpty = false;
+                        lock (_taskLock)
+                        {
+                            isQueueEmpty = _taskQueue.Count == 0;
+                        }
+
+                        // Перезапускаем сценарий ТОЛЬКО если бот находится в простое И в очереди пусто
+                        if (CurrentTask == AccountTask.CheckYourOwnState && isQueueEmpty)
+                        {
+                            Logger.Log($"[{Settings.Name}] Сценарий '{Settings.Script ?? "mining"}' завершил круг. Перезапуск...", LogType.Test);
+
+                            string currentScript = Settings.Script ?? "mining";
+                            List<string> defaultTasks = ScenarioFactory.GetDefaultTasks(currentScript);
+
+                            this.EnqueueTasks(defaultTasks, addToFront: false);
+
+                            // Сразу переходим на следующий виток, чтобы взять первую задачу из свежей очереди
+                            continue;
+                        }
+
+                        // Достаем следующую задачу из очереди
+                        CurrentTask = DequeueNextTask();
+
+                        // ========================================================
+                        // ЭТАП 3: ВЫПОЛНЕНИЕ ТЕКУЩЕЙ ЗАДАЧИ
+                        // ========================================================
+                        switch (CurrentTask)
+                        {
+                            case AccountTask.CheckSecurity:
+                                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Плановый виток мониторинга завершен.", LogType.Info);
+                                break;
+
+                            case AccountTask.SendAliChatWarning:
+                                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] ВНИМАНИЕ: Запуск макроса оповещения альянса...", LogType.Error);
+                                await RunAliChatWarningAsync(token);
+                                break;
+
+                            case AccountTask.GoToStation:
+                                Logger.Log($"[{Settings.Name}] ЭВАКУАЦИЯ: Выполняю команду отварпа на станцию!", LogType.Warning);
+                                break;
+
+                            case AccountTask.Undocking:
+                                Logger.Log($"[{Settings.Name}] Шаг сценария: Выхожу из дока...", LogType.Info);
+                                break;
+
+                            case AccountTask.Mining:
+                                Logger.Log($"[{Settings.Name}] Шаг сценария: Начинаю добычу...", LogType.Info);
+                                break;
+
+                            default:
+                                break;
+                        }
+
+                        await Task.Delay(TimeSpan.FromSeconds(5), token);
+                    }
+                    catch (TaskCanceledException)
                     {
-                        Logger.Log($"[{Settings.Name}] Сценарий '{Settings.Script ?? "mining"}' завершил круг. Перезапуск...", LogType.Info);
-
-                        string currentScript = Settings.Script ?? "mining";
-                        List<string> defaultTasks = ScenarioFactory.GetDefaultTasks(currentScript);
-
-                        // Закидываем дефолтные задачи сценария обратно в конец очереди
-                        this.EnqueueTasks(defaultTasks, addToFront: false);
+                        // Перехватываем отмену внутри цикла, чтобы управление перешло в внешний блок catch/finally
+                        throw;
                     }
-
-                    // Достаем следующую задачу из очереди (из начала списка)
-                    CurrentTask = DequeueNextTask();
-
-                    // ========================================================
-                    // ЭТАП 3: ВЫПОЛНЕНИЕ ТЕКУЩЕЙ ЗАДАЧИ
-                    // ========================================================
-                    switch (CurrentTask)
+                    catch (Exception ex)
                     {
-                        case AccountTask.CheckSecurity:
-                            // Плановая точка проверки. Так как мы и так проверяем локал 
-                            // на каждом тике в начале цикла, здесь можно просто выдать лог.
-                            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Плановый виток мониторинга завершен.", LogType.Info);
-                            break;
-
-                        case AccountTask.SendAliChatWarning:
-                            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] ВНИМАНИЕ: Запуск макроса оповещения альянса...", LogType.Error);
-                            await RunAliChatWarningAsync(token);
-                            break;
-
-                        case AccountTask.GoToStation:
-                            Logger.Log($"[{Settings.Name}] ЭВАКУАЦИЯ: Выполняю команду отварпа на станцию!", LogType.Warning);
-                            // TODO: Здесь будет вызов вашего метода физического полета в док
-                            // await DoWarpToStationAsync(token);
-                            break;
-
-                        case AccountTask.Undocking:
-                            Logger.Log($"[{Settings.Name}] Шаг сценария: Выхожу из дока...", LogType.Info);
-                            break;
-
-                        case AccountTask.Mining:
-                            Logger.Log($"[{Settings.Name}] Шаг сценария: Начинаю добычу...", LogType.Info);
-                            break;
-
-                        default:
-                            // Дефолтные или неизвестные стейты просто пропускаем
-                            break;
+                        Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Ошибка в главном цикле: {ex.Message}", LogType.Error);
+                        await Task.Delay(5000, token);
                     }
-
-                    // Частота опроса нашей стейт-машины (каждые 5 секунд бот делает один шаг)
-                    await Task.Delay(TimeSpan.FromSeconds(5), token);
-                }
-                catch (TaskCanceledException)
-                {
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Критическая ошибка в главном цикле: {ex.Message}", LogType.Error);
-                    await Task.Delay(5000, token);
                 }
             }
+            catch (TaskCanceledException)
+            {
+                Logger.Log($"[{Settings.Name}] Получен сигнал остановки. Фиксирую состояние...", LogType.Info);
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"[{Settings.Name}] Критическая ошибка потока: {ex.Message}", LogType.Error);
+            }
+            finally
+            {
+                // Финальное обновление времени перед сохранением на диск
+                sessionStopwatch.Stop();
+                _accumulatedSeconds = baseSeconds + (sessionStopwatch.ElapsedMilliseconds / 1000);
 
-            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Поток мониторинга остановлен.", LogType.Info);
+                // ГАРАНТИРОВАННОЕ СОХРАНЕНИЕ: Выполнится всегда при закрытии или падении потока
+                lock (_taskLock)
+                {
+                    SaveStats();
+                }
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Состояние успешно сохранено на диск. Поток мониторинга остановлен. Всего секунд в работе: {_accumulatedSeconds}", LogType.Info);
+            }
         }
 
 
 #endregion
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
+public void ForceSaveStats()
+{
+    lock (_taskLock)
+    {
+        SaveStats();
+    }
+}
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
@@ -433,11 +483,9 @@ EnqueueTasks(miningCycle);
                 return false;
             }
 
-            // Использование путей к шаблонам (убедитесь, что Program.TemplatesDir доступен)
             string pathImg1 = Path.Combine(Program.TemplatesDir, "imgLocalChatHead.png");
             string pathImg2 = Path.Combine(Program.TemplatesDir, "imgLocalChatIcon.png");
 
-            // Области поиска
             Rect localRegion1 = new(5, 5, 500, 720);
             Rect localRegion2 = new(5, 650, 100, 120);
 
@@ -455,13 +503,13 @@ EnqueueTasks(miningCycle);
 
             if (safeRegion1.Width <= 0 || safeRegion1.Height <= 0 || safeRegion2.Width <= 0 || safeRegion2.Height <= 0)
             {
-                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Заданные Rect выходят за рамки окна! Размер скриншота: {screenshot.Width}x{screenshot.Height}", LogType.Error);
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Заданные Rect выходят за рамки окна!", LogType.Error);
                 return false;
             }
 
-            // ==========================================
-            // ЭТАП 1: Ищем Шапку чата (Развернун ли чат?)
-            // ==========================================
+            // ========================================================
+            // ЭТАП 1: Ищем Шапку чата (Развернут ли чат?)
+            // ========================================================
             Point? foundImg1 = Tools.FindTemplateInRegion(screenshot, pathImg1, safeRegion1, 0.80);
 
             if (foundImg1.HasValue)
@@ -473,31 +521,22 @@ EnqueueTasks(miningCycle);
                     Directory.CreateDirectory(debugDir);
                     Cv2.ImWrite(Path.Combine(debugDir, $"{Settings.Name}_imgLocalChatHead_FOUND.png"), cropped);
                 }
-                catch (Exception ex) { Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Ошибка сохранения кадра: {ex.Message}", LogType.Warning); }
+                catch (Exception ex) { Logger.Log($"[{Settings.Name}] Ошибка сохранения кадра: {ex.Message}", LogType.Warning); }
         #endif
 
-                // ИСПРАВЛЕНО: Прямо возвращаем результат глубокой проверки (true если все 3 маркера на месте, false если меньше)
+                // Чат открыт — запускаем глубокую проверку пилотов. 
+                // Если там будут минусы — RunLocalCheck САМ взведет панику IsSaveLocal = false.
                 return RunLocalCheck(screenshot, safeRegion1);
             }
 
-        #if DEBUG
-            try
-            {
-                using Mat cropped = new(screenshot, safeRegion1);
-                Directory.CreateDirectory(debugDir);
-                Cv2.ImWrite(Path.Combine(debugDir, $"{Settings.Name}_imgLocalChatHead_NOT_FOUND.png"), cropped);
-            }
-            catch (Exception ex) { Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Ошибка сохранения кадра: {ex.Message}", LogType.Warning); }
-        #endif
-
-            // ==========================================
+            // ========================================================
             // ЭТАП 2: Чат свернут, ищем Иконку для разворачивания
-            // ==========================================
+            // ========================================================
             Point? foundImg2 = Tools.FindTemplateInRegion(screenshot, pathImg2, safeRegion2, 0.80);
 
             if (foundImg2.HasValue)
             {
-                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Чат свернут. Найдена иконка {Path.GetFileName(pathImg2)}. Пробую развернуть...", LogType.Test);
+                Logger.Log($"[{Settings.Name}] Чат свернут. Найдена иконка. Пробую развернуть...", LogType.Test);
 
         #if DEBUG
                 try
@@ -506,13 +545,10 @@ EnqueueTasks(miningCycle);
                     Directory.CreateDirectory(debugDir);
                     Cv2.ImWrite(Path.Combine(debugDir, $"{Settings.Name}_imgLocalChatIcon_FOUND.png"), cropped);
                 }
-                catch (Exception ex) { Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Ошибка сохранения кадра: {ex.Message}", LogType.Warning); }
+                catch (Exception ex) { Logger.Log($"[{Settings.Name}] Ошибка сохранения кадра: {ex.Message}", LogType.Warning); }
         #endif
 
-                // Кликаем по иконке через ADB, передавая порт этого бота
                 Tools.SmartClick(foundImg2.Value.X, foundImg2.Value.Y, minSec: 0, maxSec: 0, offset: 2, adbPort: Settings.AdbPort);
-
-                // Даем игре время проиграть анимацию развертывания чата
                 await Task.Delay(3000, token);
 
                 using Mat? freshScreenshot = Tools.CaptureWindow(Hwnd);
@@ -523,39 +559,23 @@ EnqueueTasks(miningCycle);
 
                 if (retryImg1.HasValue)
                 {
-                    // Чат успешно открылся, возвращаем РЕАЛЬНЫЙ результат проверки локала
+                    // Успешно развернули — глубоко проверяем локал
                     return RunLocalCheck(freshScreenshot, freshSafeRegion1);
                 }
-                else
-                {
-        #if DEBUG
-                    try
-                    {
-                        using Mat cropped = new(freshScreenshot, freshSafeRegion1);
-                        Directory.CreateDirectory(debugDir);
-                        Cv2.ImWrite(Path.Combine(debugDir, $"{Settings.Name}_imgLocalChatHead_AFTER_CLICK_NOT_FOUND.png"), cropped);
-                    }
-                    catch (Exception ex) { Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Ошибка сохранения кадра: {ex.Message}", LogType.Warning); }
-        #endif
-                }
 
-                // Если кликнули, но чат так и не открылся — система не безопасна
+                // Кликнули, но чат не открылся (например, экран загрузки залагал) — просто тихо выходим
                 return false;
             }
 
-        #if DEBUG
-            try
-            {
-                using Mat cropped = new(screenshot, safeRegion2);
-                Directory.CreateDirectory(debugDir);
-                Cv2.ImWrite(Path.Combine(debugDir, $"{Settings.Name}_imgLocalChatIcon_NOT_FOUND.png"), cropped);
-            }
-            catch (Exception ex) { Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Ошибка сохранения кадра: {ex.Message}", LogType.Warning); }
-        #endif
-
-            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Шаблоны чата не найдены. Безопасность под угрозой!", LogType.Error);
+            // ========================================================
+            // ЭТАП 3: ЖЕЛЕЗНАЯ ТИШИНА (Интерфейс не найден вообще)
+            // ========================================================
+            // На экране черный экран, док или окно перекрыто. 
+            // Мы НЕ вызываем RunLocalCheck (не пишем IsSaveLocal = false). Бот просто игнорирует этот тик.
+            Logger.Log($"[{Settings.Name}] Шаблоны чата полностью отсутствуют на экране (смена сессии/загрузка). Пропускаю шаг.", LogType.Info);
             return false;
         }
+
 
 
 #endregion
@@ -802,7 +822,7 @@ private async Task RunAliChatWarningAsync(CancellationToken token)
                 if (value is false)
                 {
                     bool shouldSendAllianceAlert = systemState.SetDanger();
-
+                    _triggerCount++;
                     Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] ОПАСНОСТЬ!!! В системе посторонние!", LogType.Warning);
 
                     if (shouldSendAllianceAlert)
