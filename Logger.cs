@@ -6,9 +6,13 @@ namespace EVEEchoesBot
     public static class Logger
     {
 
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
 #if !DEBUG
         private const string LogFilePath = "EVE_Echoes_Bot_log.txt";
 #endif
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
         /// <summary>
         /// Выводит форматированное сообщение в консоль и/или файл в зависимости от режима и типа.
@@ -84,7 +88,7 @@ namespace EVEEchoesBot
         #endif
         }
 
-
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 #if !DEBUG
         private static void RouteReleaseLog(string message, ConsoleColor color, LogType type)
@@ -106,12 +110,16 @@ namespace EVEEchoesBot
         }
 #endif
 
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
         private static void PrintToConsole(string message, ConsoleColor color)
         {
             Console.ForegroundColor = color;
             Console.WriteLine(message);
             Console.ResetColor();
         }
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 #if !DEBUG
         private static void AppendToFile(string message)
@@ -127,6 +135,8 @@ namespace EVEEchoesBot
         }
 #endif
 
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
         private static ConsoleColor GetColorForType(LogType type)
         {
             return type switch
@@ -140,6 +150,8 @@ namespace EVEEchoesBot
             };
         }
     }
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
     public enum LogType
     {

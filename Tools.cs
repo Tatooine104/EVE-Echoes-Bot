@@ -12,6 +12,8 @@ namespace EVEEchoesBot
     public static class Tools
     {
 
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
 #region Globals
 
         // --- Глобальные утилиты ---
@@ -22,6 +24,8 @@ namespace EVEEchoesBot
 
 
 #endregion
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 #region CaptureWindow
 
@@ -143,6 +147,8 @@ namespace EVEEchoesBot
 
 #endregion
 
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
 #region FindTemplateInRegion
 
         /// <summary>
@@ -232,6 +238,8 @@ namespace EVEEchoesBot
 
 #endregion
 
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
 #region ClampRegion
 
         /// <summary>
@@ -249,6 +257,8 @@ namespace EVEEchoesBot
         }
 
 #endregion
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 #region SmartClick
 
@@ -344,6 +354,8 @@ namespace EVEEchoesBot
 
 #endregion
 
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
 #region GetRandomDelayMs
 
         /// <summary>
@@ -371,7 +383,7 @@ namespace EVEEchoesBot
 
 #endregion
 
-
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 #region GetWindow
 
@@ -420,11 +432,9 @@ namespace EVEEchoesBot
             return hWnd;
         }
 
-
-
-
 #endregion
 
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 #region ResizeWindow
 
@@ -480,6 +490,8 @@ namespace EVEEchoesBot
         }
 
 #endregion
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
     }
 }

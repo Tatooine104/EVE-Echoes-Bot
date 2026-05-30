@@ -13,46 +13,44 @@ namespace EVEEchoesBot
     static partial class Program
     {
 
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
         #region Constants & Fields
 
         // 1. Создаем глобальный источник токена отмены
         private static CancellationTokenSource _cts = new();
 
-        #endregion
+        // 1. Глобальные переменные для управления состоянием
+        private static readonly List<ActiveBotAccount> _activeBots = [];
+        private static BotConfig? _config;
 
+        /// <summary>
+        /// Глобальный путь к папке Images в корне проекта.
+        /// </summary>
+        public static string TemplatesDir => Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\..\..\Images"));
 
-    // 1. Глобальные переменные для управления состоянием
-    private static readonly List<ActiveBotAccount> _activeBots = [];
-    private static BotConfig? _config;
+        public enum GameUi
+        {
+            // ИмяЭлемента = (X * 10000) + Y (упаковываем X и Y в одно число для Enum)
+            // MenuButton = 500450,    // X: 50,  Y: 450 (Ваш пример)
+            ChatButtSend   =  4450695, // Кнопка чата "Send"
+            WindowCenter   =  8000250, // Точка чуть ниже и правее центра окна
+            ChatMessScout  =  3000600, // Сообщение "Scout"
+            ChatInform     =   800400, // Меню "Inform"
+            ChatFastInput  = 11900685, // Мню быстрого ввода
+            ChatInputMenu  =  3650700, // Меню ввода чата
+            ChatTabAli     =   500450, // Вкладка чата альянса
+            ChatsInterface =   250625  // Интерфейс чатов
 
-    /// <summary>
-    /// Глобальный путь к папке Images в корне проекта.
-    /// </summary>
-    public static string TemplatesDir => Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\..\..\Images"));
+            // hWnd.ClickTo(GameUi.ChatTabAli); // Пример вызова
 
-    public enum GameUi
-    {
-        // ИмяЭлемента = (X * 10000) + Y (упаковываем X и Y в одно число для Enum)
-        // MenuButton = 500450,    // X: 50,  Y: 450 (Ваш пример)
-        ChatButtSend   =  4450695, // Кнопка чата "Send"
-        WindowCenter   =  8000250, // Точка чуть ниже и правее центра окна
-        ChatMessScout  =  3000600, // Сообщение "Scout"
-        ChatInform     =   800400, // Меню "Inform"
-        ChatFastInput  = 11900685, // Мню быстрого ввода
-        ChatInputMenu  =  3650700, // Меню ввода чата
-        ChatTabAli     =   500450, // Вкладка чата альянса
-        ChatsInterface =   250625  // Интерфейс чатов
+        }
 
-        // hWnd.ClickTo(GameUi.ChatTabAli); // Пример вызова
+#endregion
 
-    }
-
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-// - + - + - + - + - |  Основная программа   | - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 #region Main
-
 
     public static void Main()
     {
@@ -88,6 +86,8 @@ namespace EVEEchoesBot
 
 
 #endregion
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 #region Start Bot
 
@@ -165,6 +165,8 @@ namespace EVEEchoesBot
 
 #endregion
 
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
 #region ListenForCancelKey
 
     /// <summary>
@@ -192,6 +194,8 @@ namespace EVEEchoesBot
         }
 
 #endregion
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 #region ClickTo
 

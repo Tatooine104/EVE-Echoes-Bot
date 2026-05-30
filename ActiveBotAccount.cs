@@ -13,6 +13,8 @@ namespace EVEEchoesBot
     public class ActiveBotAccount
     {
 
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
 #region BOT params
 
         public AccSettings Settings { get; }
@@ -89,6 +91,8 @@ namespace EVEEchoesBot
 
 #endregion
 
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
 #region EnqueueTasks
 
         public void EnqueueTasks(IEnumerable<string> tasks, bool addToFront = false)
@@ -131,6 +135,8 @@ EnqueueTasks(miningCycle);
 
 #endregion
 
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
 #region AdvanceToNextTask
 
         // Главный метод логики: Берет следующую задачу из очереди
@@ -167,6 +173,8 @@ EnqueueTasks(miningCycle);
         }
 
 #endregion
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 #region TryLoadLastStatsAndQueue
 
@@ -216,6 +224,8 @@ EnqueueTasks(miningCycle);
 
 #endregion
 
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
 #region SaveStats
 
         // Сохранение статистики на диск
@@ -252,6 +262,7 @@ EnqueueTasks(miningCycle);
 
 #endregion
 
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 #region Start
 
@@ -266,11 +277,15 @@ EnqueueTasks(miningCycle);
 
 #endregion
 
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
 #region Stop
 
         public void Stop() => _accountCts?.Cancel();
 
 #endregion
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 #region RunLoopAsync
 
@@ -340,6 +355,8 @@ EnqueueTasks(miningCycle);
         }
 
 #endregion
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 #region CheckSecurityStatus 
 
@@ -481,6 +498,8 @@ EnqueueTasks(miningCycle);
 
 #endregion
 
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
 #region RunLocalCheck
 
         private bool RunLocalCheck(Mat screenshot, Rect searchRegion)
@@ -541,6 +560,8 @@ EnqueueTasks(miningCycle);
         }
 
 #endregion
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 #region AliChatWarning
 
@@ -694,6 +715,8 @@ private async Task RunAliChatWarningAsync(CancellationToken token)
 
 #endregion
 
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
 #region _isSaveLocal
 
         private bool? _isSaveLocal;
@@ -721,6 +744,8 @@ private async Task RunAliChatWarningAsync(CancellationToken token)
     }
 
 #endregion
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 #region AccountTask
 

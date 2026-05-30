@@ -10,11 +10,15 @@ namespace EVEEchoesBot
 // [v] TODO 2026.05.30 Добавить класс сохранения статистики по ботам (отдельно для каждого акка stat_accountname.json)
 // [v] TODO 2026.05.30 Перенести EVESystem и EVEShip в файл статистики. 
 
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
     // Главный класс конфигурации
     public class BotConfig
     {
         public List<AccSettings> Accounts { get; set; } = [];
     }
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
     // Класс настроек конкретного аккаунта (ЗАМЕНИТЕ СВОЙ СТАРЫЙ НА ЭТОТ)
     public class AccSettings
@@ -31,12 +35,16 @@ namespace EVEEchoesBot
         public TargetSize? Size { get; set; }
     }
 
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
     // Класс размеров окна
     public class TargetSize
     {
         public int TargetWidth  { get; set; }
         public int TargetHeight { get; set; }
     }
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
     // [ ] TODO 2026.05.30 Добавить параметр В космосе/В доке, статус безопастности, и подумать что еще нужно  
     public class AccountStateDto
@@ -50,6 +58,8 @@ namespace EVEEchoesBot
         public string EVESystem       { get; set; } = "";
         public string EVEShip         { get; set; } = "";
     }
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
     /// <summary>
     /// Класс управления конфигурацией всего бота.
@@ -65,6 +75,7 @@ namespace EVEEchoesBot
             PropertyNameCaseInsensitive = true
         };
 
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 #region BotConfig Load
 
@@ -108,6 +119,8 @@ namespace EVEEchoesBot
 
 #endregion
 
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
 #region CreateDefaultConfig
 
         /// <summary>
@@ -143,6 +156,8 @@ namespace EVEEchoesBot
 
 #endregion
 
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
 #region Save
 
         /// <summary>
@@ -175,6 +190,8 @@ namespace EVEEchoesBot
         }
 
 #endregion
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
     }
 
