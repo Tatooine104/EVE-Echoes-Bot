@@ -64,8 +64,8 @@ namespace EVEEchoesBot
         public long TriggerCount => Interlocked.Read(ref _triggerCount);
         public TimeSpan TotalRuntime => TimeSpan.FromSeconds(_accumulatedSeconds);
 
-        private string _eveSystem = "Неизвестно";
-        private string _eveShip = "Неизвестно";
+        internal string _eveSystem = "Неизвестно";
+        internal string _eveShip = "Неизвестно";
 
         public string EVESystem
         {
@@ -230,16 +230,12 @@ EnqueueTasks(miningCycle);
                     _triggerCount = state.Triggers;
                     _accumulatedSeconds = (double)state.RuntimeSeconds;
 
-                    lock (_taskLock) // Теперь отступ правильный и логичный
+                    lock (_taskLock)
                     {
-                        // Восстанавливаем список задач из DTO обратно в чистый List<string>
+                        // Восстанавливаем список задач
                         _taskQueue = state.TaskQueue?.ToList() ?? [];
 
-                        // Восстанавливаем систему и корабль. Если в JSON пусто, пишем "Неизвестно"
-                        _eveSystem = !string.IsNullOrEmpty(state.EVESystem) ? state.EVESystem : "Неизвестно";
-                        _eveShip = !string.IsNullOrEmpty(state.EVEShip) ? state.EVEShip : "Неизвестно";
-
-                        // Конвертируем строку задачи обратно в ваш Enum
+                        // Конвертируем строку задачи в Enum
                         if (Enum.TryParse(state.CurrentTask, out AccountTask savedTask))
                         {
                             CurrentTask = savedTask;
@@ -247,6 +243,45 @@ EnqueueTasks(miningCycle);
                         else
                         {
                             CurrentTask = AccountTask.CheckYourOwnState;
+                        }
+
+                        // ИНТЕРАКТИВНЫЙ ОПРОС (Если в файле статов пусто)
+                        // Используем lock(Console.In), чтобы потоки разных аккаунтов не читали консоль одновременно
+                        lock (Console.In)
+                        {
+                            // Проверяем систему
+                            if (string.IsNullOrEmpty(state.EVESystem) || state.EVESystem == "???")
+                            {
+                                Console.ResetColor();
+                                string sys = "";
+                                while (string.IsNullOrWhiteSpace(sys))
+                                {
+                                    Console.Write($"[{state.AccountName}] Введите текущую звездную систему (например, UB-UQZ): ");
+                                    sys = Console.ReadLine()?.Trim() ?? "";
+                                }
+                                _eveSystem = sys;
+                            }
+                            else
+                            {
+                                _eveSystem = state.EVESystem;
+                            }
+
+                            // Проверяем корабль
+                            if (string.IsNullOrEmpty(state.EVEShip) || state.EVEShip == "???")
+                            {
+                                Console.ResetColor();
+                                string ship = "";
+                                while (string.IsNullOrWhiteSpace(ship))
+                                {
+                                    Console.Write($"[{state.AccountName}] Введите название корабля (например, Covetor II): ");
+                                    ship = Console.ReadLine()?.Trim() ?? "";
+                                }
+                                _eveShip = ship;
+                            }
+                            else
+                            {
+                                _eveShip = state.EVEShip;
+                            }
                         }
                     }
 
@@ -260,6 +295,7 @@ EnqueueTasks(miningCycle);
 
             return false;
         }
+
 
 
 #endregion

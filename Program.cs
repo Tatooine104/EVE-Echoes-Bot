@@ -234,11 +234,51 @@ private static bool CheckRequiredFiles()
                         Process.Start(new ProcessStartInfo(adbPath, $"-s {targetDevice} shell settings put system pointer_location 1") { CreateNoWindow = true, UseShellExecute = false })?.WaitForExit();
                     }
 
+                    // Создаем объект аккаунта (внутри его конструктора или инициализации вызывается TryLoadLastStatsAndQueue)
                     var bot = new ActiveBotAccount(accountSettings)
                     {
                         Hwnd = hWnd
                     };
 
+                    // ПРОВЕРКА И ОПРОС: Если после загрузки статов поля остались пустыми или содержат "???"
+                    if (string.IsNullOrEmpty(bot._eveSystem) || bot._eveSystem == "???" || 
+                        string.IsNullOrEmpty(bot._eveShip) || bot._eveShip == "???")
+                    {
+                        Console.ResetColor();
+                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        Console.WriteLine($"\n--- Дополнительная настройка для аккаунта [{accountSettings.Name}] ---");
+                        Console.ResetColor();
+
+                        // Опрашиваем звездную систему
+                        if (string.IsNullOrEmpty(bot._eveSystem) || bot._eveSystem == "???")
+                        {
+                            string sys = "";
+                            while (string.IsNullOrWhiteSpace(sys))
+                            {
+                                Console.Write($"Введите текущую звездную систему (например, UB-UQZ): ");
+                                sys = Console.ReadLine()?.Trim() ?? "";
+                            }
+                            bot._eveSystem = sys;
+                        }
+
+                        // Опрашиваем тип корабля
+                        if (string.IsNullOrEmpty(bot._eveShip) || bot._eveShip == "???")
+                        {
+                            string ship = "";
+                            while (string.IsNullOrWhiteSpace(ship))
+                            {
+                                Console.Write($"Введите название корабля (например, Covetor II): ");
+                                ship = Console.ReadLine()?.Trim() ?? "";
+                            }
+                            bot._eveShip = ship;
+                        }
+                        
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.WriteLine("Данные успешно приняты!");
+                        Console.ResetColor();
+                    }
+
+                    // Теперь запускаем бот, зная, что теги системы и корабля гарантированно заполнены!
                     bot.Start(_cts.Token);
                     _activeBots.Add(bot);
                 }
