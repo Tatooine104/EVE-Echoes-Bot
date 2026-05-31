@@ -63,7 +63,7 @@ namespace EVEEchoesBot
         public DateTime LastUpdate     { get; set; }
         public string EVESystem        { get; set; } = "";
         public string EVEShip          { get; set; } = "";
-        public bool InSpace            { get; set; }
+        public bool? InSpace           { get; set; }
     }
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
