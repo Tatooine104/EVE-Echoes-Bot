@@ -7,7 +7,10 @@ namespace EVEEchoesBot
     {
         private const string LogFilePath = "EVE_Echoes_Bot_log.csv";
 
-         private static readonly string _cachedVersion = $"v.{System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.01.000"}";
+        private static readonly string _cachedVersion =
+            System.Reflection.Assembly.GetExecutingAssembly().GetName().Version is { } v
+                ? $"v.{v.Major}.{v.Minor:D2}.{v.Build:D3}"
+                : "v.0.01.000";
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 

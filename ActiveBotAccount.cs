@@ -340,7 +340,7 @@ EnqueueTasks(miningCycle);
         private async Task RunLoopAsync(CancellationToken token)
         {
             Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Поток запущен. Начало работы по сценарию: '{Settings.Script ?? "mining"}'.", LogType.Info);
-            
+
             var sessionStart = System.DateTime.UtcNow;
 
             // Включаем высокоточный секундомер времени работы для этого окна
@@ -492,7 +492,7 @@ public void ForceSaveStats()
             string pathImg1 = Path.Combine(Program.TemplatesDir, "imgLocalChatHead.png");
             string pathImg2 = Path.Combine(Program.TemplatesDir, "imgLocalChatIcon.png");
 
-            Rect localRegion1 = new(5, 5, 500, 720);
+            Rect localRegion1 = new(5, 5, 500, 750);
             Rect localRegion2 = new(5, 650, 100, 120);
 
             string debugDir = Path.GetFullPath(Path.Combine(Program.TemplatesDir, "..", "DebugScreenshots"));
@@ -834,7 +834,7 @@ public void ForceSaveStats()
                 {
                     bool shouldSendAllianceAlert = systemState.SetDanger();
                     _triggerCount++;
-                    
+
                     Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Обнаружена опасность. В системе присутствуют посторонние пилоты.", LogType.Warning);
 
                     if (shouldSendAllianceAlert)

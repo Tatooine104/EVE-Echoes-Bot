@@ -14,6 +14,9 @@
 
     <!-- 2. Имя EXE собирается автоматически. %20 — это пробелы -->
     <AssemblyName>EVE%20Echoes%20Bot%20v.$(Version)</AssemblyName>
+
+    <!-- 3. ВШИВАЕМ ИКОНКУ ИЗ ПАПКИ IMAGES -->
+    <ApplicationIcon>images\ProgramLogo.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -35,7 +38,7 @@
     </None>
   </ItemGroup>
 
-  <!-- ОБНОВЛЕННЫЙ БЛОК: Копирование картинок-шаблонов с фильтрацией мусора -->
+  <!-- Копирование картинок-шаблонов с фильтрацией мусора -->
   <ItemGroup>
     <!-- Полностью изолируем отладочные папки от процесса публикации -->
     <Compile Remove="DebugScreenshots\**" />
@@ -48,18 +51,14 @@
     <None Remove="bin\**" />
     <Content Remove="bin\**" />
 
-    <!-- Очищаем старые одиночные и глобальные правила -->
+    <!-- Очищаем старые правила, включая поиск в корне -->
     <None Remove="imgLocalMinus.png" />
     <None Remove="imgLocalNeutral.png" />
+    <None Remove="*.png" />
     <None Remove="**/*.png" />
 
-    <!-- Копируем ТОЛЬКО картинки из корня проекта. В папки bin и DebugScreenshots код не зайдет -->
-    <Content Include="*.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    
-    <!-- Резервное правило: если решите перенести шаблоны в папку templates, они скопируются корректно -->
-    <Content Include="templates\**\*.png" Condition="Exists('templates')">
+    <!-- ГЛАВНОЕ ПРАВИЛО: Автоматически копируем папку images со всем содержимым -->
+    <Content Include="images\**\*.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>

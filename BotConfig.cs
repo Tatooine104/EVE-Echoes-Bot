@@ -292,8 +292,8 @@ namespace EVEEchoesBot
         [return: MarshalAs(UnmanagedType.Bool)]
         private static partial bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
 
-        // 2. Импорт GetWindowText (с явным указанием UTF-16 маршалинга для Windows строк)
-        [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16)]
+        // FIX ТУТ: Явно указываем EntryPoint = "GetWindowTextW" для Юникод-систем Windows
+        [LibraryImport("user32.dll", EntryPoint = "GetWindowTextW", StringMarshalling = StringMarshalling.Utf16)]
         private static partial int GetWindowText(IntPtr hWnd, [Out] char[] lpString, int nMaxCount);
 
         // 3. Импорт IsWindowVisible
@@ -313,7 +313,7 @@ namespace EVEEchoesBot
             EnumWindows((hWnd, lParam) =>
             {
                 // Глушим предупреждение: явно показываем компилятору, что параметр проигнорирован намеренно
-                _ = lParam; 
+                _ = lParam;
 
                 if (IsWindowVisible(hWnd))
                 {

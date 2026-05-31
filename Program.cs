@@ -34,7 +34,22 @@ namespace EVEEchoesBot
         /// <summary>
         /// Глобальный путь к папке Images в корне проекта.
         /// </summary>
-        public static string TemplatesDir => Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\..\..\Images"));
+        public static string TemplatesDir
+        {
+            get
+            {
+                // 1. Путь для РЕЛИЗА (папка images лежит прямо рядом с .exe)
+                string releasePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images");
+
+                if (Directory.Exists(releasePath))
+                {
+                    return releasePath;
+                }
+
+                // 2. Откатываемся на путь для ОТЛАДКИ (если запускаем из Visual Studio)
+                return Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\..\..\Images"));
+            }
+        }
 
         public enum GameUi
         {
@@ -118,12 +133,12 @@ namespace EVEEchoesBot
 
 private static bool CheckRequiredFiles()
 {
-    // Список критически важных файлов для работы бота
-    string[] requiredFiles =
+    // 1. Компоненты кликера (всегда лежат в корне рядом с .exe)
+    string[] rootFiles = ["adb.exe", "AdbWinApi.dll", "AdbWinUsbApi.dll"];
+
+    // 2. Шаблоны OpenCV (лежат внутри папки images)
+    string[] templateFiles =
     [
-        "adb.exe",
-        "AdbWinApi.dll",
-        "AdbWinUsbApi.dll",
         "imgAliChatENG.png",
         "imgBeltCondensed.png",
         "imgBeltMoon.png",
@@ -133,17 +148,28 @@ private static bool CheckRequiredFiles()
         "imgLocalCriminal.png",
         "imgLocalMinus.png",
         "imgLocalNeutral.png"
-
     ];
 
     bool allExist = true;
 
-    foreach (var file in requiredFiles)
+    // Проверяем файлы кликера в корне
+    foreach (var file in rootFiles)
     {
         string fullPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, file);
         if (!File.Exists(fullPath))
         {
             Logger.Log($"Критическая ошибка релиза: Отсутствует файл '{file}' по пути '{fullPath}'!", LogType.Error);
+            allExist = false;
+        }
+    }
+
+    // Проверяем шаблоны картинок в их целевой папке
+    foreach (var file in templateFiles)
+    {
+        string fullPath = Path.Combine(TemplatesDir, file);
+        if (!File.Exists(fullPath))
+        {
+            Logger.Log($"Критическая ошибка релиза: Отсутствует шаблон '{file}' по пути '{fullPath}'!", LogType.Error);
             allExist = false;
         }
     }
@@ -158,6 +184,7 @@ private static bool CheckRequiredFiles()
 
     return allExist;
 }
+
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
