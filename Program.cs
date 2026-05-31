@@ -10,13 +10,16 @@ namespace EVEEchoesBot
 // [v] TODO Проверить все методы и добавить новый метод Logger.Log() 
 // [v] TODO 2026.05.30 Привести все тексты логгера к единому стилю 
 // [v] TODO 2026.05.27 Заменить все SmartClick с координатами на вызовы по енуму 
+// [ ] TODO 2026.05.30 Сделать переменную хранящую текущую версию программы и добавить вывод в лог 
 
     static partial class Program
     {
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
-        #region Constants & Fields
+#region Constants & Fields
+
+        public static string _ProgVersion = "v.0.01.000";
 
         // 1. Создаем глобальный источник токена отмены
         private static CancellationTokenSource _cts = new();

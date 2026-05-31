@@ -74,7 +74,7 @@ namespace EVEEchoesBot
 
             // 4. Собираем строгий и чистый вид для вывода на ЭКРАН КОНСОЛИ
             string botContext = accountName == "System" ? "[SYSTEM]" : $"[{accountName} | {eveSystem} | {eveShip}]";
-            string consoleMessage = $"[{timestamp}] {icon} {botContext} [{callerMethod}]: {message}";
+            string consoleMessage = $"[{timestamp}] {Program._ProgVersion} {icon} {botContext} [{callerMethod}]: {message}";
             ConsoleColor color = GetColorForType(type);
 
             // 5. ВАША ЖЕСТКАЯ МАРШРУТИЗАЦИЯ
@@ -88,7 +88,7 @@ namespace EVEEchoesBot
                 // В файл CSV пишем ТОЛЬКО важное (Warning и Error)
                 if (type == LogType.Warning || type == LogType.Error || type == LogType.Info)
                 {
-                    AppendToFile(timestamp, icon, accountName, eveSystem, eveShip, callerMethod, message);
+                    AppendToFile(timestamp, Program._ProgVersion,icon, accountName, eveSystem, eveShip, callerMethod, message);
                 }
             }
         }
@@ -114,7 +114,7 @@ namespace EVEEchoesBot
 
         private static readonly System.Threading.Lock _fileLock = new();
 
-        private static void AppendToFile(string timestamp, string icon, string account, string system, string ship, string method, string message)
+        private static void AppendToFile(string timestamp, string progversion, string icon, string account, string system, string ship, string method, string message)
         {
             lock (_fileLock) // Защита от сбоев при одновременной записи из нескольких аккаунтов
             {
@@ -122,7 +122,7 @@ namespace EVEEchoesBot
                 {
                     bool fileExists = File.Exists(LogFilePath);
                     string safeMessage = message.Replace(";", ",");
-                    string csvLine = $"{timestamp};{icon};{account};{system};{ship};{method};{safeMessage}";
+                    string csvLine = $"{timestamp};{progversion};{icon};{account};{system};{ship};{method};{safeMessage}";
 
                     // Используем UTF8Encoding со специальным флагом 'true', который заставляет C# внедрить BOM-маркер
                     var utf8WithBom = new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true);
@@ -130,7 +130,7 @@ namespace EVEEchoesBot
                     if (!fileExists)
                     {
                         // Если файла нет, создаем его и сразу пишем шапку с BOM-маркером
-                        string header = "Дата;Статус;Аккаунт;Система;Корабль;Метод;Сообщение" + Environment.NewLine;
+                        string header = "Дата;Версия;Статус;Аккаунт;Система;Корабль;Метод;Сообщение" + Environment.NewLine;
                         File.WriteAllText(LogFilePath, header, utf8WithBom);
                     }
 

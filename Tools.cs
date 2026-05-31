@@ -272,7 +272,7 @@ namespace EVEEchoesBot
                 int minSec = 1,
                 int maxSec = 5,
                 int offset = 10,
-                int adbPort = 5555)
+                int adbPort = 5565)
             {
                 if (minSec > 0 || maxSec > 0)
                 {
