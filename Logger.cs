@@ -7,6 +7,8 @@ namespace EVEEchoesBot
     {
         private const string LogFilePath = "EVE_Echoes_Bot_log.csv";
 
+         private static readonly string _cachedVersion = $"v.{System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.01.000"}";
+
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 #region Log
@@ -81,11 +83,11 @@ namespace EVEEchoesBot
             string timestamp = DateTime.Now.ToString("yyyy.MM.dd HH:mm:ss");
 
             // 4. Собираем строгий вид для вывода на ЭКРАН (пробел после {icon} убран, он уже внутри иконки)
-            string botContext = safeAccount.Equals("System", StringComparison.OrdinalIgnoreCase) 
-                ? "[SYSTEM]" 
+            string botContext = safeAccount.Equals("System", StringComparison.OrdinalIgnoreCase)
+                ? "[SYSTEM]"
                 : $"[{safeAccount} | {eveSystem} | {eveShip}]";
-                
-            string consoleMessage = $"[{timestamp}] {Program._ProgVersion} {icon} {botContext} [{callerMethod}]: {message}";
+
+            string consoleMessage = $"[{timestamp}] {_cachedVersion} {icon} {botContext} [{callerMethod}]: {message}";
             ConsoleColor color = GetColorForType(type);
 
             // 5. Потокобезопасная маршрутизация

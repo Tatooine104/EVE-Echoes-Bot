@@ -19,7 +19,7 @@ namespace EVEEchoesBot
 
 #region Constants & Fields
 
-        public static string _ProgVersion = "v.0.01.000";
+        public static readonly string _ProgVersion = $"v.{System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.01.000"}";
 
         // 1. Создаем глобальный источник токена отмены
         private static CancellationTokenSource _cts = new();
@@ -59,45 +59,105 @@ namespace EVEEchoesBot
 
 #region Main
 
-    public static void Main()
-    {
-
-        Console.OutputEncoding = System.Text.Encoding.UTF8;
-        Console.InputEncoding = System.Text.Encoding.UTF8;
-
-        Logger.Log("Бот успешно запущен.", LogType.Info);
-        Logger.Log("Нажмите [ESC] в любой момент для плавной остановки.", LogType.Info);
-
-
-        // Запуск фонового потока для непрерывного отслеживания нажатия управляющих клавиш
-        Thread inputThread = new(ListenForCancelKey) { IsBackground = true };
-        inputThread.Start();
-
-        // Запускаем многопоточную систему (вместо InitializeBot)
-        StartMultiBotSystem();
-
-        // Главный поток программы просто засыпает и ждет, пока пользователь не нажмет ESC.
-        // Пока Main ждет, все боты параллельно работают в фоне!
-        try
+        public static void Main()
         {
-            // Ожидаем отмены через токен (когда сработает ListenForCancelKey и вызовет _cts.Cancel())
-            _cts.Token.WaitHandle.WaitOne();
-        }
-        catch (Exception ex)
-        {
-            Logger.Log($"Критический сбой в главном потоке: {ex.Message}", LogType.Error);
+            // 1. Настраиваем кодировку, чтобы любые стартовые ошибки читались корректно
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
+            Console.InputEncoding = System.Text.Encoding.UTF8;
+
+            // 2. Глобальный перехват ошибок в фоновых потоках
+            AppDomain.CurrentDomain.UnhandledException += (sender, e) =>
+            {
+                string exceptionMessage = e.ExceptionObject is Exception ex ? ex.ToString() : "Неизвестный сбой среды выполнения.";
+                Logger.Log($"КРИТИЧЕСКИЙ СБОЙ СИСТЕМЫ (UnhandledException): {exceptionMessage}", LogType.Error);
+            };
+
+            // Глобальный перехват ошибок в тасках
+            TaskScheduler.UnobservedTaskException += (sender, e) =>
+            {
+                Logger.Log($"КРИТИЧЕСКИЙ СБОЙ ТАСКА (UnobservedTaskException): {e.Exception?.Message}", LogType.Error);
+                e.SetObserved();
+            };
+
+            // 3. Проверка файлов ДО старта всей системы
+            if (!CheckRequiredFiles()) return;
+
+            Logger.Log("Бот успешно запущен.", LogType.Info);
+            Logger.Log("Нажмите [ESC] в любой момент для плавной остановки.", LogType.Info);
+
+            // 4. Запуск фонового потока для отслеживания [ESC]
+            Thread inputThread = new(ListenForCancelKey) { IsBackground = true };
+            inputThread.Start();
+
+            // 5. Запуск многопоточных ботов
+            StartMultiBotSystem();
+
+            // 6. Ожидаем сигнала отмены от токена (пока боты работают параллельно)
+            try
+            {
+                _cts.Token.WaitHandle.WaitOne();
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Критический сбой в главном потоке: {ex.Message}", LogType.Error);
+            }
+
+            // 7. Программа выходит из ожидания. Потоки уже останавливаются методом ListenForCancelKey.
+            // Даем 1 секунду, чтобы фоновые потоки успели дописать логи и сохранить файлы на диск.
+            Thread.Sleep(1000);
+
+            Logger.Log("Бот остановлен. Сессия завершена.", LogType.Warning);
         }
 
-        // Перед выходом даем потокам ботов время на плавное закрытие
-        StopMultiBotSystem();
-        Thread.Sleep(1000);
-
-        Logger.Log("Бот остановлен. Сессия завершена.", LogType.Warning);
-    }
 
 
 
 #endregion
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
+private static bool CheckRequiredFiles()
+{
+    // Список критически важных файлов для работы бота
+    string[] requiredFiles =
+    [
+        "adb.exe",
+        "AdbWinApi.dll",
+        "AdbWinUsbApi.dll",
+        "imgAliChatENG.png",
+        "imgBeltCondensed.png",
+        "imgBeltMoon.png",
+        "imgCorpChatENG.png",
+        "imgLocalChatHead.png",
+        "imgLocalChatIcon.png",
+        "imgLocalCriminal.png",
+        "imgLocalMinus.png",
+        "imgLocalNeutral.png"
+
+    ];
+
+    bool allExist = true;
+
+    foreach (var file in requiredFiles)
+    {
+        string fullPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, file);
+        if (!File.Exists(fullPath))
+        {
+            Logger.Log($"Критическая ошибка релиза: Отсутствует файл '{file}' по пути '{fullPath}'!", LogType.Error);
+            allExist = false;
+        }
+    }
+
+    if (!allExist)
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("\n[ОШИБКА] Работа бота невозможна. Проверьте целостность папки приложения.");
+        Console.WriteLine("Нажмите любую клавишу для выхода...");
+        Console.ReadKey();
+    }
+
+    return allExist;
+}
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 

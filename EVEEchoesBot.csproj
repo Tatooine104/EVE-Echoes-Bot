@@ -7,12 +7,20 @@
     <Nullable>enable</Nullable>
     <Platforms>AnyCPU;x64</Platforms>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <DebugType>none</DebugType>
+
+    <!-- 1. ГЛАВНАЯ ТОЧКА УПРАВЛЕНИЯ ВЕРСИЕЙ (меняйте только тут) -->
+    <Version>0.01.000</Version>
+
+    <!-- 2. Имя EXE собирается автоматически. %20 — это пробелы -->
+    <AssemblyName>EVE%20Echoes%20Bot%20v.$(Version)</AssemblyName>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="OpenCvSharp4" Version="4.13.0.20260427" />
     <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.13.0.20260302" />
   </ItemGroup>
+
   <ItemGroup>
     <!-- Автоматически копируем сам кликер -->
     <None Update="adb.exe">
@@ -26,4 +34,34 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
+
+  <!-- ОБНОВЛЕННЫЙ БЛОК: Копирование картинок-шаблонов с фильтрацией мусора -->
+  <ItemGroup>
+    <!-- Полностью изолируем отладочные папки от процесса публикации -->
+    <Compile Remove="DebugScreenshots\**" />
+    <EmbeddedResource Remove="DebugScreenshots\**" />
+    <None Remove="DebugScreenshots\**" />
+    <Content Remove="DebugScreenshots\**" />
+
+    <Compile Remove="bin\**" />
+    <EmbeddedResource Remove="bin\**" />
+    <None Remove="bin\**" />
+    <Content Remove="bin\**" />
+
+    <!-- Очищаем старые одиночные и глобальные правила -->
+    <None Remove="imgLocalMinus.png" />
+    <None Remove="imgLocalNeutral.png" />
+    <None Remove="**/*.png" />
+
+    <!-- Копируем ТОЛЬКО картинки из корня проекта. В папки bin и DebugScreenshots код не зайдет -->
+    <Content Include="*.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    
+    <!-- Резервное правило: если решите перенести шаблоны в папку templates, они скопируются корректно -->
+    <Content Include="templates\**\*.png" Condition="Exists('templates')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
 </Project>
