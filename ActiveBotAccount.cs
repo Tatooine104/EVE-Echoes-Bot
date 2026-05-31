@@ -339,7 +339,7 @@ EnqueueTasks(miningCycle);
 
         private async Task RunLoopAsync(CancellationToken token)
         {
-            Logger.Log($"Поток запущен. Начало работы по сценарию: '{Settings.Script ?? "mining"}'.", LogType.Info);
+            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Поток запущен. Начало работы по сценарию: '{Settings.Script ?? "mining"}'.", LogType.Info);
             
             var sessionStart = System.DateTime.UtcNow;
 
@@ -364,7 +364,7 @@ EnqueueTasks(miningCycle);
 
                         if (!isEverythingSafe)
                         {
-                            Logger.Log($"Система небезопасна или интерфейс разрушен. Ожидание эвакуации.", LogType.Warning);
+                            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Система небезопасна или интерфейс разрушен. Ожидание эвакуации.", LogType.Warning);
                         }
 
                         // ========================================================
@@ -379,7 +379,7 @@ EnqueueTasks(miningCycle);
                         // Перезапускаем сценарий ТОЛЬКО если бот находится в простое И в очереди пусто
                         if (CurrentTask == AccountTask.CheckYourOwnState && isQueueEmpty)
                         {
-                            Logger.Log($"Сценарий '{Settings.Script ?? "mining"}' завершил цикл. Перезапуск.", LogType.Test);
+                            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Сценарий '{Settings.Script ?? "mining"}' завершил цикл. Перезапуск.", LogType.Test);
 
                             string currentScript = Settings.Script ?? "mining";
                             List<string> defaultTasks = ScenarioFactory.GetDefaultTasks(currentScript);
@@ -399,24 +399,24 @@ EnqueueTasks(miningCycle);
                         switch (CurrentTask)
                         {
                             case AccountTask.CheckSecurity:
-                                Logger.Log($"Плановый цикл мониторинга завершен.", LogType.Test);
+                                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Плановый цикл мониторинга завершен.", LogType.Test);
                                 break;
 
                             case AccountTask.SendAliChatWarning:
-                                Logger.Log($"Запуск макроса оповещения альянса.", LogType.Warning);
+                                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Запуск макроса оповещения альянса.", LogType.Warning);
                                 await RunAliChatWarningAsync(token);
                                 break;
 
                             case AccountTask.GoToStation:
-                                Logger.Log($"Экстренная эвакуация: возвращаемся на станцию.", LogType.Warning);
+                                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Экстренная эвакуация: возвращаемся на станцию.", LogType.Warning);
                                 break;
 
                             case AccountTask.Undocking:
-                                Logger.Log($"Выход из дока станции.", LogType.Info);
+                                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Выход из дока станции.", LogType.Info);
                                 break;
 
                             case AccountTask.Mining:
-                                Logger.Log($"Начало добычи руды.", LogType.Info);
+                                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Начало добычи руды.", LogType.Info);
                                 break;
 
                             default:
@@ -432,18 +432,18 @@ EnqueueTasks(miningCycle);
                     }
                     catch (Exception ex)
                     {
-                        Logger.Log($"Сбой в главном цикле обработки: {ex.Message}", LogType.Error);
+                        Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Сбой в главном цикле обработки: {ex.Message}", LogType.Error);
                         await Task.Delay(5000, token);
                     }
                 }
             }
             catch (TaskCanceledException)
             {
-                Logger.Log($"Получен сигнал остановки. Фиксация состояния.", LogType.Info);
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Получен сигнал остановки. Фиксация состояния.", LogType.Info);
             }
             catch (Exception ex)
             {
-                Logger.Log($"Критический сбой рабочего потока: {ex.Message}", LogType.Error);
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Критический сбой рабочего потока: {ex.Message}", LogType.Error);
             }
             finally
             {
@@ -458,7 +458,7 @@ EnqueueTasks(miningCycle);
                 }
                 int sessionSeconds = (int)(System.DateTime.UtcNow - sessionStart).TotalSeconds;
 
-                Logger.Log($"Состояние сохранено на диск. Рабочий поток остановлен. Время работы в сессии (сек): {sessionSeconds}", LogType.Info);
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Состояние сохранено на диск. Рабочий поток остановлен. Время работы в сессии (сек): {sessionSeconds}", LogType.Info);
             }
         }
 
@@ -481,11 +481,11 @@ public void ForceSaveStats()
 
         private async Task<bool> CheckSecurityStatusAsync(CancellationToken token)
         {
-            Logger.Log($"Начало выполнения метода.", LogType.Test);
+            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Начало выполнения метода.", LogType.Test);
 
             if (Hwnd == IntPtr.Zero)
             {
-                Logger.Log($"Окно целевой программы не найдено.", LogType.Error);
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Окно целевой программы не найдено.", LogType.Error);
                 return false;
             }
 
@@ -500,7 +500,7 @@ public void ForceSaveStats()
             using Mat? screenshot = Tools.CaptureWindow(Hwnd);
             if (screenshot?.Empty() is not false || screenshot.Width <= 0 || screenshot.Height <= 0)
             {
-                Logger.Log($"Не удалось выполнить повторный захват окна. Прерывание выполнения.", LogType.Error);
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось выполнить повторный захват окна. Прерывание выполнения.", LogType.Error);
                 return false;
             }
 
@@ -509,7 +509,7 @@ public void ForceSaveStats()
 
             if (safeRegion1.Width <= 0 || safeRegion1.Height <= 0 || safeRegion2.Width <= 0 || safeRegion2.Height <= 0)
             {
-                Logger.Log($"Область поиска выходит за рамки окна.", LogType.Error);
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Область поиска выходит за рамки окна.", LogType.Error);
                 return false;
             }
 
@@ -528,7 +528,7 @@ public void ForceSaveStats()
                     Cv2.ImWrite(Path.Combine(debugDir, $"{Settings.Name}_imgLocalChatHead_FOUND.png"), cropped);
                 }
                 catch (Exception ex) {
-                    Logger.Log($"Не удалось сохранить отладочный кадр: {ex.Message}", LogType.Warning);
+                    Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось сохранить отладочный кадр: {ex.Message}", LogType.Warning);
                 }
         #endif
                 // Чат открыт — запускаем глубокую проверку пилотов
@@ -542,7 +542,7 @@ public void ForceSaveStats()
 
             if (foundImg2.HasValue)
             {
-                Logger.Log($"Локальный чат свернут. Обнаружена иконка развертывания.", LogType.Test);
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Локальный чат свернут. Обнаружена иконка развертывания.", LogType.Test);
 
         #if DEBUG
                 try
@@ -552,7 +552,7 @@ public void ForceSaveStats()
                     Cv2.ImWrite(Path.Combine(debugDir, $"{Settings.Name}_imgLocalChatIcon_FOUND.png"), cropped);
                 }
                 catch (Exception ex) {
-                    Logger.Log($"Не удалось сохранить отладочный кадр: {ex.Message}", LogType.Warning);
+                    Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось сохранить отладочный кадр: {ex.Message}", LogType.Warning);
                 }
         #endif
 
@@ -576,14 +576,14 @@ public void ForceSaveStats()
                     return RunLocalCheck(freshScreenshot, freshSafeRegion1);
                 }
 
-                Logger.Log($"Интерфейс чата не открылся. Повторная попытка клика.", LogType.Warning);
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Интерфейс чата не открылся. Повторная попытка клика.", LogType.Warning);
                 return false;
             }
 
             // ========================================================
             // ЭТАП 3: ЖЕЛЕЗНАЯ ТИШИНА (Интерфейс не найден вообще)
             // ========================================================
-            Logger.Log($"Шаблоны чата отсутствуют на экране. Смена сессии или загрузка.", LogType.Info);
+            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Шаблоны чата отсутствуют на экране. Смена сессии или загрузка.", LogType.Info);
             return false;
         }
 
@@ -624,7 +624,7 @@ public void ForceSaveStats()
                     }
                     catch (Exception ex)
                     {
-                        Logger.Log($"Не удалось сохранить снимок экрана: {ex.Message}", LogType.Warning);
+                        Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось сохранить снимок экрана: {ex.Message}", LogType.Warning);
                     }
         #endif
                 }
@@ -651,7 +651,7 @@ public void ForceSaveStats()
             }
 
             // 3. СБОЙ ИНТЕРФЕЙСА: foundCount == 0 (Чат вообще закрыт, свернут или перекрыт другим окном)
-            Logger.Log($"Интерфейс локального чата не найден. Отсутствуют маркеры безопасности.", LogType.Warning);
+            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Интерфейс локального чата не найден. Отсутствуют маркеры безопасности.", LogType.Warning);
 
             // КРИТИЧЕСКИ ВАЖНО: При закрытом чате мы тоже обязаны выставить false (опасность) для текущего бота,
             // чтобы он не вздумал продолжать копку/хакинг вслепую, пока не откроет чат обратно.
@@ -667,11 +667,11 @@ public void ForceSaveStats()
 
         private async Task RunAliChatWarningAsync(CancellationToken token)
         {
-            Logger.Log($"Начало выполнения макроса оповещения альянса.", LogType.Test);
+            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Начало выполнения макроса оповещения альянса.", LogType.Test);
 
             if (Hwnd == IntPtr.Zero)
             {
-                Logger.Log($"Целевое окно программы не найдено. Прерывание выполнения.", LogType.Error);
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Целевое окно программы не найдено. Прерывание выполнения.", LogType.Error);
                 return;
             }
 
@@ -680,7 +680,7 @@ public void ForceSaveStats()
 
             if (!File.Exists(pathAli) || !File.Exists(pathCorp))
             {
-                Logger.Log($"Файлы шаблонов чата отсутствуют на диске. Прерывание выполнения.", LogType.Error);
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Файлы шаблонов чата отсутствуют на диске. Прерывание выполнения.", LogType.Error);
                 return;
             }
 
@@ -702,13 +702,13 @@ public void ForceSaveStats()
 
                 if (screenshot?.Empty() is not false || screenshot.Width <= 0 || screenshot.Height <= 0)
                 {
-                    Logger.Log($"Не удалось выполнить повторный захват окна. Прерывание выполнения.", LogType.Error);
+                    Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось выполнить повторный захват окна. Прерывание выполнения.", LogType.Error);
                     screenshot?.Dispose();
                     return;
                 }
 
                 Rect safeRegion = Tools.ClampRegion(searchRegion, screenshot.Width, screenshot.Height);
-                Logger.Log($"Поиск маркеров языка интерфейса чата (Попытка {attempt}).", LogType.Info);
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Поиск маркеров языка интерфейса чата (Попытка {attempt}).", LogType.Info);
 
                 // Сначала ищем приоритетный чат альянса
                 foundChat = Tools.FindTemplateInRegion(screenshot, pathAli, safeRegion, 0.85);
@@ -726,14 +726,14 @@ public void ForceSaveStats()
 
                 if (attempt == 1)
                 {
-                    Logger.Log($"Интерфейс чата не открылся. Повторная попытка клика.", LogType.Warning);
+                    Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Интерфейс чата не открылся. Повторная попытка клика.", LogType.Warning);
                 }
             }
 
             // Если после двух попыток маркеры так и не появились
             if (!foundChat.HasValue)
             {
-                Logger.Log($"Шаблоны чата не обнаружены после повторного клика. Проверьте координаты 'ChatsInterface' в 'GameUi'.", LogType.Error);
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Шаблоны чата не обнаружены после повторного клика. Проверьте координаты 'ChatsInterface' в 'GameUi'.", LogType.Error);
         #if DEBUG
                 try
                 {
@@ -744,7 +744,7 @@ public void ForceSaveStats()
                     Cv2.ImWrite(Path.Combine(debugDir, $"{Settings.Name}_imgAliChat_NOT_FOUND.png"), cropped);
                 }
                 catch (Exception ex) {
-                    Logger.Log($"Не удалось сохранить отладочный кадр: {ex.Message}", LogType.Warning);
+                    Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось сохранить отладочный кадр: {ex.Message}", LogType.Warning);
                 }
         #endif
                 screenshot?.Dispose();
@@ -757,14 +757,14 @@ public void ForceSaveStats()
             try
             {
                 string chatTypeStr = isCorpChat ? "корпорации" : "альянса";
-                Logger.Log($"Обнаружен интерфейс {chatTypeStr} чата в точке (X={foundChat.Value.X}, Y={foundChat.Value.Y}).", LogType.Info);
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Обнаружен интерфейс {chatTypeStr} чата в точке (X={foundChat.Value.X}, Y={foundChat.Value.Y}).", LogType.Info);
 
-                Logger.Log($"Отправка фонового клика по координатам (X={foundChat.Value.X}, Y={foundChat.Value.Y}).", LogType.Info);
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Отправка фонового клика по координатам (X={foundChat.Value.X}, Y={foundChat.Value.Y}).", LogType.Info);
                 Tools.SmartClick(foundChat.Value.X, foundChat.Value.Y, minSec: 1, maxSec: 3, offset: 3, adbPort: Settings.AdbPort);
             }
             catch (Exception ex)
             {
-                Logger.Log($"Критический сбой анализа экрана: {ex.Message}", LogType.Error);
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Критический сбой анализа экрана: {ex.Message}", LogType.Error);
                 screenshot?.Dispose();
                 return;
             }
@@ -800,7 +800,7 @@ public void ForceSaveStats()
                 }
             }
 
-            Logger.Log($"Выполнение цепочки кликов оповещения альянса завершено.", LogType.Success);
+            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Выполнение цепочки кликов оповещения альянса завершено.", LogType.Success);
         }
 
 
@@ -835,11 +835,11 @@ public void ForceSaveStats()
                     bool shouldSendAllianceAlert = systemState.SetDanger();
                     _triggerCount++;
                     
-                    Logger.Log($"Обнаружена опасность. В системе присутствуют посторонние пилоты.", LogType.Warning);
+                    Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Обнаружена опасность. В системе присутствуют посторонние пилоты.", LogType.Warning);
 
                     if (shouldSendAllianceAlert)
                     {
-                        Logger.Log($"Отправка оповещения: в системе обнаружен противник.", LogType.Error);
+                        Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Отправка оповещения: в системе обнаружен противник.", LogType.Error);
                     }
 
                     var botsInSystem = Program._activeBots.ToList();
@@ -862,7 +862,7 @@ public void ForceSaveStats()
                 else if (value is true)
                 {
                     systemState.SetSafe();
-                    Logger.Log($"Проверка завершена. В системе отсутствуют посторонние пилоты.", LogType.Info);
+                    Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Проверка завершена. В системе отсутствуют посторонние пилоты.", LogType.Info);
                 }
             }
         }
