@@ -241,7 +241,7 @@ private static bool CheckRequiredFiles()
                     };
 
                     // ПРОВЕРКА И ОПРОС: Если после загрузки статов поля остались пустыми или содержат "???"
-                    if (string.IsNullOrEmpty(bot._eveSystem) || bot._eveSystem == "???" || 
+                    if (string.IsNullOrEmpty(bot._eveSystem) || bot._eveSystem == "???" ||
                         string.IsNullOrEmpty(bot._eveShip) || bot._eveShip == "???")
                     {
                         Console.ResetColor();
@@ -255,7 +255,7 @@ private static bool CheckRequiredFiles()
                             string sys = "";
                             while (string.IsNullOrWhiteSpace(sys))
                             {
-                                Console.Write($"Введите текущую звездную систему (например, UB-UQZ): ");
+                                Console.Write("Введите текущую звездную систему (например, UB-UQZ): ");
                                 sys = Console.ReadLine()?.Trim() ?? "";
                             }
                             bot._eveSystem = sys;
@@ -267,7 +267,7 @@ private static bool CheckRequiredFiles()
                             string ship = "";
                             while (string.IsNullOrWhiteSpace(ship))
                             {
-                                Console.Write($"Введите название корабля (например, Covetor II): ");
+                                Console.Write("Введите название корабля (например, Covetor II): ");
                                 ship = Console.ReadLine()?.Trim() ?? "";
                             }
                             bot._eveShip = ship;

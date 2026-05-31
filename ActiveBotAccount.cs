@@ -66,6 +66,7 @@ namespace EVEEchoesBot
 
         internal string _eveSystem = "???";
         internal string _eveShip = "???";
+        internal bool _inSpace = false;
 
         public string EVESystem
         {
@@ -246,7 +247,6 @@ EnqueueTasks(miningCycle);
                         }
 
                         // ИНТЕРАКТИВНЫЙ ОПРОС (Если в файле статов пусто)
-                        // Используем lock(Console.In), чтобы потоки разных аккаунтов не читали консоль одновременно
                         lock (Console.In)
                         {
                             // Проверяем систему
@@ -282,6 +282,29 @@ EnqueueTasks(miningCycle);
                             {
                                 _eveShip = state.EVEShip;
                             }
+
+                            // НОВОЕ: Проверяем локацию (В космосе или в Доке)
+                            // Если в JSON файле значение по умолчанию (false) или файл старый, 
+                            // для безопасности лучше уточнить у пользователя, либо прочитать значение.
+                            // Примечание: если вы уверены, что дефолтный false (в доке) вас устраивает при первом запуске, 
+                            // опрос можно убрать и оставить просто: _inSpace = state.InSpace;
+                            Console.ResetColor();
+                            Console.Write($"[{state.AccountName}] Корабль сейчас в космосе? (y/n, по умолчанию n): ");
+                            string spaceAnswer = Console.ReadLine()?.Trim().ToLower() ?? "";
+                            
+                            if (spaceAnswer == "y" || spaceAnswer == "yes" || spaceAnswer == "д" || spaceAnswer == "да")
+                            {
+                                _inSpace = true;
+                            }
+                            else if (spaceAnswer == "n" || spaceAnswer == "no" || spaceAnswer == "н" || spaceAnswer == "нет")
+                            {
+                                _inSpace = false;
+                            }
+                            else
+                            {
+                                // Если ввели что-то не то, берем то, что прочитали из JSON
+                                _inSpace = state.InSpace; 
+                            }
                         }
                     }
 
@@ -295,6 +318,7 @@ EnqueueTasks(miningCycle);
 
             return false;
         }
+
 
 
 
@@ -327,7 +351,8 @@ EnqueueTasks(miningCycle);
                         TaskQueue      = [.. _taskQueue],
                         EVESystem      = _eveSystem,
                         EVEShip        = _eveShip,
-                        LastUpdate     = DateTime.UtcNow
+                        LastUpdate     = DateTime.UtcNow,
+                        InSpace = _inSpace
                     };
                 }
 
@@ -857,6 +882,109 @@ public void ForceSaveStats()
                 bool? currentStatus = systemState.IsSafe;
 
                 // МОДИФИЦИРОВАННЫЙ ФИЛЬТР: Если статус совпадает И это НЕ первая проверка, то выходим.
+                if (currentStatus == value && !_isFirstSecurityCheck) return;
+
+                // Сбрасываем флаг — первая проверка успешно зафиксирована
+                _isFirstSecurityCheck = false;
+
+                // ========================================================
+                // СЦЕНАРИЙ 1: Система перешла в статус ОПАСНО (value is false)
+                // ========================================================
+                if (value is false)
+                {
+                    bool shouldSendAllianceAlert = systemState.SetDanger();
+                    _triggerCount++;
+
+                    Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Обнаружена опасность. В системе присутствуют посторонние пилоты.", LogType.Warning);
+
+                    if (shouldSendAllianceAlert)
+                    {
+                        Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Отправка оповещения: в системе обнаружен противник.", LogType.Error);
+                    }
+
+                    var botsInSystem = Program._activeBots.ToList();
+                    foreach (var bot in botsInSystem)
+                    {
+                        if (bot == this) continue;
+
+                        if (bot.EVESystem == this.EVESystem)
+                        {
+                            // Другие боты НЕ являются инициаторами (isInitiator: false)
+                            bot.ExecuteEmergencyResponse(isInitiator: false);
+                        }
+                    }
+
+                    // Текущий бот ЯВЛЯЕТСЯ инициатором тревоги (isInitiator: true)
+                    this.ExecuteEmergencyResponse(isInitiator: true);
+                }
+                // ========================================================
+                // СЦЕНАРИЙ 2: Система перешла в статус БЕЗОПАСНО (value is true)
+                // ========================================================
+                else if (value is true)
+                {
+                    systemState.SetSafe();
+                    Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Проверка завершена. В системе отсутствуют посторонние пилоты.", LogType.Info);
+                }
+            }
+        }
+
+        public void ExecuteEmergencyResponse(bool isInitiator)
+        {
+            // 1. Проверяем, нужно ли вообще спасать корабль
+            if (!_inSpace)
+            {
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Корабль в безопасности (станция/цитадель). Экстренный отварп не требуется.", LogType.Info);
+                
+                // Если корабль в доке, но он инициатор — просто отправляем уведомление
+                if (isInitiator)
+                {
+                    this.EnqueueTasks(["SendAliChatWarning"], addToFront: true);
+                    Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Этот аккаунт обнаружил угрозу из дока. Добавлена задача отправки уведомления в альянс-чат.", LogType.Warning);
+                }
+                return;
+            }
+
+            // 2. Формируем список задач на основе сценария спасения
+            List<string> emergencyTasks = new List<string>();
+
+            switch (Settings.Script)
+            {
+                case "localwatcher":
+                    emergencyTasks.AddRange(["WarpToStation", "Dock"]);
+                    Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] [Сценарий: localwatcher] Подготовка экстренного отварпа и дока.", LogType.Warning);
+                    break;
+
+                default:
+                    emergencyTasks.AddRange(["WarpToStation", "Dock"]);
+                    Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Неизвестный сценарий '{Settings.Script}'. Применена базовая эвакуация.", LogType.Error);
+                    break;
+            }
+
+            // 3. Если этот бот — инициатор, добавляем задачу чата СТРОГО ПОСЛЕ команд отварпа/дока
+            if (isInitiator)
+            {
+                emergencyTasks.Add("SendAliChatWarning");
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Этот аккаунт обнаружил угрозу. Задача отправки уведомления добавлена в конец цепочки спасения.", LogType.Warning);
+            }
+
+            // 4. Отправляем весь пакет задач в начало очереди одним махом
+            if (emergencyTasks.Count > 0)
+            {
+                this.EnqueueTasks(emergencyTasks, addToFront: true);
+            }
+        }
+
+/*        public bool? IsSaveLocal
+        {
+            get => SystemSafetyManager.GetSystemState(EVESystem).IsSafe;
+            set
+            {
+                if (string.IsNullOrEmpty(EVESystem) || EVESystem == "Неизвестно" || value == null) return;
+
+                var systemState = SystemSafetyManager.GetSystemState(EVESystem);
+                bool? currentStatus = systemState.IsSafe;
+
+                // МОДИФИЦИРОВАННЫЙ ФИЛЬТР: Если статус совпадает И это НЕ первая проверка, то выходим.
                 // Если это первый запуск (_isFirstSecurityCheck == true), мы игнорируем return и пишем лог!
                 if (currentStatus == value && !_isFirstSecurityCheck) return;
 
@@ -901,7 +1029,7 @@ public void ForceSaveStats()
                     Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Проверка завершена. В системе отсутствуют посторонние пилоты.", LogType.Info);
                 }
             }
-        }
+        }*/
 
     }
 
