@@ -1,6 +1,9 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using static EVEEchoesBot.Logger;
+using System.Runtime.InteropServices;
+using System.Text;
+
 
 // [v] TODO 2026.05.30 Привести все тексты логгера к единому стилю 
 // [v] TODO 2026.05.30 Сделать вызов окна ввода при создании дефолтного конфига 
@@ -27,11 +30,13 @@ namespace EVEEchoesBot
     // Класс настроек конкретного аккаунта (ЗАМЕНИТЕ СВОЙ СТАРЫЙ НА ЭТОТ)
     public class AccSettings
     {
-        public string Name        { get; set; } = "";
-        public string WindowTitle { get; set; } = "";
-        public string Emulator    { get; set; } = "";
-        public string Script      { get; set; } = "";
-        public int    AdbPort     { get; set; }
+        public string Name         { get; set; } = "";
+        public string WindowTitle  { get; set; } = "";
+        public string Emulator     { get; set; } = "";
+        public string Script       { get; set; } = "";
+        public bool   PlanetMining { get; set; }
+        public bool   POS          { get; set; }
+        public int    AdbPort      { get; set; }
 
         // <-- 2. СЮДА ДОБАВЛЯЕМ АТРИБУТ СВЯЗИ С JSON
         [JsonPropertyName("AccSettings")]
@@ -60,6 +65,7 @@ namespace EVEEchoesBot
         public DateTime LastUpdate     { get; set; }
         public string EVESystem        { get; set; } = "";
         public string EVEShip          { get; set; } = "";
+        public bool? InSpace           { get; set; }
     }
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
@@ -131,16 +137,102 @@ namespace EVEEchoesBot
         /// </summary>
         private static BotConfig CreateDefaultConfig()
         {
+            // Очищаем поток ввода консоли
+            while (Console.KeyAvailable) Console.ReadKey(true);
+
+            Console.ResetColor();
+            Console.WriteLine();
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine("=== ПЕРВЫЙ ЗАПУСК: ИНТЕРАКТИВНАЯ НАСТРОЙКА БОТА ===");
+            Console.ResetColor();
+
+            // 1. Запрос имени персонажа
+            string name = string.Empty;
+            while (string.IsNullOrWhiteSpace(name))
+            {
+                Console.Write("Введите имя вашего персонажа (для логов): ");
+                name = Console.ReadLine()?.Trim() ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine("⚠️ Имя не может быть пустым!");
+                    Console.ResetColor();
+                }
+            }
+
+            Console.WriteLine("\nСканирую запущенные окна эмуляторов...");
+
+            // Получаем все окна и убираем очевидный мусор (проводник, саму консоль бота и т.д.)
+            var allWindows = WindowEnumerator.GetVisibleWindowTitles()
+                .Where(t => !t.Equals("Program Manager", StringComparison.OrdinalIgnoreCase) &&
+                            !t.Equals("Settings", StringComparison.OrdinalIgnoreCase) &&
+                            !t.Contains(AppDomain.CurrentDomain.FriendlyName))
+                .Distinct()
+                .ToList();
+
+            string windowTitle = string.Empty;
+
+            if (allWindows.Count == 0)
+            {
+                // Если окон вообще не нашли, откатываемся на ручной ввод
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("⚠️ Не удалось автоматически найти активные окна.");
+                Console.ResetColor();
+
+                while (string.IsNullOrWhiteSpace(windowTitle))
+                {
+                    Console.Write("Введите название окна эмулятора вручную: ");
+                    windowTitle = Console.ReadLine()?.Trim() ?? string.Empty;
+                }
+            }
+            else
+            {
+                // Выводим красивый нумерованный список окон
+                Console.ForegroundColor = ConsoleColor.Gray;
+                Console.WriteLine("Найденные открытые окна:");
+                for (int i = 0; i < allWindows.Count; i++)
+                {
+                    Console.WriteLine($"  [{i + 1}] {allWindows[i]}");
+                }
+                Console.ResetColor();
+
+                int selectedIndex = -1;
+                while (selectedIndex < 0 || selectedIndex >= allWindows.Count)
+                {
+                    Console.Write($"Выберите номер вашего эмулятора (1-{allWindows.Count}): ");
+                    string input = Console.ReadLine() ?? string.Empty;
+
+                    if (int.TryParse(input, out int num) && num >= 1 && num <= allWindows.Count)
+                    {
+                        selectedIndex = num - 1;
+                        windowTitle = allWindows[selectedIndex];
+                    }
+                    else
+                    {
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine("⚠️ Неверный выбор! Введите число из списка.");
+                        Console.ResetColor();
+                    }
+                }
+            }
+
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine($"\n✅ Профиль настроен! Персонаж: '{name}', Окно: '{windowTitle}'");
+            Console.ResetColor();
+            Console.WriteLine();
+
             return new BotConfig
             {
                 Accounts =
                 [
                     new AccSettings
                     {
-                        Name = "Somebody",
-                        WindowTitle = "BlueStacks_EVE.01",
+                        Name = name,
+                        WindowTitle = windowTitle,
                         Emulator = "BlueStacks",
                         Script = "LocalWatcher",
+                        PlanetMining = false,
+                        POS = false,
                         AdbPort = 5565,
                         Size = new TargetSize
                         {
@@ -151,6 +243,8 @@ namespace EVEEchoesBot
                 ]
             };
         }
+
+
 
 #endregion
 
@@ -191,6 +285,58 @@ namespace EVEEchoesBot
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
+    }
+
+    public static partial class WindowEnumerator
+    {
+        // Описываем сигнатуру делегата для перечисления окон
+        private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+        // 1. Импорт EnumWindows
+        [LibraryImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static partial bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+        // FIX ТУТ: Явно указываем EntryPoint = "GetWindowTextW" для Юникод-систем Windows
+        [LibraryImport("user32.dll", EntryPoint = "GetWindowTextW", StringMarshalling = StringMarshalling.Utf16)]
+        private static partial int GetWindowText(IntPtr hWnd, [Out] char[] lpString, int nMaxCount);
+
+        // 3. Импорт IsWindowVisible
+        [LibraryImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static partial bool IsWindowVisible(IntPtr hWnd);
+
+        /// <summary>
+        /// Возвращает список заголовков всех видимых окон в системе.
+        /// </summary>
+        public static List<string> GetVisibleWindowTitles()
+        {
+            List<string> titles = [];
+            char[] buffer = new char[256];
+
+            // Запуск перечисления окон
+            EnumWindows((hWnd, lParam) =>
+            {
+                // Глушим предупреждение: явно показываем компилятору, что параметр проигнорирован намеренно
+                _ = lParam;
+
+                if (IsWindowVisible(hWnd))
+                {
+                    int length = GetWindowText(hWnd, buffer, buffer.Length);
+                    if (length > 0)
+                    {
+                        string title = new string(buffer, 0, length).Trim();
+                        if (!string.IsNullOrEmpty(title))
+                        {
+                            titles.Add(title);
+                        }
+                    }
+                }
+                return true;
+            }, IntPtr.Zero);
+
+            return titles;
+        }
     }
 
 }

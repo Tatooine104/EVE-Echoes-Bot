@@ -266,83 +266,86 @@ namespace EVEEchoesBot
         /// <param name="maxSec"> Максимальное время случайной задержки перед кликом (в секундах). </param>
         /// <param name="offset"> Радиус случайного разброса пикселей от центра клика.             </param>
 
-            public static void SmartClick(
-                int x,
-                int y,
-                int minSec = 1,
-                int maxSec = 5,
-                int offset = 10,
-                int adbPort = 5555)
+        public static void SmartClick(
+            int x,
+            int y,
+            int minSec = 1,
+            int maxSec = 5,
+            int offset = 10,
+            int adbPort = 5565,
+            bool applyWinHeaderCorrection = true) // <-- ДОБАВИЛИ ФЛАГ (По умолчанию true для координат из OpenCV)
+        {
+            if (minSec > 0 || maxSec > 0)
             {
-                if (minSec > 0 || maxSec > 0)
+                Thread.Sleep(GetRandomDelayMs(minSec, maxSec));
+            }
+
+            // КОРРЕКЦИЯ ОКНА WINDOWS: Если флаг включен, компенсируем 31 пиксель заголовка окна
+            if (applyWinHeaderCorrection)
+            {
+                y -= 31;
+            }
+
+            int finalX = x + _random.Next(-offset, offset + 1);
+            int finalY = y + _random.Next(-offset, offset + 1);
+
+            string adbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "adb.exe");
+
+            if (!File.Exists(adbPath))
+            {
+                Logger.Log($"Файл 'adb.exe' не найден по пути '{adbPath}'.", LogType.Error);
+                return;
+            }
+
+            string deviceTarget = $"127.0.0.1:{adbPort}";
+            string argsConnect = $"connect {deviceTarget}";
+
+            try
+            {
+                // 1. Коннект к порту
+                ProcessStartInfo psiConnect = new(adbPath, argsConnect) { CreateNoWindow = true, UseShellExecute = false };
+                Process.Start(psiConnect)?.WaitForExit();
+
+                // 2. УЗНАЕМ РЕАЛЬНОЕ РАЗРЕШЕНИЕ ЭМУЛЯТОРА ИЗНУТРИ ANDROID
+                ProcessStartInfo psiSize = new(adbPath, $"-s {deviceTarget} shell wm size")
                 {
-                    Thread.Sleep(GetRandomDelayMs(minSec, maxSec));
-                }
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true
+                };
+                var procSize = Process.Start(psiSize);
+                string outputSize = procSize?.StandardOutput.ReadToEnd() ?? "";
+                procSize?.WaitForExit();
 
-                int finalX = x + _random.Next(-offset, offset + 1);
-                int finalY = y + _random.Next(-offset, offset + 1);
-
-                string adbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "adb.exe");
-
-                if (!File.Exists(adbPath))
+                if (outputSize.Contains(':') && outputSize.Contains('x'))
                 {
-                    Logger.Log($"Файл 'adb.exe' не найден по пути '{adbPath}'.", LogType.Error);
-                    return;
-                }
-
-                string deviceTarget = $"127.0.0.1:{adbPort}";
-                string argsConnect = $"connect {deviceTarget}";
-
-                try
-                {
-                    // 1. Коннект к порту
-                    ProcessStartInfo psiConnect = new(adbPath, argsConnect) { CreateNoWindow = true, UseShellExecute = false };
-                    Process.Start(psiConnect)?.WaitForExit();
-
-                    // 2. УЗНАЕМ РЕАЛЬНОЕ РАЗРЕШЕНИЕ ЭМУЛЯТОРА ИЗНУТРИ ANDROID
-                    // Иногда BlueStacks снаружи имеет 1280x720, а внутри Android считает себя 1920x1080 (из-за DPI)
-                    ProcessStartInfo psiSize = new(adbPath, $"-s {deviceTarget} shell wm size")
+                    string sizeStr = outputSize.Split(':')[1].Trim(); 
+                    string[] wAndH = sizeStr.Split('x');
+                    if (wAndH.Length == 2 && int.TryParse(wAndH[0], out int internalW) && int.TryParse(wAndH[1], out int internalH))
                     {
-                        CreateNoWindow = true,
-                        UseShellExecute = false,
-                        RedirectStandardOutput = true
-                    };
-                    var procSize = Process.Start(psiSize);
-                    string outputSize = procSize?.StandardOutput.ReadToEnd() ?? "";
-                    procSize?.WaitForExit();
-
-                    // Если Android выдал кастомный размер (например, "Physical size: 1920x1080")
-                    if (outputSize.Contains(':') && outputSize.Contains('x'))
-                    {
-                        string sizeStr = outputSize.Split(':')[1].Trim(); // "1920x1080"
-                        string[] wAndH = sizeStr.Split('x');
-                        if (wAndH.Length == 2 && int.TryParse(wAndH[0], out int internalW) && int.TryParse(wAndH[1], out int internalH))
+                        if (internalW != 1280 && internalW > 0)
                         {
-                            // Если внутреннее разрешение не совпадает со стандартным 1280x720, пропорционально масштабируем клик
-                            if (internalW != 1280 && internalW > 0)
-                            {
-                                finalX = (int)(finalX * ((double)internalW / 1280.0));
-                                finalY = (int)(finalY * ((double)internalH / 720.0));
-                            }
+                            finalX = (int)(finalX * ((double)internalW / 1280.0));
+                            finalY = (int)(finalY * ((double)internalH / 720.0));
                         }
                     }
-
-                    // 3. ОТПРАВЛЯЕМ КЛИК ЧЕРЕЗ АЛЬТЕРНАТИВНЫЙ СИНТАКСИС (input text / input keyevent / input tap)
-                    // Мы склеим стандартный input tap и принудительную активацию окна
-                    string argsTap = $"-s {deviceTarget} shell input tap {finalX} {finalY}";
-
-                    ProcessStartInfo psiTap = new(adbPath, argsTap) { CreateNoWindow = true, UseShellExecute = false };
-                    Process.Start(psiTap)?.WaitForExit();
-
-            #if DEBUG
-                    Logger.Log($"Отправка команды клика на устройство '{deviceTarget}': координаты (X={finalX}, Y={finalY}).", LogType.Test);
-            #endif
                 }
-                catch (Exception ex)
-                {
-                    Logger.Log($"Сбой при отправке команды клика через ADB: {ex.Message}", LogType.Error);
-                }
+
+                // 3. ОТПРАВЛЯЕМ КЛИК
+                string argsTap = $"-s {deviceTarget} shell input tap {finalX} {finalY}";
+
+                ProcessStartInfo psiTap = new(adbPath, argsTap) { CreateNoWindow = true, UseShellExecute = false };
+                Process.Start(psiTap)?.WaitForExit();
+
+        #if DEBUG
+                Logger.Log($"Отправка команды клика на устройство '{deviceTarget}': координаты (X={finalX}, Y={finalY}).", LogType.Test);
+        #endif
             }
+            catch (Exception ex)
+            {
+                Logger.Log($"Сбой при отправке команды клика через ADB: {ex.Message}", LogType.Error);
+            }
+        }
 
 
 

@@ -7,12 +7,23 @@
     <Nullable>enable</Nullable>
     <Platforms>AnyCPU;x64</Platforms>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <DebugType>none</DebugType>
+
+    <!-- 1. ГЛАВНАЯ ТОЧКА УПРАВЛЕНИЯ ВЕРСИЕЙ (меняйте только тут) -->
+    <Version>0.01.000</Version>
+
+    <!-- 2. Имя EXE собирается автоматически. %20 — это пробелы -->
+    <AssemblyName>EVE%20Echoes%20Bot%20v.$(Version)</AssemblyName>
+
+    <!-- 3. ВШИВАЕМ ИКОНКУ ИЗ ПАПКИ IMAGES -->
+    <ApplicationIcon>images\ProgramLogo.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="OpenCvSharp4" Version="4.13.0.20260427" />
     <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.13.0.20260302" />
   </ItemGroup>
+
   <ItemGroup>
     <!-- Автоматически копируем сам кликер -->
     <None Update="adb.exe">
@@ -26,4 +37,30 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
+
+  <!-- Копирование картинок-шаблонов с фильтрацией мусора -->
+  <ItemGroup>
+    <!-- Полностью изолируем отладочные папки от процесса публикации -->
+    <Compile Remove="DebugScreenshots\**" />
+    <EmbeddedResource Remove="DebugScreenshots\**" />
+    <None Remove="DebugScreenshots\**" />
+    <Content Remove="DebugScreenshots\**" />
+
+    <Compile Remove="bin\**" />
+    <EmbeddedResource Remove="bin\**" />
+    <None Remove="bin\**" />
+    <Content Remove="bin\**" />
+
+    <!-- Очищаем старые правила, включая поиск в корне -->
+    <None Remove="imgLocalMinus.png" />
+    <None Remove="imgLocalNeutral.png" />
+    <None Remove="*.png" />
+    <None Remove="**/*.png" />
+
+    <!-- ГЛАВНОЕ ПРАВИЛО: Автоматически копируем папку images со всем содержимым -->
+    <Content Include="images\**\*.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
 </Project>

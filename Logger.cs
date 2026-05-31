@@ -7,6 +7,11 @@ namespace EVEEchoesBot
     {
         private const string LogFilePath = "EVE_Echoes_Bot_log.csv";
 
+        private static readonly string _cachedVersion =
+            System.Reflection.Assembly.GetExecutingAssembly().GetName().Version is { } v
+                ? $"v.{v.Major}.{v.Minor:D2}.{v.Build:D3}"
+                : "v.0.01.000";
+
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 #region Log
@@ -19,8 +24,9 @@ namespace EVEEchoesBot
         {
             string eveSystem = "Unknown";
             string eveShip = "Unknown";
+            string safeAccount = "System";
 
-            // 1. Потокобезопасный разбор тегов [Имя|Система|Корабль]
+            // 1. Потокобезопасный и чистый разбор тегов [Имя|Система|Корабль]
             if (string.IsNullOrEmpty(accountName))
             {
                 if (message.StartsWith('[') && message.Contains(']'))
@@ -33,65 +39,74 @@ namespace EVEEchoesBot
                     if (rawTag.Contains('|'))
                     {
                         string[] parts = rawTag.Split('|');
-                        accountName = parts[0];
-                        eveSystem = parts.Length > 1 ? parts[1] : "Unknown";
-                        eveShip = parts.Length > 2 ? parts[2] : "Unknown";
+                        safeAccount = parts[0].Trim();
+                        eveSystem = parts.Length > 1 ? parts[1].Trim() : "Unknown";
+                        eveShip = parts.Length > 2 ? parts[2].Trim() : "Unknown";
                     }
                     else
                     {
-                        accountName = rawTag;
+                        safeAccount = rawTag.Trim();
                         eveSystem = "Unknown";
                     }
                 }
                 else
                 {
-                    accountName = "System";
+                    safeAccount = "System";
                     eveSystem = "System";
                 }
             }
-            else if (accountName.Contains('|'))
+            else
             {
-                string[] parts = accountName.Split('|');
-                accountName = parts[0];
-                eveSystem = parts.Length > 1 ? parts[1] : "Unknown";
-                eveShip = parts.Length > 2 ? parts[2] : "Unknown";
+                if (accountName.Contains('|'))
+                {
+                    string[] parts = accountName.Split('|');
+                    safeAccount = parts[0].Trim();
+                    eveSystem = parts.Length > 1 ? parts[1].Trim() : "Unknown";
+                    eveShip = parts.Length > 2 ? parts[2].Trim() : "Unknown";
+                }
+                else
+                {
+                    safeAccount = accountName.Trim();
+                    eveSystem = "System";
+                }
             }
 
-// [ ] TODO 2026.05.30 Добавить иконку для ИНФО 
-
-            // 2. Иконки статуса (Visual Anchors)
+            // 2. Иконки статуса с жесткой компенсацией ширины для Windows Console/Terminal
+            // Добавлен явный пробел к каждому эмодзи, у предупреждения (Warning) — два пробела.
             string icon = type switch
             {
-                LogType.Success => "✅",
-                LogType.Warning => "⚠️",
-                LogType.Error   => "🚨",
-                LogType.Test    => "⚙️",
-                _               => "🔹"
+                LogType.Success => "[ OK ]  ",
+                LogType.Warning => "[WARN]  ",
+                LogType.Error   => "[ERR!]  ",
+                LogType.Test    => "[TEST]  ",
+                _               => "[INFO]  "
             };
 
-            // 3. Форматируем дату по новому стандарту: ГГГГ.ММ.ДД чч:мм:сс
+            // 3. Форматируем дату по стандарту: ГГГГ.ММ.ДД чч:мм:сс
             string timestamp = DateTime.Now.ToString("yyyy.MM.dd HH:mm:ss");
 
-            // 4. Собираем строгий и чистый вид для вывода на ЭКРАН КОНСОЛИ
-            string botContext = accountName == "System" ? "[SYSTEM]" : $"[{accountName} | {eveSystem} | {eveShip}]";
-            string consoleMessage = $"[{timestamp}] {icon} {botContext} [{callerMethod}]: {message}";
+            // 4. Собираем строгий вид для вывода на ЭКРАН (пробел после {icon} убран, он уже внутри иконки)
+            string botContext = safeAccount.Equals("System", StringComparison.OrdinalIgnoreCase)
+                ? "[SYSTEM]"
+                : $"[{safeAccount} | {eveSystem} | {eveShip}]";
+
+            string consoleMessage = $"[{timestamp}] {_cachedVersion} {icon} {botContext} [{callerMethod}]: {message}";
             ConsoleColor color = GetColorForType(type);
 
-            // 5. ВАША ЖЕСТКАЯ МАРШРУТИЗАЦИЯ
+            // 5. Потокобезопасная маршрутизация
             lock (Console.Out)
             {
-                // В консоль пишем ВСЕГДА и ВСЁ (включая Test)
+                // В консоль пишем ВСЕГДА
                 PrintToConsole(consoleMessage, color);
 
-// [ ] TODO 2026.05.30 Добавить сохранения в файл ИНФО 
-
-                // В файл CSV пишем ТОЛЬКО важное (Warning и Error)
+                // В файл пишем только важное. Параметры гарантированно не null.
                 if (type == LogType.Warning || type == LogType.Error || type == LogType.Info)
                 {
-                    AppendToFile(timestamp, icon, accountName, eveSystem, eveShip, callerMethod, message);
+                    AppendToFile(timestamp, Program._ProgVersion, type.ToString(), safeAccount, eveSystem, eveShip, callerMethod, message);
                 }
             }
         }
+
 
 #endregion
 
@@ -114,7 +129,15 @@ namespace EVEEchoesBot
 
         private static readonly System.Threading.Lock _fileLock = new();
 
-        private static void AppendToFile(string timestamp, string icon, string account, string system, string ship, string method, string message)
+        private static void AppendToFile(
+            string timestamp,
+            string progversion,
+            string type,
+            string? account,
+            string? system,
+            string? ship,
+            string method,
+            string message)
         {
             lock (_fileLock) // Защита от сбоев при одновременной записи из нескольких аккаунтов
             {
@@ -122,7 +145,7 @@ namespace EVEEchoesBot
                 {
                     bool fileExists = File.Exists(LogFilePath);
                     string safeMessage = message.Replace(";", ",");
-                    string csvLine = $"{timestamp};{icon};{account};{system};{ship};{method};{safeMessage}";
+                    string csvLine = $"{timestamp};{progversion};{type};{account};{system};{ship};{method};{safeMessage}";
 
                     // Используем UTF8Encoding со специальным флагом 'true', который заставляет C# внедрить BOM-маркер
                     var utf8WithBom = new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true);
@@ -130,7 +153,7 @@ namespace EVEEchoesBot
                     if (!fileExists)
                     {
                         // Если файла нет, создаем его и сразу пишем шапку с BOM-маркером
-                        string header = "Дата;Статус;Аккаунт;Система;Корабль;Метод;Сообщение" + Environment.NewLine;
+                        string header = "Дата;Версия;Тип;Аккаунт;Система;Корабль;Метод;Сообщение" + Environment.NewLine;
                         File.WriteAllText(LogFilePath, header, utf8WithBom);
                     }
 
