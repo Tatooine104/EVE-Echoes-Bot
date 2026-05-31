@@ -30,11 +30,13 @@ namespace EVEEchoesBot
     // Класс настроек конкретного аккаунта (ЗАМЕНИТЕ СВОЙ СТАРЫЙ НА ЭТОТ)
     public class AccSettings
     {
-        public string Name        { get; set; } = "";
-        public string WindowTitle { get; set; } = "";
-        public string Emulator    { get; set; } = "";
-        public string Script      { get; set; } = "";
-        public int    AdbPort     { get; set; }
+        public string Name         { get; set; } = "";
+        public string WindowTitle  { get; set; } = "";
+        public string Emulator     { get; set; } = "";
+        public string Script       { get; set; } = "";
+        public bool   PlanetMining { get; set; }
+        public bool   POS          { get; set; }
+        public int    AdbPort      { get; set; }
 
         // <-- 2. СЮДА ДОБАВЛЯЕМ АТРИБУТ СВЯЗИ С JSON
         [JsonPropertyName("AccSettings")]
@@ -229,6 +231,8 @@ namespace EVEEchoesBot
                         WindowTitle = windowTitle,
                         Emulator = "BlueStacks",
                         Script = "LocalWatcher",
+                        PlanetMining = false,
+                        POS = false,
                         AdbPort = 5565,
                         Size = new TargetSize
                         {
