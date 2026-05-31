@@ -75,11 +75,11 @@ namespace EVEEchoesBot
             // Добавлен явный пробел к каждому эмодзи, у предупреждения (Warning) — два пробела.
             string icon = type switch
             {
-                LogType.Success => "✅",
-                LogType.Warning => "⚠️ ",
-                LogType.Error   => "🚨",
-                LogType.Test    => "⚙️ ",
-                _               => "🔹"
+                LogType.Success => "[ OK ]  ",
+                LogType.Warning => "[WARN]  ",
+                LogType.Error   => "[ERR!]  ",
+                LogType.Test    => "[TEST]  ",
+                _               => "[INFO]  "
             };
 
             // 3. Форматируем дату по стандарту: ГГГГ.ММ.ДД чч:мм:сс
