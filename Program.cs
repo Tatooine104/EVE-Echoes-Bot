@@ -272,7 +272,7 @@ private static bool CheckRequiredFiles()
                             }
                             bot._eveShip = ship;
                         }
-                        
+
                         Console.ForegroundColor = ConsoleColor.Green;
                         Console.WriteLine("Данные успешно приняты!");
                         Console.ResetColor();

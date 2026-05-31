@@ -64,8 +64,8 @@ namespace EVEEchoesBot
         public long TriggerCount => Interlocked.Read(ref _triggerCount);
         public TimeSpan TotalRuntime => TimeSpan.FromSeconds(_accumulatedSeconds);
 
-        internal string _eveSystem = "Неизвестно";
-        internal string _eveShip = "Неизвестно";
+        internal string _eveSystem = "???";
+        internal string _eveShip = "???";
 
         public string EVESystem
         {
