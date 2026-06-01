@@ -1,7 +1,26 @@
-/.obsidian
+# === Локальные настройки редакторов и IDE ===
+.obsidian/
 Obsidian.md
-/bin
-/obj
+.vs/
+.vscode/
+
+# === Результаты компиляции и сборки C# ===
+bin/
+obj/
+
+# === Отладочные медиа-файлы и скриншоты OpenCV ===
+DebugScreenshots/
 debug_screenshot.png
-/DebugScreenshots
+*_FOUND.png
+*_NOT_FOUND.png
+
+# === Локальные файлы логов и статистики ===
+*.log
+*.csv
 EVE_Echoes_Bot_log.csv
+_stats.json
+accounts_stats/
+
+# === Системные файлы ОС ===
+Thumbs.db
+Desktop.ini

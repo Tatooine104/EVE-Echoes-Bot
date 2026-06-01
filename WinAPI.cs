@@ -1,11 +1,13 @@
 using System.Runtime.InteropServices;
 using System.Text;
 
-// [ ] TODO 2026.05.30 Привести все тексты логгера к единому стилю 
 
-// Замените "LowMiner" на пространство имен вашего проекта, если оно называется иначе
 namespace EVEEchoesBot
 {
+
+// [ ] TODO 2026.05.30 Привести все тексты логгера к единому стилю
+// [ ] TODO 2026.06.01 разобраться всё ли из написанного тут актуально 
+
     internal static partial class WinAPI
     {
 

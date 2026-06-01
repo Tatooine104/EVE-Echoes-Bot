@@ -4,12 +4,11 @@ using OpenCvSharp;
 using System.Diagnostics;
 using System.IO;
 
-// [v] TODO 2026.05.30 Привести все тексты логгера к единому стилю 
-
 namespace EVEEchoesBot
 {
 
 // [v] Проверить все методы и добавить новый метод Logger.Log() 
+// [v] TODO 2026.05.30 Привести все тексты логгера к единому стилю 
 
     public static class Tools
     {
@@ -319,7 +318,7 @@ namespace EVEEchoesBot
 
                 if (outputSize.Contains(':') && outputSize.Contains('x'))
                 {
-                    string sizeStr = outputSize.Split(':')[1].Trim(); 
+                    string sizeStr = outputSize.Split(':')[1].Trim();
                     string[] wAndH = sizeStr.Split('x');
                     if (wAndH.Length == 2 && int.TryParse(wAndH[0], out int internalW) && int.TryParse(wAndH[1], out int internalH))
                     {
