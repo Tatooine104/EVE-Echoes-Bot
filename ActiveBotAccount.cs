@@ -238,7 +238,7 @@ namespace EVEEchoesBot
                                 string sys = "";
                                 while (string.IsNullOrWhiteSpace(sys))
                                 {
-                                    Console.Write($"[{state.AccountName}] Введите текущую звездную систему (например, UB-UQZ): ");
+                                    Console.Write($"[{state.AccountName}] Введите текущую звездную систему (например, Jita): ");
                                     sys = Console.ReadLine()?.Trim() ?? "";
                                 }
                                 _eveSystem = sys;
