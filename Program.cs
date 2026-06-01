@@ -10,7 +10,9 @@ namespace EVEEchoesBot
 // [v] TODO Проверить все методы и добавить новый метод Logger.Log() 
 // [v] TODO 2026.05.30 Привести все тексты логгера к единому стилю 
 // [v] TODO 2026.05.27 Заменить все SmartClick с координатами на вызовы по енуму 
-// [ ] TODO 2026.05.30 Сделать переменную хранящую текущую версию программы и добавить вывод в лог 
+// [v] TODO 2026.05.30 Сделать переменную хранящую текущую версию программы и добавить вывод в лог 
+// [ ] TODO 2026.06.01 Реализовать дерево поведения 
+// [ ] TODO 2026.06.01 Навести порядок в файлах и красиво оформить код 
 
     static partial class Program
     {
@@ -18,8 +20,6 @@ namespace EVEEchoesBot
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 #region Constants & Fields
-
-        public static readonly string _ProgVersion = $"v.{System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.01.000"}";
 
         // 1. Создаем глобальный источник токена отмены
         private static CancellationTokenSource _cts = new();
@@ -54,19 +54,24 @@ namespace EVEEchoesBot
         public enum GameUi
         {
             // ИмяЭлемента = (X * 10000) + Y (упаковываем X и Y в одно число для Enum)
-            // MenuButton = 500450,    // X: 50,  Y: 450 (Ваш пример)
-            ChatButtSend   =  4450695, // Кнопка чата "Send"
-            WindowCenter   =  8000250, // Точка чуть ниже и правее центра окна
-            ChatMessScout  =  3000600, // Сообщение "Scout"
-            ChatInform     =   800400, // Меню "Inform"
-            ChatFastInput  = 11900685, // Мню быстрого ввода
-            ChatInputMenu  =  3650700, // Меню ввода чата
+            // hWnd.ClickTo(GameUi.ChatsInterface); // Пример вызова
+
+            // 1. Взаимодействие с окнами и базовым интерфейсом
+            ChatsInterface =   250625, // Интерфейс чатов (иконка открытия панели)
+            WindowCenter   =  8000250, // Точка чуть ниже и правее центра окна (для закрытия меню)
+
+            // 2. Навигация по вкладкам чатов
             ChatTabAli     =   500450, // Вкладка чата альянса
-            ChatsInterface =   250625  // Интерфейс чатов
 
-            // hWnd.ClickTo(GameUi.ChatTabAli); // Пример вызова
-
+            // 3. Цепочка открытия меню ввода и макроса
+            ChatInputMenu  =  3650700, // Меню ввода чата
+            ChatFastInput  = 11900685, // Меню быстрого ввода
+            ChatInform     =   800400, // Меню "Inform" (данные разведки)
+            ChatMessScout  =  3000600, // Сообщение "Scout" (выбор статуса)
+            ChatButtSend   =  4450695  // Кнопка чата "Send" (финальная отправка)
         }
+
+
 
 #endregion
 

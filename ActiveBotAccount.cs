@@ -153,24 +153,6 @@ namespace EVEEchoesBot
             }
         }
 
-/*
-// Добавляем одну конкретную задачу в конец очереди
-EnqueueTasks(["WarpToStation"]);
-
-// Добавляем одну конкретную задачу в начало очереди
-EnqueueTasks(["WarpToStation"], true);
-
-// Добавляем цепочку задач
-var miningCycle = new List<string>
-{
-    "Undock",
-    "WarpToBelt",
-    "MineAsteroids",
-    "WarpToStation",
-    "Dock"
-};
-EnqueueTasks(miningCycle);
-*/
 
 #endregion
 
@@ -256,7 +238,7 @@ EnqueueTasks(miningCycle);
                                 string sys = "";
                                 while (string.IsNullOrWhiteSpace(sys))
                                 {
-                                    Console.Write($"[{state.AccountName}] Введите текущую звездную систему (например, UB-UQZ): ");
+                                    Console.Write($"[{state.AccountName}] Введите текущую звездную систему (например, Jita): ");
                                     sys = Console.ReadLine()?.Trim() ?? "";
                                 }
                                 _eveSystem = sys;
@@ -297,7 +279,7 @@ EnqueueTasks(miningCycle);
                                 Console.ResetColor();
                                 Console.Write($"[{state.AccountName}] Корабль сейчас в космосе? (y/n, по умолчанию n): ");
                                 string spaceAnswer = Console.ReadLine()?.Trim().ToLower() ?? "";
-                                
+
                                 if (spaceAnswer == "y" || spaceAnswer == "yes" || spaceAnswer == "д" || spaceAnswer == "да")
                                 {
                                     _inSpace = true;
@@ -309,7 +291,7 @@ EnqueueTasks(miningCycle);
                                 else
                                 {
                                     // Если ввели некорректные данные, безопасно приводим bool? к bool
-                                    _inSpace = state.InSpace ?? false; 
+                                    _inSpace = state.InSpace ?? false;
                                 }
                             }
                         }
@@ -348,23 +330,20 @@ EnqueueTasks(miningCycle);
                     {
                         AccountName    = Settings.Name,
                         Triggers       = TriggerCount,
-
-                        // ИСПРАВЛЕНИЕ: Явно приводим double к типу long
-                        // Также убедитесь, что вы используете правильное поле времени 
-                        // (например, (long)TotalRuntime.TotalSeconds или просто переменную _accumulatedSeconds)
                         RuntimeSeconds = _accumulatedSeconds,
-
                         CurrentTask    = CurrentTask.ToString(),
                         TaskQueue      = [.. _taskQueue],
                         EVESystem      = _eveSystem,
                         EVEShip        = _eveShip,
-                        LastUpdate     = DateTime.UtcNow,
+
+                        // ИСПРАВЛЕНИЕ: Используем локальное время ПК вместо UTC
+                        LastUpdate     = DateTime.Now,
+
                         InSpace        = _inSpace
                     };
                 }
 
-                // Сериализация и запись файла выполняются за пределами lock,
-                // не замораживая работу других потоков бота
+                // Сериализация и запись файла выполняются за пределами lock
                 string json = JsonSerializer.Serialize(dto, _jsonOptions);
                 File.WriteAllText(_statsFilePath, json);
             }
@@ -731,7 +710,7 @@ public void ForceSaveStats()
             // 2. ОПАСНОСТЬ: Хотя бы один маркер пропал (или пропали ВСЕ, так как интерфейс перекрыт списком врагов)
             // Раз мы зашли сюда, значит foundCount равен 0, 1 или 2. Система НЕ в безопасности!
             Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] ВНИМАНИЕ: Найдено маркеров безопасности: {foundCount} из 3. Фиксация угрозы!", LogType.Warning);
-            
+
             this.IsSaveLocal = false; // Взводит тревогу для всей сетки окон аккаунтов!
             return false;
         }
@@ -786,7 +765,7 @@ public void ForceSaveStats()
                 }
 
                 Rect safeRegion = Tools.ClampRegion(searchRegion, screenshot.Width, screenshot.Height);
-                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Поиск маркеров языка интерфейса чата (Попытка {attempt}).", LogType.Info);
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Поиск маркеров языка интерфейса чата (Попытка {attempt}).", LogType.Test);
 
                 // Сначала ищем приоритетный чат альянса
                 foundChat = Tools.FindTemplateInRegion(screenshot, pathAli, safeRegion, 0.85);
@@ -835,15 +814,15 @@ public void ForceSaveStats()
             try
             {
                 string chatTypeStr = isCorpChat ? "корпорации" : "альянса";
-                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Обнаружен интерфейс {chatTypeStr} чата в точке (X={foundChat.Value.X}, Y={foundChat.Value.Y}).", LogType.Info);
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Обнаружен интерфейс {chatTypeStr} чата в точке (X={foundChat.Value.X}, Y={foundChat.Value.Y}).", LogType.Test);
 
                 // ЖЕСТКАЯ КОРРЕКЦИЯ ДЛЯ ЭМУЛЯТОРА: Вычитаем 25 пикселей из координаты Y,
                 // чтобы компенсировать рамку заголовка окна при отправке клика через ADB
                 int adbX = foundChat.Value.X;
                 int adbY = foundChat.Value.Y - 25;
 
-                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Отправка фонового клика по скорректированным координатам (X={adbX}, Y={adbY}).", LogType.Info);
-                
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Отправка фонового клика по скорректированным координатам (X={adbX}, Y={adbY}).", LogType.Test);
+
                 // Передаем скорректированные adbX и adbY в ваш оригинальный SmartClick
                 Tools.SmartClick(adbX, adbY, minSec: 1, maxSec: 3, offset: 3, adbPort: Settings.AdbPort);
             }
@@ -917,9 +896,9 @@ public void ForceSaveStats()
                         // Если при старте всё чисто — просто фиксируем и молча выходим
                         systemState.SetSafe();
                         Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Стартовая инициализация: система безопасна. Мониторинг запущен.", LogType.Info);
-                        return; 
+                        return;
                     }
-                    
+
                     // Если же при старте СРАЗУ обнаружена опасность (value is false),
                     // мы НЕ делаем return! Мы разрешаем коду пройти ниже, чтобы 
                     // бот сразу же отработал экстренный сценарий и отправил чат-варнинг!
@@ -1021,7 +1000,7 @@ public void ForceSaveStats()
                 _taskQueue.Clear();
                 // Сбрасываем текущую задачу в состояние покоя, 
                 // чтобы главный цикл RunLoopAsync понял, что нужно переключиться
-                CurrentTask = AccountTask.CheckYourOwnState; 
+                CurrentTask = AccountTask.CheckYourOwnState;
             }
             Logger.Log($"[{Settings.Name}] Очередь задач экстренно очищена.", LogType.Info);
         }

@@ -3,6 +3,9 @@ using System.IO;
 
 namespace EVEEchoesBot
 {
+
+// [ ] TODO 2026.06.01 Проанализировать файл лога и подумать насколько он информативный - может что-то еще требуется добавить. 
+
     public static class Logger
     {
         private const string LogFilePath = "EVE_Echoes_Bot_log.csv";
@@ -102,7 +105,7 @@ namespace EVEEchoesBot
                 // В файл пишем только важное. Параметры гарантированно не null.
                 if (type == LogType.Warning || type == LogType.Error || type == LogType.Info)
                 {
-                    AppendToFile(timestamp, Program._ProgVersion, type.ToString(), safeAccount, eveSystem, eveShip, callerMethod, message);
+                    AppendToFile(timestamp, _cachedVersion, type.ToString(), safeAccount, eveSystem, eveShip, callerMethod, message);
                 }
             }
         }
