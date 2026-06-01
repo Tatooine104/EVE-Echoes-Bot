@@ -434,8 +434,9 @@ namespace EVEEchoesBot
 
                             this.EnqueueTasks(defaultTasks, addToFront: false);
 
-                            // Сразу переходим на следующий виток, чтобы взять первую задачу из свежей очереди
-                            continue;
+                            // ИСПРАВЛЕНИЕ: Вместо "continue" мы просто извлекаем только что добавленную задачу
+                            // и позволяем коду пойти ниже в switch для её честного выполнения.
+                            CurrentTask = DequeueNextTask();
                         }
 
                         // ЗАЩИТА ПРИ ОПАСНОСТИ: Если очередь пуста, но в системе враг (IsSaveLocal is false),

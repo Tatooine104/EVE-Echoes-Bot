@@ -95,15 +95,15 @@ namespace EVEEchoesBot
             // Глобальный перехват ошибок в тасках
             TaskScheduler.UnobservedTaskException += (sender, e) =>
             {
-                Logger.Log($"КРИТИЧЕСКИЙ СБОЙ ТАСКА (UnobservedTaskException): {e.Exception?.Message}", LogType.Error);
+                Logger.Log($"КРИТИЧЕСКИЙ СБОЙ ЗАДАЧИ (UnobservedTaskException): {e.Exception?.Message}", LogType.Error);
                 e.SetObserved();
             };
 
             // 3. Проверка файлов ДО старта всей системы
             if (!CheckRequiredFiles()) return;
 
-            Logger.Log("Бот успешно запущен.", LogType.Info);
-            Logger.Log("Нажмите [ESC] в любой момент для плавной остановки.", LogType.Info);
+            Logger.Log("Бот успешно запущен.", LogType.Warning);
+            Logger.Log("Нажмите [ESC] в любой момент для плавной остановки.", LogType.Warning);
 
             // 4. Запуск фонового потока для отслеживания [ESC]
             Thread inputThread = new(ListenForCancelKey) { IsBackground = true };
@@ -260,7 +260,7 @@ private static bool CheckRequiredFiles()
                             string sys = "";
                             while (string.IsNullOrWhiteSpace(sys))
                             {
-                                Console.Write("Введите текущую звездную систему (например, UB-UQZ): ");
+                                Console.Write("Введите текущую звездную систему (например, Jita): ");
                                 sys = Console.ReadLine()?.Trim() ?? "";
                             }
                             bot._eveSystem = sys;
@@ -381,7 +381,7 @@ private static bool CheckRequiredFiles()
                                     string fullPath = Path.Combine(debugDir, fileName);
 
                                     OpenCvSharp.Cv2.ImWrite(fullPath, screenshot);
-                                    Logger.Log($"Снимок экрана для аккаунта '{bot.Settings.Name}' сохранен: {fileName}", LogType.Info);
+                                    Logger.Log($"Снимок экрана для аккаунта '{bot.Settings.Name}' сохранен: {fileName}", LogType.Warning);
                                 }
                             }
                         }
