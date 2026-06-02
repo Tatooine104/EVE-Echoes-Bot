@@ -9,6 +9,7 @@ using System.Text.Json;
 using System.Collections.Concurrent;
 using static EVEEchoesBot.resources.Logger;
 using EVEEchoesBot.resources;
+using EVEEchoesBot.scenarios;
 
 // [v] TODO 2026.05.30 Привести все тексты логгера к единому стилю 
 
@@ -22,111 +23,108 @@ public class ActiveBotAccount
 
     #region BOT params
 
-    /// <summary>
-    /// Конфигурационные настройки текущего игрового аккаунта.
-    /// </summary>
-    public AccSettings Settings { get; }
+        /// <summary>
+        /// Конфигурационные настройки текущего игрового аккаунта.
+        /// </summary>
+        public AccSettings Settings { get; }
 
-    /// <summary>
-    /// Дескриптор (Handle) окна эмулятора, привязанного к данному аккаунту.
-    /// </summary>
-    public IntPtr Hwnd { get; set; }
+        /// <summary>
+        /// Дескриптор (Handle) окна эмулятора, привязанного к данному аккаунту.
+        /// </summary>
+        public IntPtr Hwnd { get; set; }
 
-    /// <summary>
-    /// Текущая выполняемая ботом игровая задача.
-    /// </summary>
-    public AccountTask CurrentTask { get; set; }
+        /// <summary>
+        /// Текущая выполняемая ботом игровая задача.
+        /// </summary>
+        public AccountTask CurrentTask { get; set; }
 
-    /// <summary>
-    /// Публичное свойство для получения общего количества срабатываний триггеров (потокобезопасное чтение).
-    /// </summary>
-    public long TriggerCount => Interlocked.Read(ref _triggerCount);
+        /// <summary>
+        /// Публичное свойство для получения общего количества срабатываний триггеров (потокобезопасное чтение).
+        /// </summary>
+        public long TriggerCount => Interlocked.Read(ref _triggerCount);
 
-    /// <summary>
-    /// Публичное свойство для получения общего времени работы данного аккаунта.
-    /// </summary>
-    public TimeSpan TotalRuntime => TimeSpan.FromSeconds(_accumulatedSeconds);
+        /// <summary>
+        /// Публичное свойство для получения общего времени работы данного аккаунта.
+        /// </summary>
+        public TimeSpan TotalRuntime => TimeSpan.FromSeconds(_accumulatedSeconds);
 
-    /// <summary>
-    /// Потокобезопасное свойство для получения или изменения текущей звездной системы, где находится персонаж.
-    /// </summary>
-    public string EVESystem
-    {
-        get { lock (_taskLock) return _eveSystem; }
-        set { lock (_taskLock) _eveSystem = value; }
-    }
-
-    /// <summary>
-    /// Потокобезопасное свойство для получения или изменения текущего корабля персонажа.
-    /// </summary>
-    public string EVEShip
-    {
-        get { lock (_taskLock) return _eveShip; }
-        set { lock (_taskLock) _eveShip = value; }
-    }
-
-    // Внутренние переменные игрового контекста персонажа
-    internal string _eveSystem = "???";
-    internal string _eveShip = "???";
-    internal bool _inSpace = false;
-
-    // Приватные поля управления потоками, памятью и файловой системой
-    private CancellationTokenSource? _accountCts;
-    private long _triggerCount;
-    private double _accumulatedSeconds;
-    private readonly string _statsFilePath;
-    private readonly System.Threading.Lock _taskLock = new();
-    private List<string> _taskQueue = [];
-    
-    /// <summary>
-    /// Флаг для принудительного пропуска первого лога проверки безопасности при старте сессии.
-    /// </summary>
-    private bool _isFirstSecurityCheck = true;
-
-    /// <summary>
-    /// Кэшированные настройки JSON-сериализации для оптимизации работы с файлами статов во всех потоках аккаунтов.
-    /// </summary>
-    private static readonly JsonSerializerOptions _jsonOptions = new() { WriteIndented = true };
-
-    /// <summary>
-    /// Инициализирует новый экземпляр класса <see cref="ActiveBotAccount"/> на основе конфигурации аккаунта.
-    /// Выполняет восстановление сохраненного состояния или разворачивает дефолтный сценарий из фабрики задач.
-    /// </summary>
-    /// <param name="settings">Объект настроек игрового аккаунта <see cref="AccSettings"/>.</param>
-    public ActiveBotAccount(AccSettings settings)
-    {
-        // 1. Присваиваем настройки
-        Settings = settings;
-
-        // 2. Формируем путь к файлу состояния для конкретного аккаунта
-        _statsFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, $"stats_{settings.Name}.json");
-
-        // 3. Пытаемся загрузить сохраненную статистику и ОЧЕРЕДЬ из файла
-        bool isLoaded = TryLoadLastStatsAndQueue();
-
-        // 4. Если файла нет или загрузка не удалась, накатываем сценарий из поля Script
-        if (!isLoaded || CurrentTask == AccountTask.CheckYourOwnState)
+        /// <summary>
+        /// Потокобезопасное свойство для получения или изменения текущей звездной системы, где находится персонаж.
+        /// </summary>
+        public string EVESystem
         {
-            // Берем имя сценария напрямую из вашего конфига ("Script"). Если там пусто — используем дефолтный "mining"
-            string currentScript = settings.Script ?? "mining";
-
-            // Обращаемся к нашей фабрике и получаем список дефолтных задач (например, ["CheckSecurity"])
-            List<string> defaultTasks = ScenarioFactory.GetDefaultTasks(currentScript);
-
-            // Закидываем этот список в самый конец нашей пустой очереди без приоритета выталкивания вперед
-            this.EnqueueTasks(defaultTasks, addToFront: false);
-
-            // Достаем самое первое действие для старта из только что наполненной очереди
-            CurrentTask = DequeueNextTask();
+            get { lock (_taskLock) return _eveSystem; }
+            set { lock (_taskLock) _eveSystem = value; }
         }
-    }
 
-    /// <summary>
-    /// Производит атомарный инкремент счетчика срабатываний триггеров из любой части логики автоматизации бота.
-    /// </summary>
-    public void IncrementTrigger() => Interlocked.Increment(ref _triggerCount);
+        /// <summary>
+        /// Потокобезопасное свойство для получения или изменения текущего корабля персонажа.
+        /// </summary>
+        public string EVEShip
+        {
+            get { lock (_taskLock) return _eveShip; }
+            set { lock (_taskLock) _eveShip = value; }
+        }
+
+        // Внутренние переменные игрового контекста персонажа
+        internal string _eveSystem = "???";
+        internal string _eveShip = "???";
+        internal bool _inSpace = false;
+
+        // Приватные поля управления потоками, памятью, деревом и файловой системой
+        private CancellationTokenSource? _accountCts;
+        private long _triggerCount;
+        private double _accumulatedSeconds;
+        private readonly string _statsFilePath;
+        private readonly System.Threading.Lock _taskLock = new();
+        private List<string> _taskQueue = [];
+        
+        /// <summary>
+        /// Корневой управляющий узел дерева поведения (Behavior Tree) текущего аккаунта.
+        /// </summary>
+        private readonly BehaviorNode _behaviorTree;
+
+        /// <summary>
+        /// Флаг для принудительного пропуска первого лога проверки безопасности при старте сессии.
+        /// </summary>
+        private bool _isFirstSecurityCheck = true;
+
+        /// <summary>
+        /// Кэшированные настройки JSON-сериализации для оптимизации работы с файлами статов во всех потоках аккаунтов.
+        /// </summary>
+        private static readonly JsonSerializerOptions _jsonOptions = new() { WriteIndented = true };
+
+        // <summary>
+        /// Инициализирует новый экземпляр класса <see cref="ActiveBotAccount"/> на основе конфигурации аккаунта.
+        /// Выполняет восстановление сохраненного состояния и компилирует дерево поведения из фабрики сценариев.
+        /// </summary>
+        /// <param name="settings">Объект настроек игрового аккаунта <see cref="AccSettings"/>.</param>
+        public ActiveBotAccount(AccSettings settings)
+        {
+            // 1. Присваиваем настройки
+            Settings = settings;
+
+            // 2. Формируем путь к файлу состояния для конкретного аккаунта
+            _statsFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, $"stats_{settings.Name}.json");
+
+            // 3. Пытаемся загрузить сохраненную статистику из файла
+            _ = TryLoadLastStatsAndQueue();
+
+            // 4. КОМПИЛЯЦИЯ ДЕРЕВА ПОВЕДЕНИЯ: Навечно привязываем воркер к его ветвящемуся сценарию
+            string currentScript = settings.Script ?? "mining";
+            _behaviorTree = ScenarioFactory.CreateTree(currentScript);
+            
+            // Старая FSM-инициализация очередей удалена. Бот готов к тикам дерева поведения.
+        }
+
+
+        /// <summary>
+        /// Производит атомарный инкремент счетчика срабатываний триггеров из любой части логики автоматизации бота.
+        /// </summary>
+        public void IncrementTrigger() => Interlocked.Increment(ref _triggerCount);
 
     #endregion
+
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
@@ -472,18 +470,18 @@ public class ActiveBotAccount
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
-    #region RunLoopAsync
+#region RunLoopAsync
 
     /// <summary>
     /// Главный асинхронный рабочий цикл (Runtime Loop) автоматизации игрового аккаунта.
-    /// Выполняет непрерывный трехэтапный цикл: высокоточный расчет таймингов сессии, сквозной мониторинг безопасности,
-    /// динамическую перезагрузку рутинных макросов из фабрики сценариев и конечный автомат (FSM) выполнения игровых задач.
+    /// Переведен на архитектуру Дерева поведения (Behavior Tree). На каждом такте (Tick) производит
+    /// высокоточный расчет таймингов сессии и делегирует принятие решений и выполнение макросов корневому узлу дерева.
     /// </summary>
     /// <param name="token">Токен отмены операции <see cref="CancellationToken"/>, привязанный к текущему аккаунту.</param>
-    /// <returns>Асинхронная задача <see cref="Task"/>, управляющая жизненным циклом потока эмулятора.</returns>
+    /// <returns>Асинхронная задача <see cref="Task"/>, управляющая жизненным циклом потока воркера.</returns>
     private async Task RunLoopAsync(CancellationToken token)
     {
-        Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Поток запущен. Начало работы по сценарию: '{Settings.Script ?? "mining"}'.", LogType.Info);
+        Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Поток запущен. Начало работы по Дереву поведения: '{Settings.Script ?? "mining"}'.", LogType.Info);
 
         var sessionStart = System.DateTime.UtcNow;
 
@@ -503,90 +501,21 @@ public class ActiveBotAccount
                     _accumulatedSeconds = baseSeconds + (sessionStopwatch.ElapsedMilliseconds / 1000);
 
                     // ========================================================
-                    // ЭТАП 1: ГЛОБАЛЬНЫЙ ДВУХЭТАПНЫЙ МОНИТОРИНГ БЕЗОПАСНОСТИ
+                    // ГЛАВНЫЙ И ЕДИНСТВЕННЫЙ ЭТАП: ТИК ДЕРЕВА ПОВЕДЕНИЯ
                     // ========================================================
-                    // Вызываем метод проверки. Он внутри себя обновит IsSaveLocal 
-                    // и, если обнаружен враг, очистит очередь и добавит экстренные задачи.
-                    await CheckSecurityStatusAsync(token);
+                    // Дерево само выполнит нужные проверки (включая безопасность) и запустит 
+                    // соответствующие макросы, вернув статус выполнения (Success / Failure / Running)
+                    NodeStatus treeResult = await _behaviorTree.TickAsync(this, token);
 
-                    // Блокировка "if (!isEverythingSafe)" удалена! 
-                    // Поток больше не замерзает здесь во время опасности, позволяя выполнять задачи.
-
-                    // ========================================================
-                    // ЭТАП 2: УПРАВЛЕНИЕ БЕСКОНЕЧНОЙ ОЧЕРЕДЬЮ СЦЕНАРИЯ
-                    // ========================================================
-                    bool isQueueEmpty = false;
-                    lock (_taskLock)
+#if DEBUG
+                    // В режиме отладки логируем результат прохода дерева для контроля стабильности узлов
+                    if (treeResult == NodeStatus.Running)
                     {
-                        isQueueEmpty = _taskQueue.Count == 0;
+                        Log($"[{Settings.Name}] Дерево находится в состоянии выполнения (Running)...", LogType.Test);
                     }
+#endif
 
-                    // Перезапускаем рутинный сценарий ТОЛЬКО если бот находится в простое, 
-                    // в очереди пусто И СИСТЕМА ДЕЙСТВИТЕЛЬНО БЕЗОПАСНА (IsSaveLocal is true).
-                    if (CurrentTask == AccountTask.CheckYourOwnState && isQueueEmpty && IsSaveLocal is true)
-                    {
-                        Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Сценарий '{Settings.Script ?? "mining"}' завершил цикл. Перезапуск.", LogType.Test);
-
-                        string currentScript = Settings.Script ?? "mining";
-                        List<string> defaultTasks = ScenarioFactory.GetDefaultTasks(currentScript);
-
-                        this.EnqueueTasks(defaultTasks, addToFront: false);
-
-                        // ИСПРАВЛЕНИЕ: Вместо "continue" мы просто извлекаем только что добавленную задачу
-                        // и позволяем коду пойти ниже в switch для её честного выполнения.
-                        CurrentTask = DequeueNextTask();
-                    }
-
-                    // ЗАЩИТА ПРИ ОПАСНОСТИ: Если очередь пуста, но в системе враг (IsSaveLocal is false),
-                    // значит бот уже выполнил эвакуацию и отправил чат-варнинг. Просто спим в безопасности.
-                    if (isQueueEmpty && IsSaveLocal is false)
-                    {
-                        await Task.Delay(TimeSpan.FromSeconds(5), token);
-                        continue;
-                    }
-
-                    // Достаем следующую экстренную или плановую задачу из очереди
-                    CurrentTask = DequeueNextTask();
-
-                    // ========================================================
-                    // ЭТАП 3: ВЫПОЛНЕНИЕ ТЕКУЩЕЙ ЗАДАЧИ
-                    // ========================================================
-                    switch (CurrentTask)
-                    {
-                        case AccountTask.CheckSecurity:
-                            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Плановый цикл мониторинга завершен.", LogType.Test);
-                            break;
-
-                        case AccountTask.SendAliChatWarning:
-                            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Запуск макроса оповещения альянса.", LogType.Warning);
-                            await RunAliChatWarningAsync(token);
-                            break;
-
-                        case AccountTask.GoToStation:
-                            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Экстренная эвакуация: возвращаемся на станцию.", LogType.Warning);
-                            // Как только бот успешно докнулся во время эвакуации, сбрасываем флаг:
-                            _inSpace = false;
-                            break;
-
-                        case AccountTask.Undocking:
-                            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Выход из дока станции.", LogType.Info);
-                            // Как только бот прогрузился в космосе после андока, поднимаем флаг:
-                            _inSpace = true;
-                            break;
-
-                        case AccountTask.Mining:
-                            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Начало добычи руды.", LogType.Info);
-                            break;
-
-                        default:
-                            // Логируем непредвиденные задачи, чтобы не терять управление
-                            if (CurrentTask != AccountTask.CheckYourOwnState)
-                            {
-                                Log($"[{Settings.Name}] Получена необработанная задача: {CurrentTask}", LogType.Warning);
-                            }
-                            break;
-                    }
-
+                    // Каноничная задержка между тактами (тиками) принятия решений ботом
                     await Task.Delay(TimeSpan.FromSeconds(5), token);
                 }
                 catch (TaskCanceledException)
@@ -596,18 +525,18 @@ public class ActiveBotAccount
                 }
                 catch (Exception ex)
                 {
-                    Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Сбой в главном цикле обработки: {ex.Message}", LogType.Error);
+                    Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Сбой в главном цикле обработки такта дерева: {ex.Message}", LogType.Error);
                     await Task.Delay(5000, token);
                 }
             }
         }
         catch (TaskCanceledException)
         {
-            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Получен сигнал остановки. Фиксация состояния.", LogType.Info);
+            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Получен сигнал остановки аккаунта. Фиксация состояния дерева.", LogType.Info);
         }
         catch (Exception ex)
         {
-            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Критический сбой рабочего потока: {ex.Message}", LogType.Error);
+            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Критический сбой рабочего потока дерева поведения: {ex.Message}", LogType.Error);
         }
         finally
         {
@@ -622,11 +551,11 @@ public class ActiveBotAccount
             }
             int sessionSeconds = (int)(System.DateTime.UtcNow - sessionStart).TotalSeconds;
 
-            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Состояние сохранено на диск. Рабочий поток остановлен. Время работы в сессии (сек): {sessionSeconds}", LogType.Info);
+            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Состояние сохранено на диск. Поток дерева поведения остановлен. Время работы в сессии (сек): {sessionSeconds}", LogType.Info);
         }
     }
 
-    #endregion
+#endregion
 
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
@@ -660,7 +589,7 @@ public class ActiveBotAccount
     /// </summary>
     /// <param name="token">Токен отмены операции <see cref="CancellationToken"/> для текущего рабочего потока.</param>
     /// <returns>Возвращает <c>true</c>, если система безопасности успешно проанализировала локал и подтвердила отсутствие угроз; иначе <c>false</c>.</returns>
-    private async Task<bool> CheckSecurityStatusAsync(CancellationToken token)
+    internal async Task<bool> CheckSecurityStatusAsync(CancellationToken token)
     {
         Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Начало выполнения метода.", LogType.Test);
 
@@ -859,7 +788,7 @@ public class ActiveBotAccount
     /// </summary>
     /// <param name="token">Токен отмены операции <see cref="CancellationToken"/> для текущего рабочего потока.</param>
     /// <returns>Асинхронная задача <see cref="Task"/>, управляющая выполнением макроса.</returns>
-    private async Task RunAliChatWarningAsync(CancellationToken token)
+    internal async Task RunAliChatWarningAsync(CancellationToken token)
     {
         Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Начало выполнения макроса оповещения альянса.", LogType.Test);
 

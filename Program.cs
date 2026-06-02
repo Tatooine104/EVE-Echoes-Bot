@@ -7,7 +7,6 @@ using EVEEchoesBot.resources;
 
 namespace EVEEchoesBot;
 
-
 // [v] TODO Проверить все методы и добавить новый метод Logger.Log() 
 // [v] TODO 2026.05.30 Привести все тексты логгера к единому стилю 
 // [v] TODO 2026.05.27 Заменить все SmartClick с координатами на вызовы по енуму 
@@ -20,7 +19,7 @@ static partial class Program
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
-#region Constants & Fields
+    #region Constants & Fields
 
     /// <summary>
     /// Глобальный источник токена отмены (CancellationTokenSource) для каскадного завершения всех асинхронных воркеров приложения.
@@ -100,12 +99,12 @@ static partial class Program
         ChatButtSend = 4450695
     }
 
-#endregion
+    #endregion
 
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
-#region Main
+    #region Main
 
     /// <summary>
     /// Главная точка входа (Entry Point) всего приложения.
@@ -163,79 +162,79 @@ static partial class Program
         Logger.Log("Бот остановлен. Сессия завершена.", LogType.Warning);
     }
 
-#endregion
+    #endregion
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
-#region Required Files Check
+    #region Required Files Check
 
-/// <summary>
-/// Выполняет предстартовую валидацию целостности сборки приложения.
-/// Проверяет наличие исполняемых файлов ADB внутри папки ресурсов и существование всех эталонных графических 
-/// шаблонов OpenCV в целевой директории картинок. В случае сбоя блокирует запуск бота.
-/// </summary>
-/// <returns>Возвращает <c>true</c>, если все необходимые системные файлы и шаблоны присутствуют на диске; иначе <c>false</c>.</returns>
-private static bool CheckRequiredFiles()
-{
-    // 1. Компоненты кликера ADB (теперь автоматически копируются в подпапку resources)
-    string[] resourcesFiles = ["adb.exe", "AdbWinApi.dll", "AdbWinUsbApi.dll"];
-
-    // 2. Шаблоны OpenCV (лежат внутри динамически определяемой папки images)
-    string[] templateFiles =
-    [
-        "imgAliChatENG.png",
-        "imgBeltCondensed.png",
-        "imgBeltMoon.png",
-        "imgCorpChatENG.png",
-        "imgLocalChatHead.png",
-        "imgLocalChatIcon.png",
-        "imgLocalCriminal.png",
-        "imgLocalMinus.png",
-        "imgLocalNeutral.png"
-    ];
-
-    bool allExist = true;
-
-    // Проверяем файлы кликера внутри подпапки resources
-    foreach (var file in resourcesFiles)
+    /// <summary>
+    /// Выполняет предстартовую валидацию целостности сборки приложения.
+    /// Проверяет наличие исполняемых файлов ADB внутри папки ресурсов и существование всех эталонных графических 
+    /// шаблонов OpenCV в целевой директории картинок. В случае сбоя блокирует запуск бота.
+    /// </summary>
+    /// <returns>Возвращает <c>true</c>, если все необходимые системные файлы и шаблоны присутствуют на диске; иначе <c>false</c>.</returns>
+    private static bool CheckRequiredFiles()
     {
-        string fullPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "resources", file);
-        if (!File.Exists(fullPath))
+        // 1. Компоненты кликера ADB (теперь автоматически копируются в подпапку resources)
+        string[] resourcesFiles = ["adb.exe", "AdbWinApi.dll", "AdbWinUsbApi.dll"];
+
+        // 2. Шаблоны OpenCV (лежат внутри динамически определяемой папки images)
+        string[] templateFiles =
+        [
+            "imgAliChatENG.png",
+            "imgBeltCondensed.png",
+            "imgBeltMoon.png",
+            "imgCorpChatENG.png",
+            "imgLocalChatHead.png",
+            "imgLocalChatIcon.png",
+            "imgLocalCriminal.png",
+            "imgLocalMinus.png",
+            "imgLocalNeutral.png"
+        ];
+
+        bool allExist = true;
+
+        // Проверяем файлы кликера внутри подпапки resources
+        foreach (var file in resourcesFiles)
         {
-            Logger.Log($"Критическая ошибка релиза: Отсутствует файл '{file}' по пути '{fullPath}'!", LogType.Error);
-            allExist = false;
+            string fullPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "resources", file);
+            if (!File.Exists(fullPath))
+            {
+                Logger.Log($"Критическая ошибка релиза: Отсутствует файл '{file}' по пути '{fullPath}'!", LogType.Error);
+                allExist = false;
+            }
         }
-    }
 
-    // Проверяем графические шаблоны картинок в их целевой папке Images
-    foreach (var file in templateFiles)
-    {
-        string fullPath = Path.Combine(TemplatesDir, file);
-        if (!File.Exists(fullPath))
+        // Проверяем графические шаблоны картинок в их целевой папке Images
+        foreach (var file in templateFiles)
         {
-            Logger.Log($"Критическая ошибка релиза: Отсутствует шаблон '{file}' по пути '{fullPath}'!", LogType.Error);
-            allExist = false;
+            string fullPath = Path.Combine(TemplatesDir, file);
+            if (!File.Exists(fullPath))
+            {
+                Logger.Log($"Критическая ошибка релиза: Отсутствует шаблон '{file}' по пути '{fullPath}'!", LogType.Error);
+                allExist = false;
+            }
         }
+
+        // Если хотя бы один файл потерян — аварийно останавливаем запуск
+        if (!allExist)
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine("\n[ОШИБКА] Работа бота невозможна. Проверьте целостность папки приложения.");
+            Console.WriteLine("Нажмите любую клавишу для выхода...");
+            Console.ReadKey();
+        }
+
+        return allExist;
     }
 
-    // Если хотя бы один файл потерян — аварийно останавливаем запуск
-    if (!allExist)
-    {
-        Console.ForegroundColor = ConsoleColor.Red;
-        Console.WriteLine("\n[ОШИБКА] Работа бота невозможна. Проверьте целостность папки приложения.");
-        Console.WriteLine("Нажмите любую клавишу для выхода...");
-        Console.ReadKey();
-    }
-
-    return allExist;
-}
-
-#endregion
+    #endregion
 
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
-#region Multi-Bot System Start
+    #region Multi-Bot System Start
 
     /// <summary>
     /// Производит чистый перезапуск сервера ADB, считывает глобальный конфигурационный файл,
@@ -350,7 +349,7 @@ private static bool CheckRequiredFiles()
         }
     }
 
-#endregion
+    #endregion
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
@@ -469,10 +468,9 @@ private static bool CheckRequiredFiles()
 
 #endregion
 
-
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
-#region ClickTo Extension
+    #region ClickTo Extension
 
     /// <summary>
     /// Метод расширения (Extension Method) для класса <see cref="ActiveBotAccount"/>.
@@ -494,13 +492,13 @@ private static bool CheckRequiredFiles()
         // Вызываем обновленный ADB-кликер, передавая порт этого конкретного эмулятора/окна
         Tools.SmartClick(x, y, minSec, maxSec, offset, adbPort: bot.Settings.AdbPort);
 
-#if DEBUG
+    #if DEBUG
         // Выводим информацию о кликах макроса только в режиме отладки (message, type)
         Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Отправлен клик по элементу '{element}' (X={x}, Y={y}).", LogType.Test);
-#endif
+    #endif
     }
 
-#endregion
+    #endregion
 
 
 }
