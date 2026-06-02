@@ -13,10 +13,10 @@ using EVEEchoesBot.scenarios;
 
 // [v] TODO 2026.05.30 Привести все тексты логгера к единому стилю 
 
-namespace EVEEchoesBot;
+namespace EVEEchoesBot.resources;
 
 
-public class ActiveBotAccount
+public partial class ActiveBotAccount
 {
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
@@ -70,10 +70,15 @@ public class ActiveBotAccount
         internal string _eveSystem = "???";
         internal string _eveShip = "???";
         internal bool _inSpace = false;
+        internal bool _isinminingzone = false;
+        internal bool _iswarping = false;
+        internal bool _hastarget = false;
+        internal bool _weaponryactive = false;
+        internal long _triggerCount;
+        internal object? _currenttarget { get; set; }
 
         // Приватные поля управления потоками, памятью, деревом и файловой системой
         private CancellationTokenSource? _accountCts;
-        private long _triggerCount;
         private double _accumulatedSeconds;
         private readonly string _statsFilePath;
         private readonly System.Threading.Lock _taskLock = new();
@@ -416,7 +421,12 @@ public class ActiveBotAccount
                     // Используем локальное время персонального компьютера вместо UTC для удобства чтения логов
                     LastUpdate     = DateTime.Now,
 
-                    InSpace        = _inSpace
+                    InSpace        = _inSpace,
+                    IsWarping      = _iswarping,
+                    IsInMiningZone = _isinminingzone,
+                    HasTarget      = _hastarget,
+                    WeaponryActive = _weaponryactive,
+                    CurrentTarget  = _currenttarget?.ToString()
                 };
             }
 
@@ -1100,7 +1110,101 @@ public void ClearTasks()
 #endregion
 
 
-}
+        /// <summary>
+        /// ШАГ 1.2, 4.2, 8: Инициирует варп и автоматический док на домашнюю станцию/цитадель.
+        /// </summary>
+        public async Task<bool> WarpAndDockToHomeStationAsync(CancellationToken token)
+        {
+            // Симулируем задержку на сетевой запрос или клик по интерфейсу
+            await Task.Delay(100, token);
+            Logger.Log($"[ЗАГЛУШКА] {Settings.Name} выполняет команду: Варп и Док на домашнюю станцию.", LogType.Test);
+            
+            // Для теста принудительно переводим стейт в док (космос = false)
+            _inSpace = false; 
+            return true;
+        }
+
+        /// <summary>
+        /// ШАГ 8, 9: Проверяет текущую заполненность рудного трюма корабля.
+        /// </summary>
+        public async Task<bool> CheckIsCargoFullAsync(CancellationToken token)
+        {
+            await Task.Delay(50, token);
+            Logger.Log($"[ЗАГЛУШКА] {Settings.Name} проверяет заполненность трюма.", LogType.Test);
+            
+            // По умолчанию возвращаем false, чтобы бот не уходил в бесконечный цикл разгрузки на старте
+            return false; 
+        }
+
+        /// <summary>
+        /// ШАГ 9: Переносит всю добытую руду из трюма корабля на склад станции.
+        /// </summary>
+        public async Task<bool> UnloadOreToHangarAsync(CancellationToken token)
+        {
+            await Task.Delay(500, token); // Выгрузка обычно занимает чуть больше времени
+            Logger.Log($"[ЗАГЛУШКА] {Settings.Name} успешно разгрузил руду на склад станции.", LogType.Test);
+            return true;
+        }
+
+        /// <summary>
+        /// ШАГ 2: Производит отстыковку (андок) корабля от станции.
+        /// </summary>
+        public async Task<bool> UndockFromStationAsync(CancellationToken token)
+        {
+            await Task.Delay(200, token);
+            Logger.Log($"[ЗАГЛУШКА] {Settings.Name} запускает процедуру андока.", LogType.Test);
+            
+            // Для теста переводим стейт корабля в космос
+            _inSpace = true; 
+            return true;
+        }
+
+        /// <summary>
+        /// ШАГ 3: Сканирует овервью или меню игры, выбирает подходящий пояс астероидов.
+        /// </summary>
+        /// <returns>Возвращает объект (строку) с названием пояса, либо null, если ничего не найдено.</returns>
+        public async Task<object?> ScanAndSelectAvailableBeltAsync(CancellationToken token)
+        {
+            await Task.Delay(150, token);
+            string mockBeltName = "Asteroid Belt Cluster-Alpha";
+            Logger.Log($"[ЗАГЛУШКА] {Settings.Name} отсканировал локацию и выбрал: {mockBeltName}.", LogType.Test);
+            return mockBeltName;
+        }
+
+        /// <summary>
+        /// ШАГ 5: Инициирует разгон и переход в варп на конкретно выбранный пояс астероидов.
+        /// </summary>
+        public async Task<bool> WarpToSpecificBeltAsync(object? targetBelt, CancellationToken token)
+        {
+            await Task.Delay(100, token);
+            string beltName = targetBelt?.ToString() ?? "Unknown Belt";
+            Logger.Log($"[ЗАГЛУШКА] {Settings.Name} отправлен в варп на точку: {beltName}.", LogType.Test);
+            return true;
+        }
+
+        /// <summary>
+        /// ШАГ 6: Находит ближайший астероид в овервью космоса и берет его в захват (Lock Target).
+        /// </summary>
+        public async Task<bool> TryTargetAsteroidAsync(CancellationToken token)
+        {
+            await Task.Delay(100, token);
+            Logger.Log($"[ЗАГЛУШКА] {Settings.Name} захватил астероид в цель.", LogType.Test);
+            return true;
+        }
+
+        /// <summary>
+        /// ШАГ 6: Включает буровые/шахтерские лазеры (модули) корабля для начала добычи.
+        /// </summary>
+        public async Task<bool> ActivateLasersAsync(CancellationToken token)
+        {
+            await Task.Delay(150, token); // Имитация задержки на клик по модулю
+            Logger.Log($"[ЗАГЛУШКА] {Settings.Name} отправил команду на активацию буровых лазеров.", LogType.Test);
+            
+            // Здесь в будущем будет выставляться флаг AreLasersActive = true
+            return true; 
+        }
+
+    }
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 

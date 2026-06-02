@@ -122,6 +122,21 @@ public class AccountStateDto
     /// <para>Значение <c>null</c> — статус еще не определен (требуется опрос).</para>
     /// </summary>
     public bool? InSpace { get; set; }
+
+    /// <summary>
+    /// Имя или идентификатор конкретного астероидного пояса / аномалии, 
+    /// выбранной на Шаге 3 для совершения варпа. Очищается при прилете.
+    /// </summary>
+    public string? CurrentTarget { get; set; }
+
+    public bool? IsInMiningZone { get; set; }
+
+    public bool? IsWarping { get; set; }
+
+    public bool? HasTarget { get; set; }
+
+    public bool? WeaponryActive { get; set; }
+
 }
 
 #endregion
