@@ -3,6 +3,7 @@ using static EVEEchoesBot.Program;
 using EVEEchoesBot;
 using static System.Diagnostics.Process;
 using System.Diagnostics;
+using EVEEchoesBot.resources;
 
 namespace EVEEchoesBot;
 
@@ -21,24 +22,35 @@ static partial class Program
 
 #region Constants & Fields
 
-    // 1. Создаем глобальный источник токена отмены
+    /// <summary>
+    /// Глобальный источник токена отмены (CancellationTokenSource) для каскадного завершения всех асинхронных воркеров приложения.
+    /// </summary>
     private static CancellationTokenSource _cts = new();
 
-    // Флаг для предотвращения повторного входа в метод остановки
+    /// <summary>
+    /// Атомарный флаг (0 — работает, 1 — останавливается), предотвращающий повторный вход в метод безопасной остановки бота при множественном перехвате событий.
+    /// </summary>
     private static int _isStopping = 0;
 
-    // 1. Глобальные переменные для управления состоянием
+    /// <summary>
+    /// Глобальный потокобезопасный список всех запущенных и активных в текущей сессии аккаунтов-воркеров.
+    /// </summary>
     public static readonly List<ActiveBotAccount> _activeBots = [];
+
+    /// <summary>
+    /// Ссылка на объект глобальной конфигурации приложения, содержащий параметры всех аккаунтов.
+    /// </summary>
     private static BotConfig? _config;
 
     /// <summary>
-    /// Глобальный путь к папке Images в корне проекта.
+    /// Глобальное свойство, возвращающее актуальный путь к папке с графическими шаблонами (Images).
+    /// Автоматически переключает контекст между релизной директорией и отладочной папкой исходного кода проекта.
     /// </summary>
     public static string TemplatesDir
     {
         get
         {
-            // 1. Путь для РЕЛИЗА (папка images лежит прямо рядом с .exe)
+            // Настройка пути для RELEASE-сборки (папка images лежит непосредственно в корне исполняемого файла)
             string releasePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images");
 
             if (Directory.Exists(releasePath))
@@ -46,73 +58,95 @@ static partial class Program
                 return releasePath;
             }
 
-            // 2. Откатываемся на путь для ОТЛАДКИ (если запускаем из Visual Studio)
+            // Настройка фолбека для DEBUG-режима (автоматический подъем на 3 уровня выше bin/Debug/ к исходникам)
             return Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\..\..\Images"));
         }
     }
 
+    /// <summary>
+    /// Перечисление элементов графического интерфейса игры EVE Echoes с упакованными координатами клика.
+    /// Каждое значение сформировано по математическому правилу сжатия векторов: <c>ИмяЭлемента = (X * 10000) + Y</c> [INDEX].
+    /// </summary>
     public enum GameUi
     {
-        // ИмяЭлемента = (X * 10000) + Y (упаковываем X и Y в одно число для Enum)
-        // hWnd.ClickTo(GameUi.ChatsInterface); // Пример вызова
+        // 1. Взаимодействие с окнами и базовым интерфейсом игры
+        
+        /// <summary>Иконка развертывания общей панели игровых чатов.</summary>
+        ChatsInterface = 250625,
+        
+        /// <summary>Точка безопасности чуть ниже и правее геометрического центра окна эмулятора для сброса фокуса меню.</summary>
+        WindowCenter = 8000250,
 
-        // 1. Взаимодействие с окнами и базовым интерфейсом
-        ChatsInterface =   250625, // Интерфейс чатов (иконка открытия панели)
-        WindowCenter   =  8000250, // Точка чуть ниже и правее центра окна (для закрытия меню)
+        // 2. Навигация по вкладкам и каналам связи
+        
+        /// <summary>Вкладка прямого канала связи альянса.</summary>
+        ChatTabAli = 500450,
 
-        // 2. Навигация по вкладкам чатов
-        ChatTabAli     =   500450, // Вкладка чата альянса
-
-        // 3. Цепочка открытия меню ввода и макроса
-        ChatInputMenu  =  3650700, // Меню ввода чата
-        ChatFastInput  = 11900685, // Меню быстрого ввода
-        ChatInform     =   800400, // Меню "Inform" (данные разведки)
-        ChatMessScout  =  3000600, // Сообщение "Scout" (выбор статуса)
-        ChatButtSend   =  4450695  // Кнопка чата "Send" (финальная отправка)
+        // 3. Индивидуальная цепочка шагов макроса автоматического оповещения
+        
+        /// <summary>Кнопка активации текстового меню ввода в чат.</summary>
+        ChatInputMenu = 3650700,
+        
+        /// <summary>Кнопка перехода в оверлей шаблонов быстрого ввода фраз.</summary>
+        ChatFastInput = 11900685,
+        
+        /// <summary>Вкладка "Inform" для прикрепления автоматических данных разведки системы.</summary>
+        ChatInform = 800400,
+        
+        /// <summary>Выбор предустановленного статус-сообщения "Scout" в списке быстрых команд.</summary>
+        ChatMessScout = 3000600,
+        
+        /// <summary>Финальная кнопка "Send" для отправки сформированного пакета данных в активный канал.</summary>
+        ChatButtSend = 4450695
     }
 
-
-
 #endregion
+
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 #region Main
 
+    /// <summary>
+    /// Главная точка входа (Entry Point) всего приложения.
+    /// Настраивает кодировки ввода-вывода, инициализирует глобальные ловушки критических исключений в ThreadPool/Tasks,
+    /// выполняет предстартовую валидацию файлов, разворачивает многопоточную сетку окон и удерживает главный поток приложения 
+    /// до получения сигнала отмены через асинхронный перехватчик аппаратных клавиш.
+    /// </summary>
     public static void Main()
     {
-        // 1. Настраиваем кодировку, чтобы любые стартовые ошибки читались корректно
+        // 1. Настраиваем системную кодировку UTF-8, чтобы любые стартовые ошибки WinAPI или JSON читались корректно
         Console.OutputEncoding = System.Text.Encoding.UTF8;
         Console.InputEncoding = System.Text.Encoding.UTF8;
 
-        // 2. Глобальный перехват ошибок в фоновых потоках
+        // 2. Глобальный перехват необработанных ошибок в фоновых потоках CLR
         AppDomain.CurrentDomain.UnhandledException += (sender, e) =>
         {
             string exceptionMessage = e.ExceptionObject is Exception ex ? ex.ToString() : "Неизвестный сбой среды выполнения.";
             Logger.Log($"КРИТИЧЕСКИЙ СБОЙ СИСТЕМЫ (UnhandledException): {exceptionMessage}", LogType.Error);
         };
 
-        // Глобальный перехват ошибок в тасках
+        // Глобальный перехват и подавление необработанных ошибок внутри асинхронных задач (Task)
         TaskScheduler.UnobservedTaskException += (sender, e) =>
         {
             Logger.Log($"КРИТИЧЕСКИЙ СБОЙ ЗАДАЧИ (UnobservedTaskException): {e.Exception?.Message}", LogType.Error);
-            e.SetObserved();
+            e.SetObserved(); // Помечаем исключение как обработанное, предотвращая падение процесса
         };
 
-        // 3. Проверка файлов ДО старта всей системы
+        // 3. Валидация необходимых графических файлов и шаблонов ДО старта всей системы
         if (!CheckRequiredFiles()) return;
 
         Logger.Log("Бот успешно запущен.", LogType.Warning);
         Logger.Log("Нажмите [ESC] в любой момент для плавной остановки.", LogType.Warning);
 
-        // 4. Запуск фонового потока для отслеживания [ESC]
+        // 4. Запуск фонового низкоуровневого потока для непрерывного отслеживания управляющей клавиши ESC
         Thread inputThread = new(ListenForCancelKey) { IsBackground = true };
         inputThread.Start();
 
-        // 5. Запуск многопоточных ботов
+        // 5. Инициализация и параллельный запуск многопоточной экосистемы игровых воркеров
         StartMultiBotSystem();
 
-        // 6. Ожидаем сигнала отмены от токена (пока боты работают параллельно)
+        // 6. Ожидаем сигнала отмены от токена (блокируем главный поток, пока боты работают в ThreadPool)
         try
         {
             _cts.Token.WaitHandle.WaitOne();
@@ -123,129 +157,148 @@ static partial class Program
         }
 
         // 7. Программа выходит из ожидания. Потоки уже останавливаются методом ListenForCancelKey.
-        // Даем 1 секунду, чтобы фоновые потоки успели дописать логи и сохранить файлы на диск.
+        // Даем фиксированную задержку, чтобы фоновые потоки гарантированно успели дописать логи и сохранить файлы на диск.
         Thread.Sleep(1000);
 
         Logger.Log("Бот остановлен. Сессия завершена.", LogType.Warning);
     }
 
-
-
-
 #endregion
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
+#region Required Files Check
+
+/// <summary>
+/// Выполняет предстартовую валидацию целостности сборки приложения.
+/// Проверяет наличие исполняемых файлов ADB внутри папки ресурсов и существование всех эталонных графических 
+/// шаблонов OpenCV в целевой директории картинок. В случае сбоя блокирует запуск бота.
+/// </summary>
+/// <returns>Возвращает <c>true</c>, если все необходимые системные файлы и шаблоны присутствуют на диске; иначе <c>false</c>.</returns>
 private static bool CheckRequiredFiles()
 {
-// 1. Компоненты кликера (всегда лежат в корне рядом с .exe)
-string[] rootFiles = ["adb.exe", "AdbWinApi.dll", "AdbWinUsbApi.dll"];
+    // 1. Компоненты кликера ADB (теперь автоматически копируются в подпапку resources)
+    string[] resourcesFiles = ["adb.exe", "AdbWinApi.dll", "AdbWinUsbApi.dll"];
 
-// 2. Шаблоны OpenCV (лежат внутри папки images)
-string[] templateFiles =
-[
-    "imgAliChatENG.png",
-    "imgBeltCondensed.png",
-    "imgBeltMoon.png",
-    "imgCorpChatENG.png",
-    "imgLocalChatHead.png",
-    "imgLocalChatIcon.png",
-    "imgLocalCriminal.png",
-    "imgLocalMinus.png",
-    "imgLocalNeutral.png"
-];
+    // 2. Шаблоны OpenCV (лежат внутри динамически определяемой папки images)
+    string[] templateFiles =
+    [
+        "imgAliChatENG.png",
+        "imgBeltCondensed.png",
+        "imgBeltMoon.png",
+        "imgCorpChatENG.png",
+        "imgLocalChatHead.png",
+        "imgLocalChatIcon.png",
+        "imgLocalCriminal.png",
+        "imgLocalMinus.png",
+        "imgLocalNeutral.png"
+    ];
 
-bool allExist = true;
+    bool allExist = true;
 
-// Проверяем файлы кликера в корне
-foreach (var file in rootFiles)
-{
-    string fullPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, file);
-    if (!File.Exists(fullPath))
+    // Проверяем файлы кликера внутри подпапки resources
+    foreach (var file in resourcesFiles)
     {
-        Logger.Log($"Критическая ошибка релиза: Отсутствует файл '{file}' по пути '{fullPath}'!", LogType.Error);
-        allExist = false;
+        string fullPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "resources", file);
+        if (!File.Exists(fullPath))
+        {
+            Logger.Log($"Критическая ошибка релиза: Отсутствует файл '{file}' по пути '{fullPath}'!", LogType.Error);
+            allExist = false;
+        }
     }
-}
 
-// Проверяем шаблоны картинок в их целевой папке
-foreach (var file in templateFiles)
-{
-    string fullPath = Path.Combine(TemplatesDir, file);
-    if (!File.Exists(fullPath))
+    // Проверяем графические шаблоны картинок в их целевой папке Images
+    foreach (var file in templateFiles)
     {
-        Logger.Log($"Критическая ошибка релиза: Отсутствует шаблон '{file}' по пути '{fullPath}'!", LogType.Error);
-        allExist = false;
+        string fullPath = Path.Combine(TemplatesDir, file);
+        if (!File.Exists(fullPath))
+        {
+            Logger.Log($"Критическая ошибка релиза: Отсутствует шаблон '{file}' по пути '{fullPath}'!", LogType.Error);
+            allExist = false;
+        }
     }
+
+    // Если хотя бы один файл потерян — аварийно останавливаем запуск
+    if (!allExist)
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("\n[ОШИБКА] Работа бота невозможна. Проверьте целостность папки приложения.");
+        Console.WriteLine("Нажмите любую клавишу для выхода...");
+        Console.ReadKey();
+    }
+
+    return allExist;
 }
 
-if (!allExist)
-{
-    Console.ForegroundColor = ConsoleColor.Red;
-    Console.WriteLine("\n[ОШИБКА] Работа бота невозможна. Проверьте целостность папки приложения.");
-    Console.WriteLine("Нажмите любую клавишу для выхода...");
-    Console.ReadKey();
-}
-
-return allExist;
-}
+#endregion
 
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
-#region Start Bot
+#region Multi-Bot System Start
 
+    /// <summary>
+    /// Производит чистый перезапуск сервера ADB, считывает глобальный конфигурационный файл,
+    /// выполняет сетевое подключение каждого эмулятора по его индивидуальному порту,
+    /// разворачивает координатную сетку Android, доинициализирует контекст персонажей и запускает 
+    /// параллельные асинхронные воркеры для всех доступных аккаунтов.
+    /// </summary>
     private static void StartMultiBotSystem()
     {
         try
         {
-            // 1. Перезапускаем ADB сервер в чистом режиме
-            string adbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "adb.exe");
+            // 1. Формируем путь к ADB с учетом его переноса в подпапку ресурсов
+            string adbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "resources", "adb.exe");
+            
+            // Перезапускаем ADB сервер в чистом режиме для предотвращения зависших сетевых сессий
             if (File.Exists(adbPath))
             {
                 Process.Start(new ProcessStartInfo(adbPath, "kill-server") { CreateNoWindow = true, UseShellExecute = false })?.WaitForExit();
                 Process.Start(new ProcessStartInfo(adbPath, "start-server") { CreateNoWindow = true, UseShellExecute = false })?.WaitForExit();
             }
 
+            // Загружаем глобальный JSON-конфиг через менеджер конфигураций
             _config = ConfigManager.Load();
 
             if (_config?.Accounts == null || _config.Accounts.Count == 0)
             {
-                Logger.Log("В конфигурации нет доступных аккаунтов. Запуск отменен.", LogType.Error);
+                Logger.Log("В конфигурации нет доступных аккаунтов. Запуск мультисистемы отменен.", LogType.Error);
                 return;
             }
 
             if (_cts.IsCancellationRequested) _cts = new CancellationTokenSource();
             _activeBots.Clear();
 
+            // Итерируемся по списку аккаунтов для их параллельной инициализации
             foreach (AccSettings accountSettings in _config.Accounts)
             {
+                // Ищем дескриптор главного окна Windows через WinAPI по его уникальному Title
                 IntPtr hWnd = WinAPI.FindWindow(null, accountSettings.WindowTitle);
                 if (hWnd == IntPtr.Zero)
                 {
-                    Logger.Log($"Окно '{accountSettings.WindowTitle}' для аккаунта '{accountSettings.Name}' не найдено.", LogType.Error);
+                    Logger.Log($"Окно '{accountSettings.WindowTitle}' для аккаунта '{accountSettings.Name}' не найдено в ОС.", LogType.Error);
                     continue;
                 }
 
-                // БЕРЕМ ПОРТ НАПРЯМУЮ ИЗ ВАШЕГО JSON И СРАЗУ АКТИВИРУЕМ ИНЖЕНЕРНУЮ СЕТКУ
+                // Подключаем эмулятор к ADB по порту, прописанному в JSON, и активируем отладочную разметку экрана
                 if (File.Exists(adbPath))
                 {
                     string targetDevice = $"127.0.0.1:{accountSettings.AdbPort}";
 
-                    // Коннектим эмулятор по порту, который вы нашли глазами в настройках
+                    // Коннектим эмулятор по порту, который вы нашли глазами в настройках BlueStacks/LDPlayer
                     Process.Start(new ProcessStartInfo(adbPath, $"connect {targetDevice}") { CreateNoWindow = true, UseShellExecute = false })?.WaitForExit();
 
-                    // Включаем сетку
+                    // Включаем встроенную системную сетку Android для визуального контроля кликов бота
                     Process.Start(new ProcessStartInfo(adbPath, $"-s {targetDevice} shell settings put system pointer_location 1") { CreateNoWindow = true, UseShellExecute = false })?.WaitForExit();
                 }
 
-                // Создаем объект аккаунта (внутри его конструктора или инициализации вызывается TryLoadLastStatsAndQueue)
+                // Создаем объект аккаунта (внутри его конструктора автоматически восстанавливается статистика и очередь задач)
                 var bot = new ActiveBotAccount(accountSettings)
                 {
                     Hwnd = hWnd
                 };
 
-                // ПРОВЕРКА И ОПРОС: Если после загрузки статов поля остались пустыми или содержат "???"
+                // ФОЛБЕК-ОПРОС: Если после десериализации статов поля системы или корабля остались пустыми — запрашиваем ввод у оператора
                 if (string.IsNullOrEmpty(bot._eveSystem) || bot._eveSystem == "???" ||
                     string.IsNullOrEmpty(bot._eveShip) || bot._eveShip == "???")
                 {
@@ -266,7 +319,7 @@ return allExist;
                         bot._eveSystem = sys;
                     }
 
-                    // Опрашиваем тип корабля
+                    // Опрашиваем тип игрового корабля
                     if (string.IsNullOrEmpty(bot._eveShip) || bot._eveShip == "???")
                     {
                         string ship = "";
@@ -283,63 +336,73 @@ return allExist;
                     Console.ResetColor();
                 }
 
-                // Теперь запускаем бот, зная, что теги системы и корабля гарантированно заполнены!
+                // Запускаем асинхронный воркер в ThreadPool, передавая токен отмены
                 bot.Start(_cts.Token);
                 _activeBots.Add(bot);
             }
 
-            Logger.Log($"Мультисистема запущена. Аккаунтов в работе: {_activeBots.Count}", LogType.Info);
+            Logger.Log($"Мультисистема успешно запущена. Аккаунтов в работе: {_activeBots.Count}", LogType.Info);
         }
         catch (Exception ex)
         {
             Logger.Log($"Критический сбой при запуске мультисистемы: {ex.Message}", LogType.Error);
-            _cts.Cancel();
+            _cts.Cancel(); // Сворачиваем запуск в случае непредвиденного системного исключения
         }
     }
 
 #endregion
 
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
 #region Stop Bot
 
+    /// <summary>
+    /// Асинхронно и потокобезопасно производит остановку всей мультисистемы ботов.
+    /// Использует атомарную операцию сравнения с обменом (Interlocked.CompareExchange) для защиты от повторного входа,
+    /// инициирует отмену глобального токена, предоставляет фоновым воркерам временной интервал (2000 мс) 
+    /// для фиксации статов на диске и полностью очищает коллекцию активных аккаунтов.
+    /// </summary>
     private static async void StopMultiBotSystem()
     {
-
-        // Если значение _isStopping уже равно 1, метод сразу завершает работу без повторного лога
-        // Если значение было 0, оно атомарно меняется на 1, и код идет дальше
+        // Защитный барьер: если значение _isStopping уже равно 1, метод сразу завершает работу без повторного входа.
+        // Если значение было 0, оно атомарно меняется на 1, и код идет дальше выполнять процедуру остановки.
         if (System.Threading.Interlocked.CompareExchange(ref _isStopping, 1, 0) == 1)
         {
             return;
         }
 
-        // 1. Отправляем сигнал отмены всем потокам
+        // 1. Отправляем сигнал отмены всем параллельно работающим потокам воркеров
         _cts.Cancel();
         Logger.Log("Всем фоновым потокам отправлен сигнал остановки. Ожидание завершения...", LogType.Warning);
 
         try
         {
-            // 2. Даем потокам время проснуться от Task.Delay, выполнить блок finally и вызвать SaveStats()
+            // 2. Даем потокам фиксированное время проснуться от Task.Delay, выполнить блок finally и вызвать SaveStats()
             await Task.Delay(2000);
         }
-        catch { /* Игнорируем возможные ошибки таймера */ }
+        catch 
+        { 
+            /* Игнорируем возможные системные ошибки прерывания таймера ожидания */ 
+        }
 
-        // 3. Только ТЕПЕРЬ, когда потоки гарантированно засыпают или уже закрылись, очищаем список
+        // 3. Только ТЕПЕРЬ, когда потоки гарантированно засыпают или уже закрылись, очищаем общий список
         _activeBots.Clear();
 
         Logger.Log("Список активных аккаунтов очищен. Система полностью остановлена.", LogType.Warning);
     }
 
-
 #endregion
+
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 #region ListenForCancelKey
 
     /// <summary>
-    /// Постоянно работает в фоновом потоке, отслеживая нажатия управляющих клавиш:
+    /// Непрерывно выполняется в выделенном фоновом потоке, перехватывая нажатия управляющих горячих клавиш.
     /// <list type="bullet">
-    /// <item><description><c>ConsoleKey.Escape</c> — инициирует плавную остановку всех процессов бота.</description></item>
-    /// <item><description><c>ConsoleKey.F10</c> — запускает мгновенный изолированный тест эмуляции клика драйвером.</description></item>
+    /// <item><description><c>ConsoleKey.Escape</c> — инициирует немедленный штатный запуск плавной остановки всех окон.</description></item>
+    /// <item><description><c>ConsoleKey.F10</c> — производит экстренный высокоточный сбор скриншотов со всех активных эмуляторов с фиксацией на диск, после чего глушит систему.</description></item>
     /// </list>
     /// </summary>
     private static void ListenForCancelKey()
@@ -350,14 +413,14 @@ return allExist;
             {
                 ConsoleKey pressedKey = Console.ReadKey(true).Key;
 
-                // СЦЕНАРИЙ 1: Нажата строго клавиша ESC
+                // СЦЕНАРИЙ 1: Нажата строго клавиша ESC — штатный плавный выход из игры
                 if (pressedKey == ConsoleKey.Escape)
                 {
                     Logger.Log("Обнаружено нажатие [ESC]. Запуск остановки всех аккаунтов.", LogType.Warning);
                     StopMultiBotSystem();
                     break;
                 }
-                // СЦЕНАРИЙ 2: Нажата строго клавиша F10 (без дублирования ESC)
+                // СЦЕНАРИЙ 2: Нажата строго клавиша F10 — экстренный дамп экранов для анализа сбоя перед выходом
                 else if (pressedKey == ConsoleKey.F10)
                 {
                     Logger.Log("Обнаружено нажатие [F10]. Создание экстренных снимков экрана и запуск остановки.", LogType.Warning);
@@ -368,10 +431,12 @@ return allExist;
                     {
                         Directory.CreateDirectory(debugDir);
 
+                        // Безопасно итерируемся по копии списка живых аккаунтов
                         foreach (var bot in _activeBots.ToList())
                         {
                             if (bot.Hwnd == IntPtr.Zero) continue;
 
+                            // Захватываем текущую графическую матрицу эмулятора через GDI
                             using OpenCvSharp.Mat? screenshot = Tools.CaptureWindow(bot.Hwnd);
 
                             if (screenshot?.Empty() is false && screenshot.Width > 0 && screenshot.Height > 0)
@@ -380,6 +445,7 @@ return allExist;
                                 string fileName = $"{bot.Settings.Name}_F10_Emergency_{timestamp}.png";
                                 string fullPath = Path.Combine(debugDir, fileName);
 
+                                // Сохраняем аварийный кадр на диск для дебага логики стендингов или чата
                                 OpenCvSharp.Cv2.ImWrite(fullPath, screenshot);
                                 Logger.Log($"Снимок экрана для аккаунта '{bot.Settings.Name}' сохранен: {fileName}", LogType.Warning);
                             }
@@ -390,37 +456,52 @@ return allExist;
                         Logger.Log($"Не удалось выполнить экстренное сохранение снимков: {ex.Message}", LogType.Warning);
                     }
 
+                    // После сбора улик вызываем каскадное тушение потоков
                     StopMultiBotSystem();
                     break;
                 }
             }
 
+            // Минимальный тайм-аут для разгрузки процессора
             Thread.Sleep(100);
         }
     }
 
 #endregion
 
+
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
-#region ClickTo
+#region ClickTo Extension
 
+    /// <summary>
+    /// Метод расширения (Extension Method) для класса <see cref="ActiveBotAccount"/>.
+    /// Автоматически распаковывает двумерные координаты (X, Y) из перечисления <see cref="GameUi"/>, 
+    /// после чего выполняет аппаратно-независимый клик через утилиту ADB, используя индивидуальный сетевой порт аккаунта [INDEX].
+    /// </summary>
+    /// <param name="bot">Экземпляр активного аккаунта бота, для которого выполняется действие [INDEX].</param>
+    /// <param name="element">Элемент интерфейса игры EVE Echoes с упакованными координатами клика [INDEX].</param>
+    /// <param name="minSec">Минимальное время случайной задержки перед кликом (в секундах). По умолчанию: 1.</param>
+    /// <param name="maxSec">Максимальное время случайной задержки перед кликом (в секундах). По умолчанию: 3.</param>
+    /// <param name="offset">Радиус случайного разброса пикселей от центра клика для защиты от анти-кликеров. По умолчанию: 3.</param>
     internal static void ClickTo(this ActiveBotAccount bot, GameUi element, int minSec = 1, int maxSec = 3, int offset = 3)
     {
-        // Распаковываем координаты X и Y из вашего Enum GameUi
+        // Распаковываем двумерные координаты X и Y из упакованного Enum GameUi по вашей формуле
         int packed = (int)element;
         int x = packed / 10000;
         int y = packed % 10000;
 
-        // Вызываем обновленный ADB-кликер, передавая порт этого конкретного бота
+        // Вызываем обновленный ADB-кликер, передавая порт этого конкретного эмулятора/окна
         Tools.SmartClick(x, y, minSec, maxSec, offset, adbPort: bot.Settings.AdbPort);
 
-    #if DEBUG
+#if DEBUG
+        // Выводим информацию о кликах макроса только в режиме отладки (message, type)
         Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Отправлен клик по элементу '{element}' (X={x}, Y={y}).", LogType.Test);
-    #endif
+#endif
     }
 
 #endregion
+
 
 }
 

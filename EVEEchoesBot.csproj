@@ -25,15 +25,15 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Автоматически копируем сам кликер -->
-    <None Update="adb.exe">
+    <!-- Автоматически копируем сам кликер из папки resources -->
+    <None Update="resources\adb.exe">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <!-- Добавляем автоматическое копирование двух необходимых DLL -->
-    <None Update="AdbWinApi.dll">
+    <!-- Добавляем автоматическое копирование двух необходимых DLL из папки resources -->
+    <None Update="resources\AdbWinApi.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Update="AdbWinUsbApi.dll">
+    <None Update="resources\AdbWinUsbApi.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

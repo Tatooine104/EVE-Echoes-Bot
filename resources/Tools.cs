@@ -312,7 +312,8 @@ public static class Tools
         int finalX = x + _random.Next(-offset, offset + 1);
         int finalY = y + _random.Next(-offset, offset + 1);
 
-        string adbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "adb.exe");
+        string adbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "resources", "adb.exe");
+
 
         if (!File.Exists(adbPath))
         {
