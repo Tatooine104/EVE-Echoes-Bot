@@ -5,8 +5,8 @@ Obsidian.md
 .vscode/
 
 # === Результаты компиляции и сборки C# ===
-bin/
-obj/
+/bin/
+/obj/
 
 # === Отладочные медиа-файлы и скриншоты OpenCV ===
 DebugScreenshots/
