@@ -22,6 +22,7 @@
   <ItemGroup>
     <PackageReference Include="OpenCvSharp4" Version="4.13.0.20260427" />
     <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.13.0.20260302" />
+    <PackageReference Include="TesseractOCR" Version="5.5.2" />
   </ItemGroup>
 
   <ItemGroup>
@@ -52,10 +53,13 @@
     <Content Remove="bin\**" />
 
     <!-- Очищаем старые правила, включая поиск в корне -->
-    <None Remove="imgLocalMinus.png" />
-    <None Remove="imgLocalNeutral.png" />
     <None Remove="*.png" />
     <None Remove="**/*.png" />
+
+    <!-- Говорим компилятору всегда копировать файлы моделей в билд -->
+    <None Update="resources\**\*.traineddata">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
 
     <!-- ГЛАВНОЕ ПРАВИЛО: Автоматически копируем папку images со всем содержимым -->
     <Content Include="images\**\*.png">

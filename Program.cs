@@ -503,23 +503,33 @@ static partial class Program
 
 }
 
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
+#region MEMO
+
 /*
 
 ### КОНТЕКСТ ПРОЕКТА: EVEEchoesBot (Ветка: Work)
 **Архитектура:** .NET 9+, C#, Дерево поведения (Behavior Tree) вместо старого FSM.
-**Классы проекта:**
-1. `ScenarioFactory` (static) — фабрика, собирает BT. Методы возвращают `BehaviorNode`.
-2. `ActiveBotAccount` (partial) — основной класс воркера/окна бота. Хранит стейт и флаги:
+
+**Текущие ключевые компоненты:**
+1. `ScenarioFactory` (static) — фабрика сборки BT. Содержит методы `BuildLocalWatcherTree()` и `BuildMinerTree()`.
+2. `ActiveBotAccount` (partial) — основной класс окна/аккаунта бота. Хранит свойства стейта:
    - `bool _inSpace` (true — космос, false — док)
    - `object? _currenttarget` (текущий выбранный астероидный пояс, null — не выбран)
-   - `bool IsWarping`, `bool HasTarget`, `bool AreLasersActive`, `bool IsInMiningZone`
-3. `AccountStateDto` — объект для синхронизации и сохранения стейта в JSON (под `lock (_taskLock)`).
-4. `RunLoopAsync` — бесконечный рабочий цикл в `ActiveBotAccount`. Реализован адаптивный тайминг тиков: 1 сек, если дерево возвращает `NodeStatus.Running` (для быстрой реакции на угрозы), и 5 сек, если `Success/Failure`.
+   - `AccountTask CurrentTask` — enum текущей высокоуровневой задачи для логирования и DTO.
+   - Флаги: `IsWarping`, `HasTarget`, `AreLasersActive`, `IsInMiningZone`.
+3. `AccountStateDto` — объект для синхронизации и сохранения стейта в JSON под `lock (_taskLock)`.
+4. `RunLoopAsync` — рабочий цикл. Реализован адаптивный тайминг тиков: 1 сек, если дерево возвращает `NodeStatus.Running` (для быстрой реакции на угрозы), и 5 сек, если `Success/Failure`.
+5. `OcrService` — инфраструктурный сервис локального OCR-распознавания (пакет `TesseractOCR`). Инициализирует параллельный мультиязычный движок `"eng+rus"` из папки `resources`. Метод `RecognizeText(byte[] imageBytes)` обрабатывает срезы экрана через `TesseractOCR.Pix.Image.LoadFromMemory`.
 
-**Текущий статус задачи `miner` (Сценарий «Шахтер»):**
-- Полностью написано и скомпилировано дерево поведения `BuildMinerTree()` по жесткому линейному ТЗ (Проверка локала -> Выход -> Выбор белта -> Проверка локала -> Варп -> Добыча/Мониторинг -> Возврат при угрозе или полном трюме -> Выгрузка).
-- Все методы взаимодействия с игрой (`WarpAndDockToHomeStationAsync`, `CheckIsCargoFullAsync`, `UnloadOreToHangarAsync`, `UndockFromStationAsync`, `ScanAndSelectAvailableBeltAsync`, `WarpToSpecificBeltAsync`, `TryTargetAsteroidAsync`, `ActivateLasersAsync`) сейчас находятся в состоянии **заглушек (stubs)** внутри `ActiveBotAccount`.
-- Проект успешно собирается без ошибок компиляции.
+**Текущий статус задач в ветке `Work`:**
+- **Сценарий «Глаз» (LocalWatcher):** Дерево поведения полностью настроено, интегрировано переключение состояний `AccountTask.CheckSecurity`, `SendAliChatWarning` и `CheckYourOwnState`.
+- **Сценарий «Шахтер» (Miner):** Реализовано отказоустойчивое дерево по линейному ТЗ (Проверка локала -> Выход -> Выбор белта -> Проверка локала -> Варп -> Добыча/Мониторинг -> Возврат при угрозе/полном трюме -> Выгрузка). Интегрировано изменение `bot.CurrentTask`.
+- **Методы-заглушки:** Все действия майнера (`WarpAndDockToHomeStationAsync`, `CheckIsCargoFullAsync`, `UnloadOreToHangarAsync`, `UndockFromStationAsync`, `ScanAndSelectAvailableBeltAsync`, `WarpToSpecificBeltAsync`, `TryTargetAsteroidAsync`, `ActivateLasersAsync`) вынесены в `ActiveBotAccount` в качестве заглушек (stubs).
+- Проект **успешно собирается** без ошибок компиляции, подключены автокопирования моделей `.traineddata`.
+
 
 */
 
+#endregion

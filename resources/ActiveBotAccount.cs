@@ -1121,7 +1121,7 @@ public partial class ActiveBotAccount
     #region WarpAndDockToHomeStationAsync
 
     /// <summary>
-    /// ШАГ 1.2, 4.2, 8: Инициирует варп и автоматический док на домашнюю станцию/цитадель.
+    /// ДЕЙСТВИЕ: Инициирует варп и автоматический док на домашнюю станцию/цитадель.
     /// </summary>
     public async Task<bool> WarpAndDockToHomeStationAsync(CancellationToken token)
     {
@@ -1141,7 +1141,7 @@ public partial class ActiveBotAccount
     #region CheckIsCargoFullAsync
 
     /// <summary>
-    /// ШАГ 8, 9: Проверяет текущую заполненность рудного трюма корабля.
+    /// ДЕЙСТВИЕ: Проверяет текущую заполненность рудного трюма корабля.
     /// </summary>
     public async Task<bool> CheckIsCargoFullAsync(CancellationToken token)
     {
@@ -1159,7 +1159,7 @@ public partial class ActiveBotAccount
     #region UnloadOreToHangarAsync
 
     /// <summary>
-    /// ШАГ 9: Переносит всю добытую руду из трюма корабля на склад станции.
+    /// ДЕЙСТВИЕ: Переносит всю добытую руду из трюма корабля на склад станции.
     /// </summary>
     public async Task<bool> UnloadOreToHangarAsync(CancellationToken token)
     {
@@ -1175,7 +1175,7 @@ public partial class ActiveBotAccount
     #region UndockFromStationAsync
 
     /// <summary>
-    /// ШАГ 2: Производит отстыковку (андок) корабля от станции.
+    /// ДЕЙСТВИЕ: Производит отстыковку (андок) корабля от станции.
     /// </summary>
     public async Task<bool> UndockFromStationAsync(CancellationToken token)
     {
@@ -1194,7 +1194,7 @@ public partial class ActiveBotAccount
     #region ScanAndSelectAvailableBeltAsync
 
     /// <summary>
-    /// ШАГ 3: Сканирует овервью или меню игры, выбирает подходящий пояс астероидов.
+    /// ДЕЙСТВИЕ: Сканирует овервью или меню игры, выбирает подходящий пояс астероидов.
     /// </summary>
     /// <returns>Возвращает объект (строку) с названием пояса, либо null, если ничего не найдено.</returns>
     public async Task<object?> ScanAndSelectAvailableBeltAsync(CancellationToken token)
@@ -1212,7 +1212,7 @@ public partial class ActiveBotAccount
     #region WarpToSpecificBeltAsync
 
     /// <summary>
-    /// ШАГ 5: Инициирует разгон и переход в варп на конкретно выбранный пояс астероидов.
+    /// ДЕЙСТВИЕ: Инициирует разгон и переход в варп на конкретно выбранный пояс астероидов.
     /// </summary>
     public async Task<bool> WarpToSpecificBeltAsync(object? targetBelt, CancellationToken token)
     {
@@ -1229,7 +1229,7 @@ public partial class ActiveBotAccount
     #region TryTargetAsteroidAsync
 
     /// <summary>
-    /// ШАГ 6: Находит ближайший астероид в овервью космоса и берет его в захват (Lock Target).
+    /// ДЕЙСТВИЕ: Находит ближайший астероид в овервью космоса и берет его в захват (Lock Target).
     /// </summary>
     public async Task<bool> TryTargetAsteroidAsync(CancellationToken token)
     {
@@ -1245,7 +1245,7 @@ public partial class ActiveBotAccount
     #region ActivateLasersAsync
 
     /// <summary>
-    /// ШАГ 6: Включает буровые/шахтерские лазеры (модули) корабля для начала добычи.
+    /// ДЕЙСТВИЕ: Включает буровые/шахтерские лазеры (модули) корабля для начала добычи.
     /// </summary>
     public async Task<bool> ActivateLasersAsync(CancellationToken token)
     {
