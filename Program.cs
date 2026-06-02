@@ -392,7 +392,6 @@ static partial class Program
 
 #endregion
 
-
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
 #region ListenForCancelKey
@@ -511,24 +510,24 @@ static partial class Program
 
 ### КОНТЕКСТ ПРОЕКТА: EVEEchoesBot (Ветка: Work)
 **Архитектура:** .NET 9+, C#, Дерево поведения (Behavior Tree) вместо старого FSM.
+**Масштаб:** ~4140 строк кода (высокая плотность инфраструктуры).
 
 **Текущие ключевые компоненты:**
-1. `ScenarioFactory` (static) — фабрика сборки BT. Содержит методы `BuildLocalWatcherTree()` и `BuildMinerTree()`.
-2. `ActiveBotAccount` (partial) — основной класс окна/аккаунта бота. Хранит свойства стейта:
-   - `bool _inSpace` (true — космос, false — док)
-   - `object? _currenttarget` (текущий выбранный астероидный пояс, null — не выбран)
-   - `AccountTask CurrentTask` — enum текущей высокоуровневой задачи для логирования и DTO.
-   - Флаги: `IsWarping`, `HasTarget`, `AreLasersActive`, `IsInMiningZone`.
+1. `ScenarioFactory` (static) — фабрика сборки BT (`BuildLocalWatcherTree()` и `BuildMinerTree()`). Поддерживает фолбек `BuildDefaultFallbackTree()`.
+2. `ActiveBotAccount` (partial) — основной класс аккаунта. Хранит свойства стейта: `_inSpace`, `_currenttarget`, `AccountTask CurrentTask` (enum), а также флаги `IsWarping`, `HasTarget`, `AreLasersActive`, `IsInMiningZone`.
 3. `AccountStateDto` — объект для синхронизации и сохранения стейта в JSON под `lock (_taskLock)`.
-4. `RunLoopAsync` — рабочий цикл. Реализован адаптивный тайминг тиков: 1 сек, если дерево возвращает `NodeStatus.Running` (для быстрой реакции на угрозы), и 5 сек, если `Success/Failure`.
-5. `OcrService` — инфраструктурный сервис локального OCR-распознавания (пакет `TesseractOCR`). Инициализирует параллельный мультиязычный движок `"eng+rus"` из папки `resources`. Метод `RecognizeText(byte[] imageBytes)` обрабатывает срезы экрана через `TesseractOCR.Pix.Image.LoadFromMemory`.
+4. `RunLoopAsync` — рабочий цикл с адаптивными тиками (1 сек в состоянии `Running` для быстрой реакции на угрозы, 5 сек в простое).
+5. `OcrService` — сервис локального OCR (пакет `TesseractOCR`, параллельный движок `"eng+rus"` из `resources`, чтение через `TesseractOCR.Pix.Image.LoadFromMemory`).
 
 **Текущий статус задач в ветке `Work`:**
-- **Сценарий «Глаз» (LocalWatcher):** Дерево поведения полностью настроено, интегрировано переключение состояний `AccountTask.CheckSecurity`, `SendAliChatWarning` и `CheckYourOwnState`.
-- **Сценарий «Шахтер» (Miner):** Реализовано отказоустойчивое дерево по линейному ТЗ (Проверка локала -> Выход -> Выбор белта -> Проверка локала -> Варп -> Добыча/Мониторинг -> Возврат при угрозе/полном трюме -> Выгрузка). Интегрировано изменение `bot.CurrentTask`.
-- **Методы-заглушки:** Все действия майнера (`WarpAndDockToHomeStationAsync`, `CheckIsCargoFullAsync`, `UnloadOreToHangarAsync`, `UndockFromStationAsync`, `ScanAndSelectAvailableBeltAsync`, `WarpToSpecificBeltAsync`, `TryTargetAsteroidAsync`, `ActivateLasersAsync`) вынесены в `ActiveBotAccount` в качестве заглушек (stubs).
-- Проект **успешно собирается** без ошибок компиляции, подключены автокопирования моделей `.traineddata`.
+- **Сценарий «Глаз» (LocalWatcher):** Дерево настроено, интегрировано переключение `AccountTask.CheckSecurity`, `SendAliChatWarning` и `CheckYourOwnState`.
+- **Сценарий «Шахтер» (Miner):** Реализовано дерево по линейному ТЗ (Проверка локала -> Выход -> Выбор белта -> Проверка локала -> Варп -> Добыча/Мониторинг -> Возврат при угрозе/полном трюме -> Выгрузка). Интегрированы изменения `bot.CurrentTask`. Все методы взаимодействия с игрой вынесены в `ActiveBotAccount` в качестве заглушек (stubs). Проект успешно компилируется.
+- **Динамическая смена сценариев (Архитектурное решение):** Согласован подход горячей подмены корня `_behaviorTree` через метод `SwitchScenario(string newScenarioName)` для долгосрочной смены ролей бота на лету.
 
+**Статус Канбан-доски (Всего 12 задач):**
+- **Test:** 2 задачи (Дерево Miner с заглушками, Интеграция Tesseract OCR).
+- **In Progress:** 1 задача.
+- **Todo:** 9 задач.
 
 */
 
