@@ -4,7 +4,7 @@ using EVEEchoesBot.resources;
 
 namespace EVEEchoesBot.scenarios;
 
-// [ ] TODO 2026.06.01 Реализовать сценарий "miner" 
+// [v] TODO 2026.06.01 Реализовать сценарий "miner" 
 // [ ] TODO 2026.06.01 Реализовать проверку, перезапуск и запуск сбора планетарки на ПОС 
 
 /// <summary>
