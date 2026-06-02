@@ -1,0 +1,1238 @@
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+using OpenCvSharp;
+using static EVEEchoesBot.Program;
+using static EVEEchoesBot.resources.Tools;
+using System.Diagnostics;
+using System.Text.Json;
+using System.Collections.Concurrent;
+using static EVEEchoesBot.resources.Logger;
+using EVEEchoesBot.resources;
+
+// [v] TODO 2026.05.30 Привести все тексты логгера к единому стилю 
+
+namespace EVEEchoesBot;
+
+
+public class ActiveBotAccount
+{
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
+    #region BOT params
+
+    /// <summary>
+    /// Конфигурационные настройки текущего игрового аккаунта.
+    /// </summary>
+    public AccSettings Settings { get; }
+
+    /// <summary>
+    /// Дескриптор (Handle) окна эмулятора, привязанного к данному аккаунту.
+    /// </summary>
+    public IntPtr Hwnd { get; set; }
+
+    /// <summary>
+    /// Текущая выполняемая ботом игровая задача.
+    /// </summary>
+    public AccountTask CurrentTask { get; set; }
+
+    /// <summary>
+    /// Публичное свойство для получения общего количества срабатываний триггеров (потокобезопасное чтение).
+    /// </summary>
+    public long TriggerCount => Interlocked.Read(ref _triggerCount);
+
+    /// <summary>
+    /// Публичное свойство для получения общего времени работы данного аккаунта.
+    /// </summary>
+    public TimeSpan TotalRuntime => TimeSpan.FromSeconds(_accumulatedSeconds);
+
+    /// <summary>
+    /// Потокобезопасное свойство для получения или изменения текущей звездной системы, где находится персонаж.
+    /// </summary>
+    public string EVESystem
+    {
+        get { lock (_taskLock) return _eveSystem; }
+        set { lock (_taskLock) _eveSystem = value; }
+    }
+
+    /// <summary>
+    /// Потокобезопасное свойство для получения или изменения текущего корабля персонажа.
+    /// </summary>
+    public string EVEShip
+    {
+        get { lock (_taskLock) return _eveShip; }
+        set { lock (_taskLock) _eveShip = value; }
+    }
+
+    // Внутренние переменные игрового контекста персонажа
+    internal string _eveSystem = "???";
+    internal string _eveShip = "???";
+    internal bool _inSpace = false;
+
+    // Приватные поля управления потоками, памятью и файловой системой
+    private CancellationTokenSource? _accountCts;
+    private long _triggerCount;
+    private double _accumulatedSeconds;
+    private readonly string _statsFilePath;
+    private readonly System.Threading.Lock _taskLock = new();
+    private List<string> _taskQueue = [];
+    
+    /// <summary>
+    /// Флаг для принудительного пропуска первого лога проверки безопасности при старте сессии.
+    /// </summary>
+    private bool _isFirstSecurityCheck = true;
+
+    /// <summary>
+    /// Кэшированные настройки JSON-сериализации для оптимизации работы с файлами статов во всех потоках аккаунтов.
+    /// </summary>
+    private static readonly JsonSerializerOptions _jsonOptions = new() { WriteIndented = true };
+
+    /// <summary>
+    /// Инициализирует новый экземпляр класса <see cref="ActiveBotAccount"/> на основе конфигурации аккаунта.
+    /// Выполняет восстановление сохраненного состояния или разворачивает дефолтный сценарий из фабрики задач.
+    /// </summary>
+    /// <param name="settings">Объект настроек игрового аккаунта <see cref="AccSettings"/>.</param>
+    public ActiveBotAccount(AccSettings settings)
+    {
+        // 1. Присваиваем настройки
+        Settings = settings;
+
+        // 2. Формируем путь к файлу состояния для конкретного аккаунта
+        _statsFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, $"stats_{settings.Name}.json");
+
+        // 3. Пытаемся загрузить сохраненную статистику и ОЧЕРЕДЬ из файла
+        bool isLoaded = TryLoadLastStatsAndQueue();
+
+        // 4. Если файла нет или загрузка не удалась, накатываем сценарий из поля Script
+        if (!isLoaded || CurrentTask == AccountTask.CheckYourOwnState)
+        {
+            // Берем имя сценария напрямую из вашего конфига ("Script"). Если там пусто — используем дефолтный "mining"
+            string currentScript = settings.Script ?? "mining";
+
+            // Обращаемся к нашей фабрике и получаем список дефолтных задач (например, ["CheckSecurity"])
+            List<string> defaultTasks = ScenarioFactory.GetDefaultTasks(currentScript);
+
+            // Закидываем этот список в самый конец нашей пустой очереди без приоритета выталкивания вперед
+            this.EnqueueTasks(defaultTasks, addToFront: false);
+
+            // Достаем самое первое действие для старта из только что наполненной очереди
+            CurrentTask = DequeueNextTask();
+        }
+    }
+
+    /// <summary>
+    /// Производит атомарный инкремент счетчика срабатываний триггеров из любой части логики автоматизации бота.
+    /// </summary>
+    public void IncrementTrigger() => Interlocked.Increment(ref _triggerCount);
+
+    #endregion
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
+    #region DequeueNextTask
+
+    /// <summary>
+    /// Потокобезопасно извлекает следующую задачу из начала очереди, удаляет её из списка ожидания, 
+    /// синхронизирует измененное состояние с диском и трансформирует строковый идентификатор в системный Enum.
+    /// </summary>
+    /// <returns>
+    /// Возвращает объект <see cref="AccountTask"/>, соответствующий следующему шагу сценария. 
+    /// Если очередь пуста или имя задачи не удалось распознать (опечатка), возвращает <see cref="AccountTask.CheckYourOwnState"/>.
+    /// </returns>
+    private AccountTask DequeueNextTask()
+    {
+        // Используем потокобезопасный объект синхронизации Lock из .NET 9+
+        lock (_taskLock)
+        {
+            // Если задач в очереди вообще нет, возвращаем дефолтную проверку базового состояния персонажа
+            if (_taskQueue.Count == 0)
+            {
+                return AccountTask.CheckYourOwnState;
+            }
+
+            // 1. Извлекаем текстовый идентификатор задачи из начала списка ожидания
+            string nextTaskStr = _taskQueue[0];
+
+            // 2. Удаляем её из списка, так как она переходит в активную обработку воркера
+            _taskQueue.RemoveAt(0);
+
+            // 3. Мгновенно сохраняем обновленный состав очереди на диск для защиты от сбоев
+            SaveStats();
+
+            // 4. Пытаемся преобразовать строку (например, "CheckSecurity") в строго типизированный Enum
+            if (Enum.TryParse(nextTaskStr, out AccountTask parsedTask))
+            {
+                return parsedTask;
+            }
+
+            // ФОЛБЕК-СИСТЕМА: Если перевод завершился ошибкой (например, опечатка в сценарии конфига), возвращаем дефолт
+            return AccountTask.CheckYourOwnState;
+        }
+    }
+
+    #endregion
+
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
+    #region EnqueueTasks
+
+    /// <summary>
+    /// Потокобезопасно добавляет пачку новых задач в очередь аккаунта и сохраняет измененное состояние на диск.
+    /// </summary>
+    /// <param name="tasks">Коллекция строковых идентификаторов задач для добавления.</param>
+    /// <param name="addToFront">
+    /// Если <c>true</c>, задачи вставляются в самое начало очереди (с высоким приоритетом, сохраняя свой исходный порядок).
+    /// Если <c>false</c>, задачи приписываются в самый конец текущей очереди. По умолчанию: <c>false</c>.
+    /// </param>
+    public void EnqueueTasks(IEnumerable<string> tasks, bool addToFront = false)
+    {
+        if (tasks == null) return;
+
+        // Используем объект синхронизации Lock из .NET 9+
+        lock (_taskLock)
+        {
+            if (addToFront)
+            {
+                // Вставляем элементы в начало очереди, строго сохраняя их исходную последовательность
+                _taskQueue.InsertRange(0, tasks);
+            }
+            else
+            {
+                // Стандартное добавление элементов в хвост очереди сценария
+                _taskQueue.AddRange(tasks);
+            }
+
+            // Синхронизируем измененную очередь с файлом состояния на диске под защитой блокировки
+            SaveStats();
+        }
+    }
+
+    #endregion
+
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
+    #region AdvanceToNextTask
+
+    /// <summary>
+    /// Главный управляющий метод логики сценария. Потокобезопасно извлекает следующий шаг из очереди, 
+    /// переключает текущее состояние бота (<see cref="CurrentTask"/>) и фиксирует изменения в файле статов на диске.
+    /// </summary>
+    /// <returns>
+    /// Возвращает <c>true</c>, если в очереди была задача и бот успешно переключился на неё. 
+    /// Возвращает <c>false</c>, если очередь была пуста (в этом случае бот автоматически переводится в режим ожидания).
+    /// </returns>
+    public bool AdvanceToNextTask()
+    {
+        // Используем объект синхронизации Lock из .NET 9+ для безопасной параллельной работы
+        lock (_taskLock) 
+        {
+            if (_taskQueue.Count > 0)
+            {
+                // Извлекаем первую текстовую задачу из начала списка ожидания
+                string nextTaskStr = _taskQueue[0]; 
+                
+                // Сразу удаляем её из очереди, так как она уходит в активную обработку
+                _taskQueue.RemoveAt(0);             
+
+                // Пытаемся безопасно преобразовать строку в строго типизированный Enum AccountTask
+                if (Enum.TryParse(nextTaskStr, out AccountTask parsedTask))
+                {
+                    CurrentTask = parsedTask;
+                }
+                else
+                {
+                    // ФОЛБЕК-СИСТЕМА: Если в очереди оказалась строка с опечаткой, включаем безопасный режим проверки
+                    CurrentTask = AccountTask.CheckYourOwnState;
+                    Log($"Неизвестная задача в очереди сценария: '{nextTaskStr}'. Включен защитный режим.", LogType.Warning);
+                }
+
+                // Синхронизируем обновленную очередь и новую текущую задачу с файлом состояния на диске
+                SaveStats(); 
+                return true;
+            }
+
+            // Если сценарий полностью исчерпан и очередь пуста, переводим бота в режим проверки себя и ожидания
+            CurrentTask = AccountTask.CheckYourOwnState;
+            SaveStats();
+            return false;
+        }
+    }
+
+    #endregion
+
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
+    #region TryLoadLastStatsAndQueue
+
+    /// <summary>
+    /// Пытается загрузить сохраненное состояние аккаунта из файла JSON.
+    /// Восстанавливает статистику триггеров, время работы, текущую задачу и состав очереди задач.
+    /// При отсутствии в файле актуальных данных о звездной системе, корабле или локации, инициирует 
+    /// безопасный интерактивный опрос оператора через консоль ввода.
+    /// </summary>
+    /// <returns>Возвращает <c>true</c>, если файл состояния существовал и был успешно прочитан; иначе <c>false</c>.</returns>
+    private bool TryLoadLastStatsAndQueue()
+    {
+        if (!File.Exists(_statsFilePath)) return false;
+
+        try
+        {
+            string json = File.ReadAllText(_statsFilePath);
+            var state = JsonSerializer.Deserialize<AccountStateDto>(json, _jsonOptions);
+
+            if (state != null)
+            {
+                _triggerCount = state.Triggers;
+                _accumulatedSeconds = (double)state.RuntimeSeconds;
+
+                // Используем объект синхронизации Lock из .NET 9+ для потокобезопасного наполнения контекста
+                lock (_taskLock)
+                {
+                    // Восстанавливаем список задач из очереди
+                    _taskQueue = state.TaskQueue?.ToList() ?? [];
+
+                    // Конвертируем сохраненную строку задачи в строго типизированный Enum AccountTask
+                    if (Enum.TryParse(state.CurrentTask, out AccountTask savedTask))
+                    {
+                        CurrentTask = savedTask;
+                    }
+                    else
+                    {
+                        CurrentTask = AccountTask.CheckYourOwnState;
+                    }
+
+                    // Выполняем интерактивный опрос оператора с блокировкой системного потока ввода Console.In
+                    lock (Console.In)
+                    {
+                        // Проверяем и валидируем звездную систему персонажа
+                        if (string.IsNullOrEmpty(state.EVESystem) || state.EVESystem == "???")
+                        {
+                            Console.ResetColor();
+                            string sys = "";
+                            while (string.IsNullOrWhiteSpace(sys))
+                            {
+                                Console.Write($"[{state.AccountName}] Введите текущую звездную систему (например, Jita): ");
+                                sys = Console.ReadLine()?.Trim() ?? "";
+                            }
+                            _eveSystem = sys;
+                        }
+                        else
+                        {
+                            _eveSystem = state.EVESystem;
+                        }
+
+                        // Проверяем и валидируем текущий корабль персонажа
+                        if (string.IsNullOrEmpty(state.EVEShip) || state.EVEShip == "???")
+                        {
+                            Console.ResetColor();
+                            string ship = "";
+                            while (string.IsNullOrWhiteSpace(ship))
+                            {
+                                Console.Write($"[{state.AccountName}] Введите название корабля (например, Covetor II): ");
+                                ship = Console.ReadLine()?.Trim() ?? "";
+                            }
+                            _eveShip = ship;
+                        }
+                        else
+                        {
+                            _eveShip = state.EVEShip;
+                        }
+
+                        // Умная проверка локации (космос / станция) без ошибок компиляции и лишних вопросов к пользователю
+                        if (state.InSpace.HasValue)
+                        {
+                            // Если значение успешно прочитано из JSON, берем его и НЕ открываем консоль опроса
+                            _inSpace = state.InSpace.Value;
+                        }
+                        else
+                        {
+                            // Консольный опрос сработает ТОЛЬКО один раз, если поля в JSON файле еще физически нет
+                            Console.ResetColor();
+                            Console.Write($"[{state.AccountName}] Корабль сейчас в космосе? (y/n, по умолчанию n): ");
+                            string spaceAnswer = Console.ReadLine()?.Trim().ToLower() ?? "";
+
+                            if (spaceAnswer == "y" || spaceAnswer == "yes" || spaceAnswer == "д" || spaceAnswer == "да")
+                            {
+                                _inSpace = true;
+                            }
+                            else if (spaceAnswer == "n" || spaceAnswer == "no" || spaceAnswer == "н" || spaceAnswer == "нет")
+                            {
+                                _inSpace = false;
+                            }
+                            else
+                            {
+                                // Если ввели некорректные данные, безопасно приводим bool? к дефолтному false
+                                _inSpace = state.InSpace ?? false;
+                            }
+                        }
+                    }
+                }
+
+                return true;
+            }
+        }
+        catch (Exception ex)
+        {
+            // Маршрутизируем сбой десериализации через штатный логгер платформы, чтобы событие улетело в CSV-отчет
+            Log($"Ошибка загрузки файла состояния: {ex.Message}", LogType.Error);
+        }
+
+        return false;
+    }
+
+    #endregion
+
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
+    #region SaveStats
+
+    /// <summary>
+    /// Синхронизирует текущее состояние, статистику и состав очереди задач аккаунта с диском.
+    /// Формирует объект переноса данных (DTO) под защитой блокировки, после чего выполняет 
+    /// сериализацию и запись в JSON-файл в неблокирующем потоке.
+    /// </summary>
+    public void SaveStats()
+    {
+        try
+        {
+            AccountStateDto dto;
+
+            // Быстро собираем срез данных под защитой объекта синхронизации Lock из .NET 9+
+            lock (_taskLock)
+            {
+                dto = new AccountStateDto
+                {
+                    AccountName    = Settings.Name,
+                    Triggers       = TriggerCount,
+                    RuntimeSeconds = _accumulatedSeconds,
+                    CurrentTask    = CurrentTask.ToString(),
+                    TaskQueue      = [.. _taskQueue],
+                    EVESystem      = _eveSystem,
+                    EVEShip        = _eveShip,
+
+                    // Используем локальное время персонального компьютера вместо UTC для удобства чтения логов
+                    LastUpdate     = DateTime.Now,
+
+                    InSpace        = _inSpace
+                };
+            }
+
+            // Сериализация и дисковая запись выполняются за пределами lock, чтобы не блокировать процессор
+            string json = JsonSerializer.Serialize(dto, _jsonOptions);
+            File.WriteAllText(_statsFilePath, json);
+        }
+        catch (Exception ex)
+        {
+            // Вызов логгера строго в соответствии с сигнатурой вашего бота (message, type)
+            Log($"Не удалось сохранить статистику аккаунта '{Settings.Name}': {ex.Message}", LogType.Warning);
+        }
+    }
+
+    #endregion
+
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
+#region Start
+
+    /// <summary>
+    /// Инициализирует и запускает асинхронный рабочий цикл автоматизации для текущего игрового аккаунта.
+    /// Создает связанный токен отмены на основе глобального токена приложения для поддержки каскадной остановки.
+    /// </summary>
+    /// <param name="globalToken">Глобальный токен отмены приложения (<see cref="CancellationToken"/>), сигнализирующий о закрытии бота.</param>
+    public void Start(CancellationToken globalToken)
+    {
+        // Создаем сквозную связку: поток закроется либо при ручной остановке аккаунта, либо при выходе из всего бота
+        _accountCts = CancellationTokenSource.CreateLinkedTokenSource(globalToken);
+
+        // Передаем токен созданной связки вторым параметром в Task.Run для безопасного планирования задачи в ThreadPool
+        Task.Run(async () => await RunLoopAsync(_accountCts.Token), _accountCts.Token);
+    }
+
+    #endregion
+
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
+    #region Stop
+
+    /// <summary>
+    /// Инициирует безопасную остановку рабочего цикла автоматизации текущего аккаунта.
+    /// Вызывает отмену связанного токена, позволяя асинхронному потоку завершить текущий виток и сохранить статы на диск.
+    /// </summary>
+    public void Stop() => _accountCts?.Cancel();
+
+    #endregion
+
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
+    #region RunLoopAsync
+
+    /// <summary>
+    /// Главный асинхронный рабочий цикл (Runtime Loop) автоматизации игрового аккаунта.
+    /// Выполняет непрерывный трехэтапный цикл: высокоточный расчет таймингов сессии, сквозной мониторинг безопасности,
+    /// динамическую перезагрузку рутинных макросов из фабрики сценариев и конечный автомат (FSM) выполнения игровых задач.
+    /// </summary>
+    /// <param name="token">Токен отмены операции <see cref="CancellationToken"/>, привязанный к текущему аккаунту.</param>
+    /// <returns>Асинхронная задача <see cref="Task"/>, управляющая жизненным циклом потока эмулятора.</returns>
+    private async Task RunLoopAsync(CancellationToken token)
+    {
+        Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Поток запущен. Начало работы по сценарию: '{Settings.Script ?? "mining"}'.", LogType.Info);
+
+        var sessionStart = System.DateTime.UtcNow;
+
+        // Включаем высокоточный секундомер времени работы для этого окна
+        var sessionStopwatch = System.Diagnostics.Stopwatch.StartNew();
+        
+        // Фиксируем стартовое значение, которое мы уже успели загрузить из JSON прошлых сессий
+        long baseSeconds = (long)_accumulatedSeconds;
+
+        try
+        {
+            while (!token.IsCancellationRequested)
+            {
+                try
+                {
+                    // ОБНОВЛЕНИЕ ВРЕМЕНИ: Прибавляем секунды текущей сессии к базовому времени из файла
+                    _accumulatedSeconds = baseSeconds + (sessionStopwatch.ElapsedMilliseconds / 1000);
+
+                    // ========================================================
+                    // ЭТАП 1: ГЛОБАЛЬНЫЙ ДВУХЭТАПНЫЙ МОНИТОРИНГ БЕЗОПАСНОСТИ
+                    // ========================================================
+                    // Вызываем метод проверки. Он внутри себя обновит IsSaveLocal 
+                    // и, если обнаружен враг, очистит очередь и добавит экстренные задачи.
+                    await CheckSecurityStatusAsync(token);
+
+                    // Блокировка "if (!isEverythingSafe)" удалена! 
+                    // Поток больше не замерзает здесь во время опасности, позволяя выполнять задачи.
+
+                    // ========================================================
+                    // ЭТАП 2: УПРАВЛЕНИЕ БЕСКОНЕЧНОЙ ОЧЕРЕДЬЮ СЦЕНАРИЯ
+                    // ========================================================
+                    bool isQueueEmpty = false;
+                    lock (_taskLock)
+                    {
+                        isQueueEmpty = _taskQueue.Count == 0;
+                    }
+
+                    // Перезапускаем рутинный сценарий ТОЛЬКО если бот находится в простое, 
+                    // в очереди пусто И СИСТЕМА ДЕЙСТВИТЕЛЬНО БЕЗОПАСНА (IsSaveLocal is true).
+                    if (CurrentTask == AccountTask.CheckYourOwnState && isQueueEmpty && IsSaveLocal is true)
+                    {
+                        Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Сценарий '{Settings.Script ?? "mining"}' завершил цикл. Перезапуск.", LogType.Test);
+
+                        string currentScript = Settings.Script ?? "mining";
+                        List<string> defaultTasks = ScenarioFactory.GetDefaultTasks(currentScript);
+
+                        this.EnqueueTasks(defaultTasks, addToFront: false);
+
+                        // ИСПРАВЛЕНИЕ: Вместо "continue" мы просто извлекаем только что добавленную задачу
+                        // и позволяем коду пойти ниже в switch для её честного выполнения.
+                        CurrentTask = DequeueNextTask();
+                    }
+
+                    // ЗАЩИТА ПРИ ОПАСНОСТИ: Если очередь пуста, но в системе враг (IsSaveLocal is false),
+                    // значит бот уже выполнил эвакуацию и отправил чат-варнинг. Просто спим в безопасности.
+                    if (isQueueEmpty && IsSaveLocal is false)
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(5), token);
+                        continue;
+                    }
+
+                    // Достаем следующую экстренную или плановую задачу из очереди
+                    CurrentTask = DequeueNextTask();
+
+                    // ========================================================
+                    // ЭТАП 3: ВЫПОЛНЕНИЕ ТЕКУЩЕЙ ЗАДАЧИ
+                    // ========================================================
+                    switch (CurrentTask)
+                    {
+                        case AccountTask.CheckSecurity:
+                            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Плановый цикл мониторинга завершен.", LogType.Test);
+                            break;
+
+                        case AccountTask.SendAliChatWarning:
+                            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Запуск макроса оповещения альянса.", LogType.Warning);
+                            await RunAliChatWarningAsync(token);
+                            break;
+
+                        case AccountTask.GoToStation:
+                            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Экстренная эвакуация: возвращаемся на станцию.", LogType.Warning);
+                            // Как только бот успешно докнулся во время эвакуации, сбрасываем флаг:
+                            _inSpace = false;
+                            break;
+
+                        case AccountTask.Undocking:
+                            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Выход из дока станции.", LogType.Info);
+                            // Как только бот прогрузился в космосе после андока, поднимаем флаг:
+                            _inSpace = true;
+                            break;
+
+                        case AccountTask.Mining:
+                            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Начало добычи руды.", LogType.Info);
+                            break;
+
+                        default:
+                            // Логируем непредвиденные задачи, чтобы не терять управление
+                            if (CurrentTask != AccountTask.CheckYourOwnState)
+                            {
+                                Log($"[{Settings.Name}] Получена необработанная задача: {CurrentTask}", LogType.Warning);
+                            }
+                            break;
+                    }
+
+                    await Task.Delay(TimeSpan.FromSeconds(5), token);
+                }
+                catch (TaskCanceledException)
+                {
+                    // Перехватываем отмену внутри цикла, чтобы управление перешло во внешний блок catch/finally
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Сбой в главном цикле обработки: {ex.Message}", LogType.Error);
+                    await Task.Delay(5000, token);
+                }
+            }
+        }
+        catch (TaskCanceledException)
+        {
+            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Получен сигнал остановки. Фиксация состояния.", LogType.Info);
+        }
+        catch (Exception ex)
+        {
+            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Критический сбой рабочего потока: {ex.Message}", LogType.Error);
+        }
+        finally
+        {
+            // Финальное обновление времени перед сохранением на диск
+            sessionStopwatch.Stop();
+            _accumulatedSeconds = baseSeconds + (sessionStopwatch.ElapsedMilliseconds / 1000);
+
+            // ГАРАНТИРОВАННОЕ СОХРАНЕНИЕ: Выполнится всегда при закрытии или падении потока
+            lock (_taskLock)
+            {
+                SaveStats();
+            }
+            int sessionSeconds = (int)(System.DateTime.UtcNow - sessionStart).TotalSeconds;
+
+            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Состояние сохранено на диск. Рабочий поток остановлен. Время работы в сессии (сек): {sessionSeconds}", LogType.Info);
+        }
+    }
+
+    #endregion
+
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
+    #region ForceSaveStats
+
+    /// <summary>
+    /// Выполняет немедленное принудительное сохранение текущей статистики и очереди задач на диск.
+    /// Используется внешними модулями для экстренной фиксации состояния аккаунта под защитой блокировки.
+    /// </summary>
+    public void ForceSaveStats()
+    {
+        // Безопасно блокируем контекст перед вызовом внутренней логики сериализации
+        lock (_taskLock)
+        {
+            SaveStats();
+        }
+    }
+
+    #endregion
+
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
+    #region CheckSecurityStatus 
+
+    /// <summary>
+    /// Асинхронно анализирует состояние локального чата эмулятора для обеспечения безопасности аккаунта.
+    /// Проверяет, развернуто ли окно чата. Если чат свернут, находит иконку развертывания, совершает клик через ADB,
+    /// ожидает анимацию и инициирует глубокое сканирование списка пилотов на наличие враждебных статусов.
+    /// </summary>
+    /// <param name="token">Токен отмены операции <see cref="CancellationToken"/> для текущего рабочего потока.</param>
+    /// <returns>Возвращает <c>true</c>, если система безопасности успешно проанализировала локал и подтвердила отсутствие угроз; иначе <c>false</c>.</returns>
+    private async Task<bool> CheckSecurityStatusAsync(CancellationToken token)
+    {
+        Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Начало выполнения метода.", LogType.Test);
+
+        if (Hwnd == IntPtr.Zero)
+        {
+            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Окно целевой программы не найдено.", LogType.Error);
+            return false;
+        }
+
+        // Загружаем пути к шаблонам разметки интерфейса игры EVE Echoes
+        string pathImg1 = Path.Combine(Program.TemplatesDir, "imgLocalChatHead.png");
+        string pathImg2 = Path.Combine(Program.TemplatesDir, "imgLocalChatIcon.png");
+
+        // Задаем базовые прямоугольные области для сканирования графического интерфейса
+        Rect localRegion1 = new(5, 5, 500, 750);
+        Rect localRegion2 = new(5, 650, 100, 120);
+
+        string debugDir = Path.GetFullPath(Path.Combine(Program.TemplatesDir, "..", "DebugScreenshots"));
+
+        // Выполняем захват текущего графического кадра эмулятора через GDI
+        using Mat? screenshot = Tools.CaptureWindow(Hwnd);
+        if (screenshot?.Empty() is not false || screenshot.Width <= 0 || screenshot.Height <= 0)
+        {
+            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось выполнить повторный захват окна. Прерывание выполнения.", LogType.Error);
+            return false;
+        }
+
+        // Корректируем рамки поиска под фактическое разрешение кадра, защищая OpenCV от вылетов
+        Rect safeRegion1 = Tools.ClampRegion(localRegion1, screenshot.Width, screenshot.Height);
+        Rect safeRegion2 = Tools.ClampRegion(localRegion2, screenshot.Width, screenshot.Height);
+
+        if (safeRegion1.Width <= 0 || safeRegion1.Height <= 0 || safeRegion2.Width <= 0 || safeRegion2.Height <= 0)
+        {
+            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Область поиска выходит за рамки окна.", LogType.Error);
+            return false;
+        }
+
+        // ========================================================
+        // ЭТАП 1: Ищем Шапку чата (Развернут ли чат?)
+        // ========================================================
+        Point? foundImg1 = Tools.FindTemplateInRegion(screenshot, pathImg1, safeRegion1, 0.80);
+
+        if (foundImg1.HasValue)
+        {
+    #if DEBUG
+            try
+            {
+                using Mat cropped = new(screenshot, safeRegion1);
+                Directory.CreateDirectory(debugDir);
+                Cv2.ImWrite(Path.Combine(debugDir, $"{Settings.Name}_imgLocalChatHead_FOUND.png"), cropped);
+            }
+            catch (Exception ex) {
+                Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось сохранить отладочный кадр: {ex.Message}", LogType.Warning);
+            }
+    #endif
+            // Чат открыт — запускаем глубокую проверку пилотов в системе
+            return RunLocalCheck(screenshot, safeRegion1);
+        }
+
+        // ========================================================
+        // ЭТАП 2: Чат свернут, ищем Иконку для разворачивания
+        // ========================================================
+        Point? foundImg2 = Tools.FindTemplateInRegion(screenshot, pathImg2, safeRegion2, 0.80);
+
+        if (foundImg2.HasValue)
+        {
+            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Локальный чат свернут. Обнаружена иконка развертывания.", LogType.Test);
+
+    #if DEBUG
+            try
+            {
+                using Mat cropped = new(screenshot, safeRegion2);
+                Directory.CreateDirectory(debugDir);
+                Cv2.ImWrite(Path.Combine(debugDir, $"{Settings.Name}_imgLocalChatIcon_FOUND.png"), cropped);
+            }
+            catch (Exception ex) {
+                Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось сохранить отладочный кадр: {ex.Message}", LogType.Warning);
+            }
+    #endif
+
+            // Подготавливаем координаты для клика через утилиту ADB
+            int adbX = foundImg2.Value.X;
+            int adbY = foundImg2.Value.Y;
+
+            // Отправляем аппаратно-независимый тап по иконке
+            Tools.SmartClick(adbX, adbY, minSec: 1, maxSec: 2, offset: 2, adbPort: Settings.AdbPort);
+            await Task.Delay(3500, token); // Честное ожидание проигрывания анимации развертывания интерфейса
+
+            // Делаем повторный снимок экрана для верификации открытия чата
+            using Mat? freshScreenshot = Tools.CaptureWindow(Hwnd);
+            if (freshScreenshot?.Empty() is not false) return false;
+
+            Rect freshSafeRegion1 = Tools.ClampRegion(localRegion1, freshScreenshot.Width, freshScreenshot.Height);
+            Point? retryImg1 = Tools.FindTemplateInRegion(freshScreenshot, pathImg1, freshSafeRegion1, 0.80);
+
+            if (retryImg1.HasValue)
+            {
+                // Чат успешно открылся — переходим к глубокому распознаванию локала
+                return RunLocalCheck(freshScreenshot, freshSafeRegion1);
+            }
+
+            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Интерфейс чата не открылся. Повторная попытка клика.", LogType.Warning);
+            return false;
+        }
+
+        // ========================================================
+        // ЭТАП 3: ЖЕЛЕЗНАЯ ТИШИНА (Интерфейс не найден вообще)
+        // ========================================================
+        Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.", LogType.Info);
+        return false;
+    }
+
+    #endregion
+
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
+    #region RunLocalCheck
+
+    /// <summary>
+    /// Выполняет глубокую проверку безопасности локальной звездной системы (сканирование локал-чата).
+    /// Ищет три эталонных маркера фильтров стендингов (Criminal, Minus, Neutral) в заданной области экрана [INDEX, INDEX].
+    /// Наличие всех трех маркеров гарантирует отсутствие посторонних пилотов; исчезновение хотя бы одного из них
+    /// свидетельствует о появлении потенциальной угрозы в локале и переводит аккаунт в режим тревоги [INDEX].
+    /// </summary>
+    /// <param name="screenshot">Текущая графическая матрица скриншота окна эмулятора <see cref="Mat"/>.</param>
+    /// <param name="searchRegion">Прямоугольная область экрана <see cref="Rect"/>, в которой отображаются маркеры чата.</param>
+    /// <returns>Возвращает <c>true</c>, если обнаружены все 3 маркера (система чиста); возвращает <c>false</c>, если обнаружена угроза [INDEX].</returns>
+    private bool RunLocalCheck(Mat screenshot, Rect searchRegion)
+    {
+        // Безопасно корректируем область сканирования под физический размер входящей матрицы
+        Rect safeSearchRegion = Tools.ClampRegion(searchRegion, screenshot.Width, screenshot.Height);
+
+        // Список имен графических шаблонов маркеров безопасности для поиска через сопоставление
+        string[] templates = ["imgLocalCriminal.png", "imgLocalMinus.png", "imgLocalNeutral.png"];
+        int foundCount = 0;
+
+        foreach (string templateName in templates)
+        {
+            string fullTemplatePath = Path.Combine(Program.TemplatesDir, templateName);
+            if (!File.Exists(fullTemplatePath)) continue;
+
+            // Порог 0.88 оптимален для иконок стендингов, чтобы отсечь фантомные пиксели текста чата
+            Point? foundPoint = Tools.FindTemplateInRegion(screenshot, fullTemplatePath, safeSearchRegion, 0.88);
+
+            if (foundPoint.HasValue)
+            {
+                foundCount++;
+    #if DEBUG
+                try
+                {
+                    using Mat croppedRegion = new(screenshot, safeSearchRegion);
+                    string debugDir = Path.GetFullPath(Path.Combine(Program.TemplatesDir, "..", "DebugScreenshots"));
+                    Directory.CreateDirectory(debugDir);
+                    string debugPath = Path.Combine(debugDir, $"{Settings.Name}_{Path.GetFileNameWithoutExtension(templateName)}_FOUND.png");
+                    Cv2.ImWrite(debugPath, croppedRegion);
+                }
+                catch (Exception ex)
+                {
+                    Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось сохранить снимок экрана: {ex.Message}", LogType.Warning);
+                }
+    #endif
+            }
+        }
+
+        // ========================================================
+        // ЖЕЛЕЗНАЯ ЛОГИКА МАРКЕРОВ СТЕНДИНГА:
+        // ========================================================
+        // 1. ИДЕАЛЬНАЯ БЕЗОПАСНОСТЬ: Найдена вся тройка маркеров (Criminal, Minus, Neutral на месте)
+        if (foundCount == 3)
+        {
+            this.IsSaveLocal = true; // Сообщаем системе, что всё чисто
+            return true;
+        }
+
+        // 2. ОПАСНОСТЬ: Хотя бы один маркер пропал (или пропали ВСЕ, так как интерфейс перекрыт списком врагов)
+        // Раз мы зашли сюда, значит foundCount равен 0, 1 или 2. Система НЕ в безопасности!
+        Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] ВНИМАНИЕ: Найдено маркеров безопасности: {foundCount} из 3. Фиксация угрозы!", LogType.Warning);
+
+        this.IsSaveLocal = false; // Взводит тревогу для всей сетки окон аккаунтов!
+        return false;
+    }
+
+    #endregion
+
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
+    #region AliChatWarning
+
+    /// <summary>
+    /// Асинхронно выполняет высокоточный макрос оповещения альянса или корпорации о появление угрозы в локале.
+    /// Осуществляет до двух попыток открытия интерфейса чатов, сканирует экран на наличие языковых вкладок (ENG Alliance/Corp),
+    /// совершает клик по найденной области через ADB с коррекцией рамок Windows и воспроизводит строгую цепочку кликов 
+    /// для отправки быстрого сообщения "Scout" в боевой канал.
+    /// </summary>
+    /// <param name="token">Токен отмены операции <see cref="CancellationToken"/> для текущего рабочего потока.</param>
+    /// <returns>Асинхронная задача <see cref="Task"/>, управляющая выполнением макроса.</returns>
+    private async Task RunAliChatWarningAsync(CancellationToken token)
+    {
+        Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Начало выполнения макроса оповещения альянса.", LogType.Test);
+
+        if (Hwnd == IntPtr.Zero)
+        {
+            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Целевое окно программы не найдено. Прерывание выполнения.", LogType.Error);
+            return;
+        }
+
+        string pathAli = Path.Combine(Program.TemplatesDir, "imgAliChatENG.png");
+        string pathCorp = Path.Combine(Program.TemplatesDir, "imgCorpChatENG.png");
+
+        if (!File.Exists(pathAli) || !File.Exists(pathCorp))
+        {
+            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Файлы шаблонов чата отсутствуют на диске. Прерывание выполнения.", LogType.Error);
+            return;
+        }
+
+        Rect searchRegion = new(5, 220, 300, 500);
+        Point? foundChat = null;
+        bool isCorpChat = false;
+        Mat? screenshot = null;
+
+        // ========================================================
+        // ЭТАП 1: ЦИКЛ ОТКРЫТИЯ ИНТЕРФЕЙСА ЧАТА (ДО 2-Х ПОПЫТОК)
+        // ========================================================
+        for (int attempt = 1; attempt <= 2; attempt++)
+        {
+            this.ClickTo(GameUi.ChatsInterface);
+            await Task.Delay(attempt == 1 ? 3500 : 4000, token); // На второй попытке даем чуть больше времени на прогрузку
+
+            screenshot?.Dispose();
+            screenshot = Tools.CaptureWindow(Hwnd);
+
+            if (screenshot?.Empty() is not false || screenshot.Width <= 0 || screenshot.Height <= 0)
+            {
+                Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось выполнить повторный захват окна. Прерывание выполнения.", LogType.Error);
+                screenshot?.Dispose();
+                return;
+            }
+
+            Rect safeRegion = Tools.ClampRegion(searchRegion, screenshot.Width, screenshot.Height);
+            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Поиск маркеров языка интерфейса чата (Попытка {attempt}).", LogType.Test);
+
+            // Сначала ищем приоритетный канал чата альянса
+            foundChat = Tools.FindTemplateInRegion(screenshot, pathAli, safeRegion, 0.85);
+            isCorpChat = false;
+
+            // Если чат альянса не найден — переключаемся на поиск резервного чата корпорации
+            if (!foundChat.HasValue)
+            {
+                foundChat = Tools.FindTemplateInRegion(screenshot, pathCorp, safeRegion, 0.85);
+                isCorpChat = true;
+            }
+
+            // Если хоть какой-то боевой чат успешно обнаружен — прерываем цикл попыток открытия
+            if (foundChat.HasValue) break;
+
+            if (attempt == 1)
+            {
+                Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Интерфейс чата не открылся. Повторная попытка клика.", LogType.Warning);
+            }
+        }
+
+        // Если после двух транзакций маркеры вкладок так и не появились на экране
+        if (!foundChat.HasValue)
+        {
+            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Шаблоны чата не обнаружены после повторного клика. Проверьте координаты 'ChatsInterface' в 'GameUi'.", LogType.Error);
+    #if DEBUG
+            try
+            {
+                Rect safeRegion = Tools.ClampRegion(searchRegion, screenshot!.Width, screenshot.Height);
+                using Mat cropped = new(screenshot, safeRegion);
+                string debugDir = Path.GetFullPath(Path.Combine(Program.TemplatesDir, "..", "DebugScreenshots"));
+                Directory.CreateDirectory(debugDir);
+                Cv2.ImWrite(Path.Combine(debugDir, $"{Settings.Name}_imgAliChat_NOT_FOUND.png"), cropped);
+            }
+            catch (Exception ex) {
+                Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось сохранить отладочный кадр: {ex.Message}", LogType.Warning);
+            }
+    #endif
+            screenshot?.Dispose();
+            return;
+        }
+
+        // ========================================================
+        // ЭТАП 2: КЛИК ПО НАЙДЕННОМУ ЧАТУ
+        // ========================================================
+        try
+        {
+            string chatTypeStr = isCorpChat ? "корпорации" : "альянса";
+            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Обнаружен интерфейс {chatTypeStr} чата в точке (X={foundChat.Value.X}, Y={foundChat.Value.Y}).", LogType.Test);
+
+            // ЖЕСТКАЯ КОРРЕКЦИЯ ДЛЯ ЭМУЛЯТОРА: Вычитаем 25 пикселей из координаты Y,
+            // чтобы точно компенсировать рамку заголовка окна при отправке клика через ADB в Android
+            int adbX = foundChat.Value.X;
+            int adbY = foundChat.Value.Y - 25;
+
+            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Отправка фонового клика по скорректированным координатам (X={adbX}, Y={adbY}).", LogType.Test);
+
+            // Передаем скорректированные adbX и adbY в ваш оригинальный метод SmartClick
+            Tools.SmartClick(adbX, adbY, minSec: 1, maxSec: 3, offset: 3, adbPort: Settings.AdbPort);
+        }
+        catch (Exception ex)
+        {
+            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Критический сбой анализа экрана: {ex.Message}", LogType.Error);
+            screenshot?.Dispose();
+            return;
+        }
+        finally
+        {
+            screenshot?.Dispose(); // Гарантированно освобождаем неуправляемую память матрицы скриншота
+        }
+
+        await Task.Delay(2000, token);
+
+        // ========================================================
+        // ЭТАП 3: ОПТИМИЗИРОВАННАЯ ЦЕПОЧКА ОТПРАВКИ МАКРОСА В ИГРУ
+        // ========================================================
+        // Массив шагов интерфейса и индивидуальных пауз в мс после каждого нажатия
+        var macroSteps = new (GameUi Element, int DelayMs)[7]
+        {
+            (GameUi.ChatInputMenu, 1200), // Открываем меню ввода текста чата
+            (GameUi.ChatFastInput, 1200), // Открываем внутреннее меню быстрых сообщений
+            (GameUi.ChatInform,    1200), // Открываем вкладку данных автоматической разведки
+            (GameUi.ChatMessScout, 1200), // Выбираем предустановленное статус-сообщение "Scout"
+            (GameUi.WindowCenter,  1500), // Сворачиваем область экранного ввода
+            (GameUi.ChatButtSend,  2000), // Нажимаем кнопку "Отправить" в канал
+            (GameUi.WindowCenter,  0)     // Закрываем общий оверлей интерфейса чатов
+        };
+
+        // Деконструкция кортежа прямо в объявлении цикла foreach для строгого выполнения макроса
+        foreach (var (element, delayMs) in macroSteps)
+        {
+            this.ClickTo(element);
+            if (delayMs > 0)
+            {
+                await Task.Delay(delayMs, token);
+            }
+        }
+
+        Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Выполнение цепочки кликов оповещения альянса завершено.", LogType.Success);
+    }
+
+    #endregion
+
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
+    #region _isSaveLocal
+
+    /// <summary>
+    /// Глобальное свойство безопасности звездной системы текущего аккаунта.
+    /// <para>Чтение (get): Возвращает актуальный статус безопасности из синглтона <see cref="SystemSafetyManager"/>.</para>
+    /// <para>Запись (set): Потокобезопасно обрабатывает изменение статуса, реализует "защиту старта" 
+    /// и координирует каскадную панику (очистку очередей и запуск эвакуации) для всех окон в этой же системе.</para>
+    /// </summary>
+    public bool? IsSaveLocal
+    {
+        get => SystemSafetyManager.GetSystemState(EVESystem).IsSafe;
+        set
+        {
+            if (string.IsNullOrEmpty(EVESystem) || EVESystem == "Неизвестно" || value == null) return;
+
+            var systemState = SystemSafetyManager.GetSystemState(EVESystem);
+            bool? currentStatus = systemState.IsSafe;
+
+            // ========================================================
+            // ИСПРАВЛЕННАЯ ЗАЩИТА СТАРТА: 
+            // ========================================================
+            if (_isFirstSecurityCheck)
+            {
+                _isFirstSecurityCheck = false; // Сбрасываем флаг первой проверки
+
+                if (value is true)
+                {
+                    // Если при старте всё чисто — просто фиксируем и молча выходим
+                    systemState.SetSafe();
+                    Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Стартовая инициализация: система безопасна. Мониторинг запущен.", LogType.Info);
+                    return;
+                }
+
+                // Если же при старте СРАЗУ обнаружена опасность (value is false),
+                // мы НЕ делаем return! Мы разрешаем коду пройти ниже, чтобы 
+                // бот сразу же отработал экстренный сценарий и отправил чат-варнинг!
+                Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Стартовая проверка: система СРАЗУ ОПАСНА! Запуск экстренных процедур.", LogType.Warning);
+            }
+            else
+            {
+                // Для всех последующих проверок: если статус в памяти совпадает с новым — игнорируем
+                if (currentStatus == value) return;
+            }
+
+            // ========================================================
+            // РЕАКЦИЯ НА РЕАЛЬНОЕ ИЗМЕНЕНИЕ СТАТУСА (Или на опасность при старте)
+            // ========================================================
+            if (value is false)
+            {
+                bool shouldSendAllianceAlert = systemState.SetDanger();
+                _triggerCount++;
+
+                Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] ВНИМАНИЕ! Фиксация угрозы в системе.", LogType.Warning);
+
+                if (shouldSendAllianceAlert)
+                {
+                    Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Отправка оповещения: в системе обнаружен противник.", LogType.Error);
+                }
+
+                // Рассылаем сигналы паники остальным окнам в этой же звездной системе
+                var botsInSystem = Program._activeBots.ToList();
+                foreach (var bot in botsInSystem)
+                {
+                    if (bot == this) continue;
+
+                    if (bot.EVESystem == this.EVESystem)
+                    {
+                        bot.ClearTasks();
+                        bot.ExecuteEmergencyResponse(isInitiator: false);
+                    }
+                }
+
+                // Назначаем экстренную панику себе (текущему окну-инициатору)
+                this.ClearTasks();
+                this.ExecuteEmergencyResponse(isInitiator: true);
+            }
+            else if (value is true)
+            {
+                systemState.SetSafe();
+                Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Статус системы изменился на БЕЗОПАСНО. Враги покинули систему.", LogType.Info);
+            }
+        }
+    }
+
+    #endregion
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
+#region ExecuteEmergencyResponse
+
+/// <summary>
+/// Формирует и экстренно активирует пакет сценариев эвакуации при обнаружении угрозы в локальной системе.
+/// На основе флага <paramref name="isInitiator"/> определяет необходимость отправки оповещения альянсу 
+/// и закидывает собранный список задач в самое начало очереди с наивысшим приоритетом.
+/// </summary>
+/// <param name="isInitiator">Если <c>true</c> — данный аккаунт является первоисточником обнаружения врага и должен отправить варнинг в чат.</param>
+public void ExecuteEmergencyResponse(bool isInitiator)
+{
+    List<string> emergencyTasks = [];
+
+    // 1. Если корабль находится в космосе, наполняем экстренный список согласно его сценарию
+    if (_inSpace)
+    {
+        switch (Settings.Script?.ToLower())
+        {
+            case "localwatcher":
+                // Наблюдателю отварп не нужен, он остается в космосе (например, в клоке)
+                Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] [Сценарий: localwatcher] Корабль остается на позиции наблюдения.", LogType.Info);
+                break;
+
+            // Сюда в будущем добавятся новые сценарии (mining, combat и т.д.)
+
+            default:
+                // Поведение по умолчанию для нереализованных скриптов — пока ничего не делаем
+                break;
+        }
+    }
+    else
+    {
+        Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Корабль в безопасности (станция/цитадель). Эвакуация не требуется.", LogType.Info);
+    }
+
+    // 2. Строго ПОСЛЕ задач физической эвакуации добавляем шаг оповещения альянса (если это инициатор)
+    if (isInitiator)
+    {
+        emergencyTasks.Add("SendAliChatWarning");
+        Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Этот аккаунт обнаружил угрозу. Задача оповещения добавлена в очередь.", LogType.Warning);
+    }
+
+    // 3. Отправляем собранные экстренные задачи в начало пустой очереди с флагом высокого приоритета
+    if (emergencyTasks.Count > 0)
+    {
+        this.EnqueueTasks(emergencyTasks, addToFront: true);
+    }
+}
+
+#endregion
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
+#region ClearTasks
+
+/// <summary>
+/// Производит экстренную потокобезопасную очистку текущей очереди макросов аккаунта.
+/// Сбрасывает текущую задачу в состояние покоя, заставляя главный цикл воркера мгновенно среагировать на новые директивы.
+/// </summary>
+public void ClearTasks()
+{
+    // Используем объект синхронизации Lock из .NET 9+
+    lock (_taskLock)
+    {
+        _taskQueue.Clear();
+        
+        // Сбрасываем текущую задачу в состояние покоя, чтобы главный цикл RunLoopAsync понял, что нужно переключиться
+        CurrentTask = AccountTask.CheckYourOwnState;
+    }
+    Log($"[{Settings.Name}] Очередь задач экстренно очищена.", LogType.Info);
+}
+
+#endregion
+
+
+}
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
+#region AccountTask
+
+/// <summary>
+/// Перечисление конечных состояний и задач (FSM) автоматизации игрового процесса.
+/// Определяет конкретное действие, выполняемое асинхронным потоком бота в текущий момент времени.
+/// </summary>
+public enum AccountTask
+{
+    /// <summary>
+    /// Процесс андока: запуск выхода корабля из дока станции или цитадели в открытый космос.
+    /// </summary>
+    Undocking,
+
+    /// <summary>
+    /// Перелет (варп) к стандартному астероидному поясу (Belt) в звездной системе.
+    /// </summary>
+    GoToBelt,
+
+    /// <summary>
+    /// Перелет (варп) к координатам лунной структуры или лунного астероидного пояса.
+    /// </summary>
+    GoToMoon,
+
+    /// <summary>
+    /// Перелет (варп) к аномалиям со сжатой рудой (Condensed Ore) для высокодоходной добычи.
+    /// </summary>
+    GoToCondensed,
+
+    /// <summary>
+    /// Штатный режим добычи: активация лазеров (стрипов) и наполнение трюма корабля рудой.
+    /// </summary>
+    Mining,
+
+    /// <summary>
+    /// Эвакуация или плановый возврат: запуск процесса дока (Dock) на станцию или цитадель.
+    /// </summary>
+    GoToStation,
+
+    /// <summary>
+    /// Выгрузка накопленных ресурсов из трюма корабля на локальный склад станции.
+    /// </summary>
+    Unloading,
+
+    /// <summary>
+    /// Сканирование локального чата, проверка фильтров стендингов и маркеров безопасности системы.
+    /// </summary>
+    CheckSecurity,
+
+    /// <summary>
+    /// Базовый режим простоя / ожидания: проверка текущих параметров корабля, интерфейса и разворачивание сценариев рутины.
+    /// </summary>
+    CheckYourOwnState,
+
+    /// <summary>
+    /// Экстренный запуск макроса для отправки разведывательного варнинга (Scout Alert) в боевой канал альянса/корпорации.
+    /// </summary>
+    SendAliChatWarning
+}
+
+#endregion
+
