@@ -131,7 +131,7 @@ public partial class ActiveBotAccount
     #endregion
 
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
     #region DequeueNextTask
 
@@ -177,7 +177,7 @@ public partial class ActiveBotAccount
     #endregion
 
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
     #region EnqueueTasks
 
@@ -215,7 +215,7 @@ public partial class ActiveBotAccount
     #endregion
 
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
     #region AdvanceToNextTask
 
@@ -267,7 +267,7 @@ public partial class ActiveBotAccount
     #endregion
 
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
     #region TryLoadLastStatsAndQueue
 
@@ -390,7 +390,7 @@ public partial class ActiveBotAccount
     #endregion
 
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
     #region SaveStats
 
@@ -444,9 +444,9 @@ public partial class ActiveBotAccount
     #endregion
 
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
-#region Start
+    #region Start
 
     /// <summary>
     /// Инициализирует и запускает асинхронный рабочий цикл автоматизации для текущего игрового аккаунта.
@@ -465,7 +465,7 @@ public partial class ActiveBotAccount
     #endregion
 
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
     #region Stop
 
@@ -478,9 +478,9 @@ public partial class ActiveBotAccount
     #endregion
 
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
-#region RunLoopAsync
+    #region RunLoopAsync
 
     /// <summary>
     /// Главный асинхронный рабочий цикл (Runtime Loop) автоматизации игрового аккаунта.
@@ -517,16 +517,22 @@ public partial class ActiveBotAccount
                     // соответствующие макросы, вернув статус выполнения (Success / Failure / Running)
                     NodeStatus treeResult = await _behaviorTree.TickAsync(this, token);
 
-#if DEBUG
+                    // ДИНАМИЧЕСКИЙ ТАЙМИНГ ТАКТОВ:
+                    // Если дерево находится в состоянии выполнения длительного макроса (Running), 
+                    // опрашиваем дерево чаще (каждую секунду), чтобы мгновенно среагировать на угрозу в локале.
+                    // Если дерево завершило такт (Success/Failure), делаем стандартную паузу в 5 секунд.
+                    int delaySeconds = (treeResult == NodeStatus.Running) ? 1 : 5;
+
+    #if DEBUG
                     // В режиме отладки логируем результат прохода дерева для контроля стабильности узлов
                     if (treeResult == NodeStatus.Running)
                     {
-                        Log($"[{Settings.Name}] Дерево находится в состоянии выполнения (Running)...", LogType.Test);
+                        Log($"[{Settings.Name}] Дерево выполняет длительную операцию (Running). Следующий чек через {delaySeconds}с.", LogType.Test);
                     }
-#endif
+    #endif
 
-                    // Каноничная задержка между тактами (тиками) принятия решений ботом
-                    await Task.Delay(TimeSpan.FromSeconds(5), token);
+                    // Адаптивная задержка между тактами принятия решений ботом
+                    await Task.Delay(TimeSpan.FromSeconds(delaySeconds), token);
                 }
                 catch (TaskCanceledException)
                 {
@@ -565,10 +571,11 @@ public partial class ActiveBotAccount
         }
     }
 
-#endregion
+    #endregion
 
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
     #region ForceSaveStats
 
@@ -588,7 +595,7 @@ public partial class ActiveBotAccount
     #endregion
 
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
     #region CheckSecurityStatus 
 
@@ -715,7 +722,7 @@ public partial class ActiveBotAccount
     #endregion
 
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
     #region RunLocalCheck
 
@@ -786,7 +793,7 @@ public partial class ActiveBotAccount
     #endregion
 
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
     #region AliChatWarning
 
@@ -946,7 +953,7 @@ public partial class ActiveBotAccount
     #endregion
 
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
     #region _isSaveLocal
 
@@ -1034,177 +1041,243 @@ public partial class ActiveBotAccount
 
     #endregion
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 
-#region ExecuteEmergencyResponse
+    #region ExecuteEmergencyResponse
 
-/// <summary>
-/// Формирует и экстренно активирует пакет сценариев эвакуации при обнаружении угрозы в локальной системе.
-/// На основе флага <paramref name="isInitiator"/> определяет необходимость отправки оповещения альянсу 
-/// и закидывает собранный список задач в самое начало очереди с наивысшим приоритетом.
-/// </summary>
-/// <param name="isInitiator">Если <c>true</c> — данный аккаунт является первоисточником обнаружения врага и должен отправить варнинг в чат.</param>
-public void ExecuteEmergencyResponse(bool isInitiator)
-{
-    List<string> emergencyTasks = [];
-
-    // 1. Если корабль находится в космосе, наполняем экстренный список согласно его сценарию
-    if (_inSpace)
+    /// <summary>
+    /// Формирует и экстренно активирует пакет сценариев эвакуации при обнаружении угрозы в локальной системе.
+    /// На основе флага <paramref name="isInitiator"/> определяет необходимость отправки оповещения альянсу 
+    /// и закидывает собранный список задач в самое начало очереди с наивысшим приоритетом.
+    /// </summary>
+    /// <param name="isInitiator">Если <c>true</c> — данный аккаунт является первоисточником обнаружения врага и должен отправить варнинг в чат.</param>
+    public void ExecuteEmergencyResponse(bool isInitiator)
     {
-        switch (Settings.Script?.ToLower())
+        List<string> emergencyTasks = [];
+
+        // 1. Если корабль находится в космосе, наполняем экстренный список согласно его сценарию
+        if (_inSpace)
         {
-            case "localwatcher":
-                // Наблюдателю отварп не нужен, он остается в космосе (например, в клоке)
-                Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] [Сценарий: localwatcher] Корабль остается на позиции наблюдения.", LogType.Info);
-                break;
+            switch (Settings.Script?.ToLower())
+            {
+                case "localwatcher":
+                    // Наблюдателю отварп не нужен, он остается в космосе (например, в клоке)
+                    Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] [Сценарий: localwatcher] Корабль остается на позиции наблюдения.", LogType.Info);
+                    break;
 
-            // Сюда в будущем добавятся новые сценарии (mining, combat и т.д.)
+                // Сюда в будущем добавятся новые сценарии (mining, combat и т.д.)
 
-            default:
-                // Поведение по умолчанию для нереализованных скриптов — пока ничего не делаем
-                break;
+                default:
+                    // Поведение по умолчанию для нереализованных скриптов — пока ничего не делаем
+                    break;
+            }
+        }
+        else
+        {
+            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Корабль в безопасности (станция/цитадель). Эвакуация не требуется.", LogType.Info);
+        }
+
+        // 2. Строго ПОСЛЕ задач физической эвакуации добавляем шаг оповещения альянса (если это инициатор)
+        if (isInitiator)
+        {
+            emergencyTasks.Add("SendAliChatWarning");
+            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Этот аккаунт обнаружил угрозу. Задача оповещения добавлена в очередь.", LogType.Warning);
+        }
+
+        // 3. Отправляем собранные экстренные задачи в начало пустой очереди с флагом высокого приоритета
+        if (emergencyTasks.Count > 0)
+        {
+            this.EnqueueTasks(emergencyTasks, addToFront: true);
         }
     }
-    else
+
+    #endregion
+
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+
+    #region ClearTasks
+
+    /// <summary>
+    /// Производит экстренную потокобезопасную очистку текущей очереди макросов аккаунта.
+    /// Сбрасывает текущую задачу в состояние покоя, заставляя главный цикл воркера мгновенно среагировать на новые директивы.
+    /// </summary>
+    public void ClearTasks()
     {
-        Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Корабль в безопасности (станция/цитадель). Эвакуация не требуется.", LogType.Info);
+        // Используем объект синхронизации Lock из .NET 9+
+        lock (_taskLock)
+        {
+            _taskQueue.Clear();
+            
+            // Сбрасываем текущую задачу в состояние покоя, чтобы главный цикл RunLoopAsync понял, что нужно переключиться
+            CurrentTask = AccountTask.CheckYourOwnState;
+        }
+        Log($"[{Settings.Name}] Очередь задач экстренно очищена.", LogType.Info);
     }
 
-    // 2. Строго ПОСЛЕ задач физической эвакуации добавляем шаг оповещения альянса (если это инициатор)
-    if (isInitiator)
+    #endregion
+
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region WarpAndDockToHomeStationAsync
+
+    /// <summary>
+    /// ШАГ 1.2, 4.2, 8: Инициирует варп и автоматический док на домашнюю станцию/цитадель.
+    /// </summary>
+    public async Task<bool> WarpAndDockToHomeStationAsync(CancellationToken token)
     {
-        emergencyTasks.Add("SendAliChatWarning");
-        Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Этот аккаунт обнаружил угрозу. Задача оповещения добавлена в очередь.", LogType.Warning);
-    }
-
-    // 3. Отправляем собранные экстренные задачи в начало пустой очереди с флагом высокого приоритета
-    if (emergencyTasks.Count > 0)
-    {
-        this.EnqueueTasks(emergencyTasks, addToFront: true);
-    }
-}
-
-#endregion
-
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
-
-#region ClearTasks
-
-/// <summary>
-/// Производит экстренную потокобезопасную очистку текущей очереди макросов аккаунта.
-/// Сбрасывает текущую задачу в состояние покоя, заставляя главный цикл воркера мгновенно среагировать на новые директивы.
-/// </summary>
-public void ClearTasks()
-{
-    // Используем объект синхронизации Lock из .NET 9+
-    lock (_taskLock)
-    {
-        _taskQueue.Clear();
+        // Симулируем задержку на сетевой запрос или клик по интерфейсу
+        await Task.Delay(100, token);
+        Logger.Log($"[ЗАГЛУШКА] {Settings.Name} выполняет команду: Варп и Док на домашнюю станцию.", LogType.Test);
         
-        // Сбрасываем текущую задачу в состояние покоя, чтобы главный цикл RunLoopAsync понял, что нужно переключиться
-        CurrentTask = AccountTask.CheckYourOwnState;
+        // Для теста принудительно переводим стейт в док (космос = false)
+        _inSpace = false; 
+        return true;
     }
-    Log($"[{Settings.Name}] Очередь задач экстренно очищена.", LogType.Info);
+
+    #endregion
+
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region CheckIsCargoFullAsync
+
+    /// <summary>
+    /// ШАГ 8, 9: Проверяет текущую заполненность рудного трюма корабля.
+    /// </summary>
+    public async Task<bool> CheckIsCargoFullAsync(CancellationToken token)
+    {
+        await Task.Delay(50, token);
+        Logger.Log($"[ЗАГЛУШКА] {Settings.Name} проверяет заполненность трюма.", LogType.Test);
+        
+        // По умолчанию возвращаем false, чтобы бот не уходил в бесконечный цикл разгрузки на старте
+        return false; 
+    }
+
+    #endregion
+
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region UnloadOreToHangarAsync
+
+    /// <summary>
+    /// ШАГ 9: Переносит всю добытую руду из трюма корабля на склад станции.
+    /// </summary>
+    public async Task<bool> UnloadOreToHangarAsync(CancellationToken token)
+    {
+        await Task.Delay(500, token); // Выгрузка обычно занимает чуть больше времени
+        Logger.Log($"[ЗАГЛУШКА] {Settings.Name} успешно разгрузил руду на склад станции.", LogType.Test);
+        return true;
+    }
+
+    #endregion
+
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region UndockFromStationAsync
+
+    /// <summary>
+    /// ШАГ 2: Производит отстыковку (андок) корабля от станции.
+    /// </summary>
+    public async Task<bool> UndockFromStationAsync(CancellationToken token)
+    {
+        await Task.Delay(200, token);
+        Logger.Log($"[ЗАГЛУШКА] {Settings.Name} запускает процедуру андока.", LogType.Test);
+        
+        // Для теста переводим стейт корабля в космос
+        _inSpace = true; 
+        return true;
+    }
+
+    #endregion
+
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region ScanAndSelectAvailableBeltAsync
+
+    /// <summary>
+    /// ШАГ 3: Сканирует овервью или меню игры, выбирает подходящий пояс астероидов.
+    /// </summary>
+    /// <returns>Возвращает объект (строку) с названием пояса, либо null, если ничего не найдено.</returns>
+    public async Task<object?> ScanAndSelectAvailableBeltAsync(CancellationToken token)
+    {
+        await Task.Delay(150, token);
+        string mockBeltName = "Asteroid Belt Cluster-Alpha";
+        Logger.Log($"[ЗАГЛУШКА] {Settings.Name} отсканировал локацию и выбрал: {mockBeltName}.", LogType.Test);
+        return mockBeltName;
+    }
+
+    #endregion
+
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region WarpToSpecificBeltAsync
+
+    /// <summary>
+    /// ШАГ 5: Инициирует разгон и переход в варп на конкретно выбранный пояс астероидов.
+    /// </summary>
+    public async Task<bool> WarpToSpecificBeltAsync(object? targetBelt, CancellationToken token)
+    {
+        await Task.Delay(100, token);
+        string beltName = targetBelt?.ToString() ?? "Unknown Belt";
+        Logger.Log($"[ЗАГЛУШКА] {Settings.Name} отправлен в варп на точку: {beltName}.", LogType.Test);
+        return true;
+    }
+
+    #endregion
+
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+    
+    #region TryTargetAsteroidAsync
+
+    /// <summary>
+    /// ШАГ 6: Находит ближайший астероид в овервью космоса и берет его в захват (Lock Target).
+    /// </summary>
+    public async Task<bool> TryTargetAsteroidAsync(CancellationToken token)
+    {
+        await Task.Delay(100, token);
+        Logger.Log($"[ЗАГЛУШКА] {Settings.Name} захватил астероид в цель.", LogType.Test);
+        return true;
+    }
+
+    #endregion
+
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region ActivateLasersAsync
+
+    /// <summary>
+    /// ШАГ 6: Включает буровые/шахтерские лазеры (модули) корабля для начала добычи.
+    /// </summary>
+    public async Task<bool> ActivateLasersAsync(CancellationToken token)
+    {
+        await Task.Delay(150, token); // Имитация задержки на клик по модулю
+        Logger.Log($"[ЗАГЛУШКА] {Settings.Name} отправил команду на активацию буровых лазеров.", LogType.Test);
+        
+        // Здесь в будущем будет выставляться флаг AreLasersActive = true
+        return true; 
+    }
+
+    #endregion
+
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region Legacy FSM Methods (Deprecated)
+
+    /// <summary>
+    /// Устаревший метод получения плоских списков задач. Оставлен для временной обратной совместимости.
+    /// </summary>
+    [Obsolete("Используйте метод CreateTree для получения полноценного дерева поведения.")]
+    public List<string> GetDefaultTasks(string scenarioName)
+    {
+        return scenarioName?.ToLower() switch
+        {
+            "localwatcher" => ["CheckSecurity"],
+            _ => ["CheckYourOwnState"]
+        };
+    }
+
+    #endregion
+
 }
-
-#endregion
-
-
-        /// <summary>
-        /// ШАГ 1.2, 4.2, 8: Инициирует варп и автоматический док на домашнюю станцию/цитадель.
-        /// </summary>
-        public async Task<bool> WarpAndDockToHomeStationAsync(CancellationToken token)
-        {
-            // Симулируем задержку на сетевой запрос или клик по интерфейсу
-            await Task.Delay(100, token);
-            Logger.Log($"[ЗАГЛУШКА] {Settings.Name} выполняет команду: Варп и Док на домашнюю станцию.", LogType.Test);
-            
-            // Для теста принудительно переводим стейт в док (космос = false)
-            _inSpace = false; 
-            return true;
-        }
-
-        /// <summary>
-        /// ШАГ 8, 9: Проверяет текущую заполненность рудного трюма корабля.
-        /// </summary>
-        public async Task<bool> CheckIsCargoFullAsync(CancellationToken token)
-        {
-            await Task.Delay(50, token);
-            Logger.Log($"[ЗАГЛУШКА] {Settings.Name} проверяет заполненность трюма.", LogType.Test);
-            
-            // По умолчанию возвращаем false, чтобы бот не уходил в бесконечный цикл разгрузки на старте
-            return false; 
-        }
-
-        /// <summary>
-        /// ШАГ 9: Переносит всю добытую руду из трюма корабля на склад станции.
-        /// </summary>
-        public async Task<bool> UnloadOreToHangarAsync(CancellationToken token)
-        {
-            await Task.Delay(500, token); // Выгрузка обычно занимает чуть больше времени
-            Logger.Log($"[ЗАГЛУШКА] {Settings.Name} успешно разгрузил руду на склад станции.", LogType.Test);
-            return true;
-        }
-
-        /// <summary>
-        /// ШАГ 2: Производит отстыковку (андок) корабля от станции.
-        /// </summary>
-        public async Task<bool> UndockFromStationAsync(CancellationToken token)
-        {
-            await Task.Delay(200, token);
-            Logger.Log($"[ЗАГЛУШКА] {Settings.Name} запускает процедуру андока.", LogType.Test);
-            
-            // Для теста переводим стейт корабля в космос
-            _inSpace = true; 
-            return true;
-        }
-
-        /// <summary>
-        /// ШАГ 3: Сканирует овервью или меню игры, выбирает подходящий пояс астероидов.
-        /// </summary>
-        /// <returns>Возвращает объект (строку) с названием пояса, либо null, если ничего не найдено.</returns>
-        public async Task<object?> ScanAndSelectAvailableBeltAsync(CancellationToken token)
-        {
-            await Task.Delay(150, token);
-            string mockBeltName = "Asteroid Belt Cluster-Alpha";
-            Logger.Log($"[ЗАГЛУШКА] {Settings.Name} отсканировал локацию и выбрал: {mockBeltName}.", LogType.Test);
-            return mockBeltName;
-        }
-
-        /// <summary>
-        /// ШАГ 5: Инициирует разгон и переход в варп на конкретно выбранный пояс астероидов.
-        /// </summary>
-        public async Task<bool> WarpToSpecificBeltAsync(object? targetBelt, CancellationToken token)
-        {
-            await Task.Delay(100, token);
-            string beltName = targetBelt?.ToString() ?? "Unknown Belt";
-            Logger.Log($"[ЗАГЛУШКА] {Settings.Name} отправлен в варп на точку: {beltName}.", LogType.Test);
-            return true;
-        }
-
-        /// <summary>
-        /// ШАГ 6: Находит ближайший астероид в овервью космоса и берет его в захват (Lock Target).
-        /// </summary>
-        public async Task<bool> TryTargetAsteroidAsync(CancellationToken token)
-        {
-            await Task.Delay(100, token);
-            Logger.Log($"[ЗАГЛУШКА] {Settings.Name} захватил астероид в цель.", LogType.Test);
-            return true;
-        }
-
-        /// <summary>
-        /// ШАГ 6: Включает буровые/шахтерские лазеры (модули) корабля для начала добычи.
-        /// </summary>
-        public async Task<bool> ActivateLasersAsync(CancellationToken token)
-        {
-            await Task.Delay(150, token); // Имитация задержки на клик по модулю
-            Logger.Log($"[ЗАГЛУШКА] {Settings.Name} отправил команду на активацию буровых лазеров.", LogType.Test);
-            
-            // Здесь в будущем будет выставляться флаг AreLasersActive = true
-            return true; 
-        }
-
-    }
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
 

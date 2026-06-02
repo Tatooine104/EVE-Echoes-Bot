@@ -17,7 +17,7 @@ namespace EVEEchoesBot;
 static partial class Program
 {
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region Constants & Fields
 
@@ -503,5 +503,23 @@ static partial class Program
 
 }
 
+/*
 
+### КОНТЕКСТ ПРОЕКТА: EVEEchoesBot (Ветка: Work)
+**Архитектура:** .NET 9+, C#, Дерево поведения (Behavior Tree) вместо старого FSM.
+**Классы проекта:**
+1. `ScenarioFactory` (static) — фабрика, собирает BT. Методы возвращают `BehaviorNode`.
+2. `ActiveBotAccount` (partial) — основной класс воркера/окна бота. Хранит стейт и флаги:
+   - `bool _inSpace` (true — космос, false — док)
+   - `object? _currenttarget` (текущий выбранный астероидный пояс, null — не выбран)
+   - `bool IsWarping`, `bool HasTarget`, `bool AreLasersActive`, `bool IsInMiningZone`
+3. `AccountStateDto` — объект для синхронизации и сохранения стейта в JSON (под `lock (_taskLock)`).
+4. `RunLoopAsync` — бесконечный рабочий цикл в `ActiveBotAccount`. Реализован адаптивный тайминг тиков: 1 сек, если дерево возвращает `NodeStatus.Running` (для быстрой реакции на угрозы), и 5 сек, если `Success/Failure`.
+
+**Текущий статус задачи `miner` (Сценарий «Шахтер»):**
+- Полностью написано и скомпилировано дерево поведения `BuildMinerTree()` по жесткому линейному ТЗ (Проверка локала -> Выход -> Выбор белта -> Проверка локала -> Варп -> Добыча/Мониторинг -> Возврат при угрозе или полном трюме -> Выгрузка).
+- Все методы взаимодействия с игрой (`WarpAndDockToHomeStationAsync`, `CheckIsCargoFullAsync`, `UnloadOreToHangarAsync`, `UndockFromStationAsync`, `ScanAndSelectAvailableBeltAsync`, `WarpToSpecificBeltAsync`, `TryTargetAsteroidAsync`, `ActivateLasersAsync`) сейчас находятся в состоянии **заглушек (stubs)** внутри `ActiveBotAccount`.
+- Проект успешно собирается без ошибок компиляции.
+
+*/
 

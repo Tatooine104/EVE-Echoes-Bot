@@ -13,6 +13,11 @@ namespace EVEEchoesBot.scenarios;
 /// </summary>
 public static class ScenarioFactory
 {
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region CreateTree
+
     /// <summary>
     /// Собирает и возвращает корневой управляющий узел дерева поведения для указанного сценария.
     /// </summary>
@@ -30,7 +35,11 @@ public static class ScenarioFactory
         };
     }
 
-    #region Tree Builders
+    #endregion
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region LocalWatcher
 
     /// <summary>
     /// Собирает дерево поведения для сценария «Глаз» (LocalWatcher).
@@ -44,22 +53,21 @@ public static class ScenarioFactory
             new SequenceNode("Emergency Response Branch",
                 
                 // Условие: Запускаем сканирование чата. 
-                // Если в системе БЕЗОПАСНО -> метод возвращает true (Success для дерева), и Sequence прерывается.
-                // Если в системе ОПАСНОСТь -> метод возвращает false (Failure для дерева), инвертируем его в Success, чтобы пойти дальше.
                 new ActionNode("Scan Local Chat", async (bot, token) =>
                 {
-                    // Вызываем ваш оригинальный метод из ActiveBotAccount
-                    // Внутри него настраиваются флаги IsSaveLocal
+                    // Выставляем статус проверки безопасности для логов и DTO
+                    bot.CurrentTask = AccountTask.CheckSecurity;
+
                     bool isSafe = await bot.CheckSecurityStatusAsync(token);
-                    
-                    // Если безопасно — возвращаем Failure для этой ветки, чтобы робот не паниковал
-                    // Если опасно — возвращаем Success, чтобы активировать шаги эвакуации ниже
                     return isSafe ? NodeStatus.Failure : NodeStatus.Success;
                 }),
 
                 // Действие: Каскадное оповещение окон и паника
                 new ActionNode("Trigger System Emergency", async (bot, token) =>
                 {
+                    // Меняем статус на отправку варнинга
+                    bot.CurrentTask = AccountTask.SendAliChatWarning;
+
                     // Проверяем статус через менеджер безопасности
                     var systemState = SystemSafetyManager.GetSystemState(bot.EVESystem);
                     
@@ -70,7 +78,6 @@ public static class ScenarioFactory
                         await bot.RunAliChatWarningAsync(token);
                     }
 
-                    // Очищаем старые задачи и запускаем локальную реакцию на панику
                     bot.ExecuteEmergencyResponse(isInitiator: false);
                     return NodeStatus.Success;
                 })
@@ -80,6 +87,9 @@ public static class ScenarioFactory
             new SequenceNode("Peaceful Idle Branch",
                 new ActionNode("Log Safe Status", async (bot, token) =>
                 {
+                    // В мирное время переводим бота в базовый режим простоя
+                    bot.CurrentTask = AccountTask.CheckYourOwnState;
+
                     Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Плановый цикл мониторинга завершен. Система в безопасности.", LogType.Test);
                     return NodeStatus.Success;
                 })
@@ -87,6 +97,11 @@ public static class ScenarioFactory
         );
     }
 
+    #endregion
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+#region Miner
 
     /// <summary>
     /// Собирает дерево поведения для сценария «Шахтер» (Miner).
@@ -316,115 +331,17 @@ public static class ScenarioFactory
         );
     }
 
-/// <summary>
-        /// ШАГ 1.2, 4.2, 8: Инициирует варп и автоматический док на домашнюю станцию/цитадель.
-        /// </summary>
-        public async Task<bool> WarpAndDockToHomeStationAsync(CancellationToken token)
-        {
-            // Симулируем задержку на сетевой запрос или клик по интерфейсу
-            await Task.Delay(100, token);
-            Logger.Log($"[ЗАГЛУШКА] {Settings.Name} выполняет команду: Варп и Док на домашнюю станцию.", LogType.Test);
-            
-            // Для теста принудительно переводим стейт в док (космос = false)
-            _inSpace = false; 
-            return true;
-        }
+    #endregion
 
-        /// <summary>
-        /// ШАГ 8, 9: Проверяет текущую заполненность рудного трюма корабля.
-        /// </summary>
-        public async Task<bool> CheckIsCargoFullAsync(CancellationToken token)
-        {
-            await Task.Delay(50, token);
-            Logger.Log($"[ЗАГЛУШКА] {Settings.Name} проверяет заполненность трюма.", LogType.Test);
-            
-            // По умолчанию возвращаем false, чтобы бот не уходил в бесконечный цикл разгрузки на старте
-            return false; 
-        }
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
-        /// <summary>
-        /// ШАГ 9: Переносит всю добытую руду из трюма корабля на склад станции.
-        /// </summary>
-        public async Task<bool> UnloadOreToHangarAsync(CancellationToken token)
-        {
-            await Task.Delay(500, token); // Выгрузка обычно занимает чуть больше времени
-            Logger.Log($"[ЗАГЛУШКА] {Settings.Name} успешно разгрузил руду на склад станции.", LogType.Test);
-            return true;
-        }
+    #region DefaultFallback
 
-        /// <summary>
-        /// ШАГ 2: Производит отстыковку (андок) корабля от станции.
-        /// </summary>
-        public async Task<bool> UndockFromStationAsync(CancellationToken token)
-        {
-            await Task.Delay(200, token);
-            Logger.Log($"[ЗАГЛУШКА] {Settings.Name} запускает процедуру андока.", LogType.Test);
-            
-            // Для теста переводим стейт корабля в космос
-            _inSpace = true; 
-            return true;
-        }
-
-        /// <summary>
-        /// ШАГ 3: Сканирует овервью или меню игры, выбирает подходящий пояс астероидов.
-        /// </summary>
-        /// <returns>Возвращает объект (строку) с названием пояса, либо null, если ничего не найдено.</returns>
-        public async Task<object?> ScanAndSelectAvailableBeltAsync(CancellationToken token)
-        {
-            await Task.Delay(150, token);
-            string mockBeltName = "Asteroid Belt Cluster-Alpha";
-            Logger.Log($"[ЗАГЛУШКА] {Settings.Name} отсканировал локацию и выбрал: {mockBeltName}.", LogType.Test);
-            return mockBeltName;
-        }
-
-        /// <summary>
-        /// ШАГ 5: Инициирует разгон и переход в варп на конкретно выбранный пояс астероидов.
-        /// </summary>
-        public async Task<bool> WarpToSpecificBeltAsync(object? targetBelt, CancellationToken token)
-        {
-            await Task.Delay(100, token);
-            string beltName = targetBelt?.ToString() ?? "Unknown Belt";
-            Logger.Log($"[ЗАГЛУШКА] {Settings.Name} отправлен в варп на точку: {beltName}.", LogType.Test);
-            return true;
-        }
-
-        /// <summary>
-        /// ШАГ 6: Находит ближайший астероид в овервью космоса и берет его в захват (Lock Target).
-        /// </summary>
-        public async Task<bool> TryTargetAsteroidAsync(CancellationToken token)
-        {
-            await Task.Delay(100, token);
-            Logger.Log($"[ЗАГЛУШКА] {Settings.Name} захватил астероид в цель.", LogType.Test);
-            return true;
-        }
-
-    /// <summary>
-    /// Создает базовое безопасное дерево-заглушку для режима ожидания/простоя.
-    /// </summary>
     private static BehaviorNode BuildDefaultFallbackTree()
     {
-        return new ActionNode("Default Fallback Action", async (bot, token) =>
-        {
-            return await System.Threading.Tasks.Task.FromResult(NodeStatus.Success);
-        });
+        return new ActionNode("Default Fallback Action", (bot, token) => Task.FromResult(NodeStatus.Success));
     }
 
     #endregion
 
-    #region Legacy FSM Methods (Deprecated)
-
-    /// <summary>
-    /// Устаревший метод получения плоских списков задач. Оставлен для временной обратной совместимости.
-    /// </summary>
-    [Obsolete("Используйте метод CreateTree для получения полноценного дерева поведения.")]
-    public static List<string> GetDefaultTasks(string scenarioName)
-    {
-        return scenarioName?.ToLower() switch
-        {
-            "localwatcher" => ["CheckSecurity"],
-            _ => ["CheckYourOwnState"]
-        };
-    }
-
-    #endregion
 }
