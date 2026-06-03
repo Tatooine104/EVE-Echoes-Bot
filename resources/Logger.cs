@@ -39,7 +39,7 @@ public static class Logger
     public static List<string> GetLastLogs()
     {
         // Разворачиваем очередь, чтобы новые записи шли первыми
-        return _webLogsCache.Reverse().ToList();
+        return [.. _webLogsCache.Reverse()];
     }
 
 
@@ -152,7 +152,7 @@ public static class Logger
             _webLogsCache.Enqueue(webFormattedMessage);
 
             // Держим жесткий лимит строго в 13 строк, выбрасывая старое
-            while (_webLogsCache.Count > 13)
+            while (_webLogsCache.Count > 8)
             {
                 _webLogsCache.TryDequeue(out _);
             }

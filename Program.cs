@@ -73,32 +73,32 @@ static partial class Program
     public enum GameUi
     {
         // 1. Взаимодействие с окнами и базовым интерфейсом игры
-        
+
         /// <summary>Иконка развертывания общей панели игровых чатов.</summary>
         ChatsInterface = 250625,
-        
+
         /// <summary>Точка безопасности чуть ниже и правее геометрического центра окна эмулятора для сброса фокуса меню.</summary>
         WindowCenter = 8000250,
 
         // 2. Навигация по вкладкам и каналам связи
-        
+
         /// <summary>Вкладка прямого канала связи альянса.</summary>
         ChatTabAli = 500450,
 
         // 3. Индивидуальная цепочка шагов макроса автоматического оповещения
-        
+
         /// <summary>Кнопка активации текстового меню ввода в чат.</summary>
         ChatInputMenu = 3650700,
-        
+
         /// <summary>Кнопка перехода в оверлей шаблонов быстрого ввода фраз.</summary>
         ChatFastInput = 11900685,
-        
+
         /// <summary>Вкладка "Inform" для прикрепления автоматических данных разведки системы.</summary>
         ChatInform = 800400,
-        
+
         /// <summary>Выбор предустановленного статус-сообщения "Scout" в списке быстрых команд.</summary>
         ChatMessScout = 3000600,
-        
+
         /// <summary>Финальная кнопка "Send" для отправки сформированного пакета данных в активный канал.</summary>
         ChatButtSend = 4450695
     }
@@ -112,7 +112,7 @@ static partial class Program
     /// <summary>
     /// Главная точка входа (Entry Point) всего приложения.
     /// Настраивает кодировки ввода-вывода, инициализирует глобальные ловушки критических исключений в ThreadPool/Tasks,
-    /// выполняет предстартовую валидацию файлов, разворачивает многопоточную сетку окон и удерживает главный поток приложения 
+    /// выполняет предстартовую валидацию файлов, разворачивает многопоточную сетку окон и удерживает главный поток приложения
     /// до получения сигнала отмены через асинхронный перехватчик аппаратных клавиш.
     /// </summary>
     [STAThread] // Обязательный атрибут для корректной работы Windows Forms (иконки в трее)
@@ -152,7 +152,7 @@ static partial class Program
         TaskScheduler.UnobservedTaskException += (sender, e) =>
         {
             Logger.Log($"КРИТИЧЕСКИЙ СБОЙ ЗАДАЧИ (UnobservedTaskException): {e.Exception?.Message}", LogType.Error);
-            e.SetObserved(); 
+            e.SetObserved();
         };
 
         // 3. Валидация необходимых графических файлов и шаблонов ДО старта всей системы
@@ -198,7 +198,7 @@ static partial class Program
     {
         // 1. Динамически вычисляем физический корень проекта на диске
         string projectRoot = AppDomain.CurrentDomain.BaseDirectory;
-        
+
         // Если мы запущены в режиме отладки внутри bin/Debug/..., 
         // поднимаемся на 3 уровня вверх к исходникам проекта
         if (projectRoot.Contains("bin"))
@@ -217,10 +217,7 @@ static partial class Program
         builder.Logging.ClearProviders();
 
         // Настраиваем Kestrel строго на локальный порт 5000
-        builder.WebHost.ConfigureKestrel(options =>
-        {
-            options.ListenLocalhost(5000);
-        });
+        builder.WebHost.ConfigureKestrel(options => options.ListenLocalhost(5000));
 
         // Включаем поддержку CORS, чтобы фронтенд мог слать запросы к API
         builder.Services.AddCors(options =>
@@ -264,14 +261,14 @@ static partial class Program
         // Маршрут для полной и безопасной остановки всей системы из браузера
         app.MapPost("/api/system/shutdown", () => {
             Logger.Log("Запрошено полное выключение системы через веб-интерфейс...", LogType.Warning);
-            
+
             // 1. Сигнализируем всем фоновым потокам воркеров о необходимости остановиться
-            _cts.Cancel(); 
-            
+            _cts.Cancel();
+
             // 2. Закрываем цикл Windows Forms (это вернет управление в конец Main, 
             // где сработает авто-очистка adb.exe и корректно закроется Kestrel)
-            System.Windows.Forms.Application.Exit(); 
-            
+            System.Windows.Forms.Application.Exit();
+
             return Microsoft.AspNetCore.Http.Results.Ok();
         });
 
@@ -288,7 +285,7 @@ static partial class Program
         });
 
         // Автоматически открываем веб-интерфейс в браузере по умолчанию
-        string url = "http://localhost:5000";
+        const string url = "http://localhost:5000";
         try
         {
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
@@ -313,31 +310,32 @@ static partial class Program
     private static void InitSystray()
     {
         var contextMenu = new System.Windows.Forms.ContextMenuStrip();
-        
+
         // Кнопка быстрого перехода в панель
         contextMenu.Items.Add("Открыть веб-панель", null, (s, e) => {
             try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("http://localhost:5000") { UseShellExecute = true }); } catch { }
         });
-        
+
         contextMenu.Items.Add("-"); // Разделитель
-        
+
         // Кнопка полного выхода
         contextMenu.Items.Add("Выход из бота", null, (s, e) => {
             Logger.Log("Запрошен выход из приложения через системный трей...", LogType.Warning);
-            
+
             // Активируем токен отмены для каскадного тушения всех воркеров
-            _cts.Cancel(); 
-            
+            _cts.Cancel();
+
             // Закрываем цикл обработки сообщений Windows Forms, возвращая управление в конец Main
-            System.Windows.Forms.Application.Exit(); 
+            System.Windows.Forms.Application.Exit();
         });
 
+        // [ ] TODO 2026.06.03 Сделать тут ссылку на номер версии из параметров проекта (как в логере) 
         var notifyIcon = new System.Windows.Forms.NotifyIcon
         {
             // Берем иконку, которую вы вшили в .csproj
             Icon = System.Drawing.Icon.ExtractAssociatedIcon(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? System.Drawing.SystemIcons.Application,
             ContextMenuStrip = contextMenu,
-            Text = $"EVE Echoes Bot v.0.01.002",
+            Text = "EVE Echoes Bot v.0.01.002",
             Visible = true
         };
 

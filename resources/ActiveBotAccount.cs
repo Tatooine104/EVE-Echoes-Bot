@@ -33,9 +33,9 @@ public partial class ActiveBotAccount
     /// </summary>
     public string GetRuntimeString()
     {
-        if (State == BotState.Stopped) 
+        if (State == BotState.Stopped)
             return "00 д. 00 ч. 00 м. 00 с.";
-        
+
         // Считаем время текущей сессии (если запущен) + то, что накопилось до пауз
         var currentSessionTime = _startTime.HasValue ? (DateTime.Now - _startTime.Value) : TimeSpan.Zero;
         var total = _accumulatedTime + currentSessionTime;
@@ -97,7 +97,9 @@ public partial class ActiveBotAccount
         internal bool _hastarget = false;
         internal bool _weaponryactive = false;
         internal long _triggerCount;
+        #pragma warning disable IDE1006 // Отключаем проверку стиля именования
         internal object? _currenttarget { get; set; }
+        #pragma warning restore IDE1006 // Включаем обратно для остального кода
 
         // Приватные поля управления потоками, памятью, деревом и файловой системой
         private CancellationTokenSource? _accountCts;
@@ -105,7 +107,7 @@ public partial class ActiveBotAccount
         private readonly string _statsFilePath;
         private readonly System.Threading.Lock _taskLock = new();
         private List<string> _taskQueue = [];
-        
+
         /// <summary>
         /// Корневой управляющий узел дерева поведения (Behavior Tree) текущего аккаунта.
         /// </summary>
@@ -121,7 +123,7 @@ public partial class ActiveBotAccount
         /// </summary>
         private static readonly JsonSerializerOptions _jsonOptions = new() { WriteIndented = true };
 
-        // <summary>
+        /// <summary>
         /// Инициализирует новый экземпляр класса <see cref="ActiveBotAccount"/> на основе конфигурации аккаунта.
         /// Выполняет восстановление сохраненного состояния и компилирует дерево поведения из фабрики сценариев.
         /// </summary>
@@ -140,7 +142,7 @@ public partial class ActiveBotAccount
             // 4. КОМПИЛЯЦИЯ ДЕРЕВА ПОВЕДЕНИЯ: Навечно привязываем воркер к его ветвящемуся сценарию
             string currentScript = settings.Script ?? "mining";
             _behaviorTree = ScenarioFactory.CreateTree(currentScript);
-            
+
             // Старая FSM-инициализация очередей удалена. Бот готов к тикам дерева поведения.
         }
 
@@ -158,11 +160,11 @@ public partial class ActiveBotAccount
     #region DequeueNextTask
 
     /// <summary>
-    /// Потокобезопасно извлекает следующую задачу из начала очереди, удаляет её из списка ожидания, 
+    /// Потокобезопасно извлекает следующую задачу из начала очереди, удаляет её из списка ожидания,
     /// синхронизирует измененное состояние с диском и трансформирует строковый идентификатор в системный Enum.
     /// </summary>
     /// <returns>
-    /// Возвращает объект <see cref="AccountTask"/>, соответствующий следующему шагу сценария. 
+    /// Возвращает объект <see cref="AccountTask"/>, соответствующий следующему шагу сценария.
     /// Если очередь пуста или имя задачи не удалось распознать (опечатка), возвращает <see cref="AccountTask.CheckYourOwnState"/>.
     /// </returns>
     private AccountTask DequeueNextTask()
@@ -242,25 +244,25 @@ public partial class ActiveBotAccount
     #region AdvanceToNextTask
 
     /// <summary>
-    /// Главный управляющий метод логики сценария. Потокобезопасно извлекает следующий шаг из очереди, 
+    /// Главный управляющий метод логики сценария. Потокобезопасно извлекает следующий шаг из очереди,
     /// переключает текущее состояние бота (<see cref="CurrentTask"/>) и фиксирует изменения в файле статов на диске.
     /// </summary>
     /// <returns>
-    /// Возвращает <c>true</c>, если в очереди была задача и бот успешно переключился на неё. 
+    /// Возвращает <c>true</c>, если в очереди была задача и бот успешно переключился на неё.
     /// Возвращает <c>false</c>, если очередь была пуста (в этом случае бот автоматически переводится в режим ожидания).
     /// </returns>
     public bool AdvanceToNextTask()
     {
         // Используем объект синхронизации Lock из .NET 9+ для безопасной параллельной работы
-        lock (_taskLock) 
+        lock (_taskLock)
         {
             if (_taskQueue.Count > 0)
             {
                 // Извлекаем первую текстовую задачу из начала списка ожидания
-                string nextTaskStr = _taskQueue[0]; 
-                
+                string nextTaskStr = _taskQueue[0];
+
                 // Сразу удаляем её из очереди, так как она уходит в активную обработку
-                _taskQueue.RemoveAt(0);             
+                _taskQueue.RemoveAt(0);
 
                 // Пытаемся безопасно преобразовать строку в строго типизированный Enum AccountTask
                 if (Enum.TryParse(nextTaskStr, out AccountTask parsedTask))
@@ -275,7 +277,7 @@ public partial class ActiveBotAccount
                 }
 
                 // Синхронизируем обновленную очередь и новую текущую задачу с файлом состояния на диске
-                SaveStats(); 
+                SaveStats();
                 return true;
             }
 
@@ -296,7 +298,7 @@ public partial class ActiveBotAccount
     /// <summary>
     /// Пытается загрузить сохраненное состояние аккаунта из файла JSON.
     /// Восстанавливает статистику триггеров, время работы, текущую задачу и состав очереди задач.
-    /// При отсутствии в файле актуальных данных о звездной системе, корабле или локации, инициирует 
+    /// При отсутствии в файле актуальных данных о звездной системе, корабле или локации, инициирует
     /// безопасный интерактивный опрос оператора через консоль ввода.
     /// </summary>
     /// <returns>Возвращает <c>true</c>, если файл состояния существовал и был успешно прочитан; иначе <c>false</c>.</returns>
@@ -418,7 +420,7 @@ public partial class ActiveBotAccount
 
     /// <summary>
     /// Синхронизирует текущее состояние, статистику и состав очереди задач аккаунта с диском.
-    /// Формирует объект переноса данных (DTO) под защитой блокировки, после чего выполняет 
+    /// Формирует объект переноса данных (DTO) под защитой блокировки, после чего выполняет
     /// сериализацию и запись в JSON-файл в неблокирующем потоке.
     /// </summary>
     public void SaveStats()
@@ -444,9 +446,9 @@ public partial class ActiveBotAccount
                     LastUpdate     = DateTime.Now,
 
                     InSpace        = _inSpace,
-                    _iswarping      = _iswarping,
+                    IsWarping      = _iswarping,
                     IsInMiningZone = _isinzone,
-                    _hastarget      = _hastarget,
+                    HasTarget     = _hastarget,
                     WeaponryActive = _weaponryactive,
                     CurrentTarget  = _currenttarget?.ToString()
                 };
@@ -502,10 +504,10 @@ public partial class ActiveBotAccount
         if (State == BotState.Stopped) return;
 
         State = BotState.Stopped;
-        
+
         // Плавное гашение асинхронного цикла воркера
         _accountCts?.Cancel();
-        
+
         // Полный сброс таймеров аптайма (Требование №3)
         _startTime = null;
         _accumulatedTime = TimeSpan.Zero;
@@ -528,7 +530,7 @@ public partial class ActiveBotAccount
         if (State != BotState.Running) return;
 
         State = BotState.Paused;
-        
+
         // Фиксируем пройденное за эту сессию время и сбрасываем точку отсчета
         if (_startTime.HasValue)
         {
@@ -538,7 +540,7 @@ public partial class ActiveBotAccount
 
         // Вызываем отмену через ваш CTS аккаунта, чтобы RunLoopAsync плавно завершился
         _accountCts?.Cancel();
-        
+
         Logger.Log($"[{Settings?.Name}] Поток автоматизации поставлен на паузу.", LogType.Warning);
     }
 
@@ -561,7 +563,7 @@ public partial class ActiveBotAccount
 
         // Включаем высокоточный секундомер времени работы для этого окна
         var sessionStopwatch = System.Diagnostics.Stopwatch.StartNew();
-        
+
         // Фиксируем стартовое значение, которое мы уже успели загрузить из JSON прошлых сессий
         long baseSeconds = (long)_accumulatedSeconds;
 
@@ -864,7 +866,7 @@ public partial class ActiveBotAccount
     /// <summary>
     /// Асинхронно выполняет высокоточный макрос оповещения альянса или корпорации о появление угрозы в локале.
     /// Осуществляет до двух попыток открытия интерфейса чатов, сканирует экран на наличие языковых вкладок (ENG Alliance/Corp),
-    /// совершает клик по найденной области через ADB с коррекцией рамок Windows и воспроизводит строгую цепочку кликов 
+    /// совершает клик по найденной области через ADB с коррекцией рамок Windows и воспроизводит строгую цепочку кликов
     /// для отправки быстрого сообщения "Scout" в боевой канал.
     /// </summary>
     /// <param name="token">Токен отмены операции <see cref="CancellationToken"/> для текущего рабочего потока.</param>
@@ -1024,7 +1026,7 @@ public partial class ActiveBotAccount
     /// <summary>
     /// Глобальное свойство безопасности звездной системы текущего аккаунта.
     /// <para>Чтение (get): Возвращает актуальный статус безопасности из синглтона <see cref="SystemSafetyManager"/>.</para>
-    /// <para>Запись (set): Потокобезопасно обрабатывает изменение статуса, реализует "защиту старта" 
+    /// <para>Запись (set): Потокобезопасно обрабатывает изменение статуса, реализует "защиту старта"
     /// и координирует каскадную панику (очистку очередей и запуск эвакуации) для всех окон в этой же системе.</para>
     /// </summary>
     public bool? IsSaveLocal
@@ -1111,7 +1113,7 @@ public partial class ActiveBotAccount
 
     /// <summary>
     /// Формирует и экстренно активирует пакет сценариев эвакуации при обнаружении угрозы в локальной системе.
-    /// На основе флага <paramref name="isInitiator"/> определяет необходимость отправки оповещения альянсу 
+    /// На основе флага <paramref name="isInitiator"/> определяет необходимость отправки оповещения альянсу
     /// и закидывает собранный список задач в самое начало очереди с наивысшим приоритетом.
     /// </summary>
     /// <param name="isInitiator">Если <c>true</c> — данный аккаунт является первоисточником обнаружения врага и должен отправить варнинг в чат.</param>
@@ -1171,7 +1173,7 @@ public partial class ActiveBotAccount
         lock (_taskLock)
         {
             _taskQueue.Clear();
-            
+
             // Сбрасываем текущую задачу в состояние покоя, чтобы главный цикл RunLoopAsync понял, что нужно переключиться
             CurrentTask = AccountTask.CheckYourOwnState;
         }
@@ -1192,9 +1194,9 @@ public partial class ActiveBotAccount
         // Симулируем задержку на сетевой запрос или клик по интерфейсу
         await Task.Delay(100, token);
         Logger.Log($"[ЗАГЛУШКА] {Settings.Name} выполняет команду: Варп и Док на домашнюю станцию.", LogType.Test);
-        
+
         // Для теста принудительно переводим стейт в док (космос = false)
-        _inSpace = false; 
+        _inSpace = false;
         return true;
     }
 
@@ -1211,9 +1213,9 @@ public partial class ActiveBotAccount
     {
         await Task.Delay(50, token);
         Logger.Log($"[ЗАГЛУШКА] {Settings.Name} проверяет заполненность трюма.", LogType.Test);
-        
+
         // По умолчанию возвращаем false, чтобы бот не уходил в бесконечный цикл разгрузки на старте
-        return false; 
+        return false;
     }
 
     #endregion
@@ -1245,9 +1247,9 @@ public partial class ActiveBotAccount
     {
         await Task.Delay(200, token);
         Logger.Log($"[ЗАГЛУШКА] {Settings.Name} запускает процедуру андока.", LogType.Test);
-        
+
         // Для теста переводим стейт корабля в космос
-        _inSpace = true; 
+        _inSpace = true;
         return true;
     }
 
@@ -1264,7 +1266,7 @@ public partial class ActiveBotAccount
     public async Task<object?> ScanAndSelectAvailableBeltAsync(CancellationToken token)
     {
         await Task.Delay(150, token);
-        string mockBeltName = "Asteroid Belt Cluster-Alpha";
+        const string mockBeltName = "Asteroid Belt Cluster-Alpha";
         Logger.Log($"[ЗАГЛУШКА] {Settings.Name} отсканировал локацию и выбрал: {mockBeltName}.", LogType.Test);
         return mockBeltName;
     }
@@ -1289,7 +1291,7 @@ public partial class ActiveBotAccount
     #endregion
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-    
+
     #region TryTargetAsteroidAsync
 
     /// <summary>
@@ -1315,9 +1317,9 @@ public partial class ActiveBotAccount
     {
         await Task.Delay(150, token); // Имитация задержки на клик по модулю
         Logger.Log($"[ЗАГЛУШКА] {Settings.Name} отправил команду на активацию буровых лазеров.", LogType.Test);
-        
+
         // Здесь в будущем будет выставляться флаг _weaponryactive = true
-        return true; 
+        return true;
     }
 
     #endregion

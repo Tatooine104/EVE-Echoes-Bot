@@ -124,16 +124,16 @@ public class AccountStateDto
     public bool? InSpace { get; set; }
 
     /// <summary>
-    /// Имя или идентификатор конкретного астероидного пояса / аномалии, 
+    /// Имя или идентификатор конкретного астероидного пояса / аномалии,
     /// выбранной на Шаге 3 для совершения варпа. Очищается при прилете.
     /// </summary>
     public string? CurrentTarget { get; set; }
 
     public bool? IsInMiningZone { get; set; }
 
-    public bool? _iswarping { get; set; }
+    public bool? IsWarping { get; set; }
 
-    public bool? _hastarget { get; set; }
+    public bool? HasTarget { get; set; }
 
     public bool? WeaponryActive { get; set; }
 
@@ -150,7 +150,7 @@ public class AccountStateDto
         public string Name { get; set; } = "";
         public string State { get; set; } = "Stopped";
         public string Runtime { get; set; } = "00 д. 00 ч. 00 м. 00 с.";
-        
+
         // Вшиваем ваш реальный стейт аккаунта для средней части экрана
         public AccountStateDto? ExtendedState { get; set; }
     }
@@ -164,11 +164,9 @@ public class BotAccountManager
         /// </summary>
         public List<BotWebResponseDto> GetAccountsState()
         {
-            var bots = Program.GetActiveBots(); 
+            var bots = Program.GetActiveBots();
 
-            return bots.Select((bot, index) => {
-                // Создаем снимок на основе реальных полей ActiveBotAccount, 
-                // которые выгружаются в ваш AccountStateDto при синхронизации
+            return [.. bots.Select((bot, index) => {
                 var extended = new AccountStateDto
                 {
                     AccountName = bot.Settings?.Name ?? $"Account_{index + 1}",
@@ -178,20 +176,20 @@ public class BotAccountManager
                     InSpace = bot._inSpace,
                     CurrentTarget = bot._currenttarget?.ToString(),
                     IsInMiningZone = bot._isinzone,
-                    _iswarping = bot._iswarping,
-                    _hastarget = bot._hastarget,
-                    WeaponryActive = bot._weaponryactive // Синхронизируем с вашим флагом активности лазеров
+                    IsWarping = bot._iswarping,
+                    HasTarget = bot._hastarget,
+                    WeaponryActive = bot._weaponryactive
                 };
 
                 return new BotWebResponseDto
                 {
                     Id = index,
                     Name = extended.AccountName,
-                    State = bot.State.ToString(), // Наш enum (Stopped, Running, Paused)
-                    Runtime = bot.GetRuntimeString(), // Красивая строка аптайма
-                    ExtendedState = extended // Уходит в среднюю часть экрана
+                    State = bot.State.ToString(),
+                    Runtime = bot.GetRuntimeString(),
+                    ExtendedState = extended
                 };
-            }).ToList();
+            })];
         }
 
         /// <summary>
