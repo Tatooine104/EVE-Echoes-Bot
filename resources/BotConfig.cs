@@ -205,7 +205,7 @@ public class BotAccountManager
             switch (action.ToLower())
             {
                 case "start":
-                    targetBot.Start(Program.GetGlobalToken()); 
+                    targetBot.Start(Program.GetGlobalToken());
                     break;
                 case "pause":
                     targetBot.Pause();
@@ -296,14 +296,14 @@ public static BotConfig Load()
 
 /// <summary>
 /// Генерирует базовую структуру конфигурации для первой сессии работы приложения.
-/// Разворачивает интерактивное CLI-меню опроса оператора в консоли, выполняет автоматический сбор 
+/// Разворачивает интерактивное CLI-меню опроса оператора в консоли, выполняет автоматический сбор
 /// заголовков активных окон Windows и собирает готовый объект настроек по умолчанию.
 /// </summary>
 /// <returns>Полностью заполненный дефолтный объект конфигурации <see cref="BotConfig"/>.</returns>
 private static BotConfig CreateDefaultConfig()
 {
     // Очищаем накопившийся буфер потока ввода консоли, чтобы избежать ложных срабатываний
-    while (Console.KeyAvailable) 
+    while (Console.KeyAvailable)
     {
         Console.ReadKey(true);
     }
@@ -479,7 +479,7 @@ public static partial class WindowEnumerator
     private static partial bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
 
     /// <summary>
-    /// Копирует текст заголовка указанного окна в буфер символов. 
+    /// Копирует текст заголовка указанного окна в буфер символов.
     /// Использует Юникод-версию (GetWindowTextW) для корректной поддержки кириллицы и спецсимволов.
     /// </summary>
     [LibraryImport("user32.dll", EntryPoint = "GetWindowTextW", StringMarshalling = StringMarshalling.Utf16)]

@@ -112,7 +112,7 @@ public static class Logger
 
         // [ ] TODO 2026.06.01 Добавить тег взамен "Тест", который выводится в консоль но не логгируется в файл (ТЕСТ это только для отладки).
         // [ ] TODO 2026.06.01 Проверить все вызовы, разделить логику что логируется только в файл, что в консоль, а что только при отладке 
-        
+
         // 2. Иконки статуса с жесткой компенсацией ширины для Windows Console/Terminal
         string icon = type switch
         {
@@ -213,12 +213,12 @@ public static class Logger
         string message)
     {
         // Защита от сбоев при одновременной записи из нескольких параллельно работающих аккаунтов
-        lock (_fileLock) 
+        lock (_fileLock)
         {
             try
             {
                 bool fileExists = File.Exists(LogFilePath);
-                
+
                 // Защищаем структуру CSV от поломки разделителей, заменяя точки с запятой на запятые
                 string safeMessage = message.Replace(";", ",");
                 string csvLine = $"{timestamp};{progversion};{type};{account};{system};{ship};{method};{safeMessage}";

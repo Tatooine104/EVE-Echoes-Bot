@@ -687,8 +687,8 @@ public partial class ActiveBotAccount
         string pathImg2 = Path.Combine(Program.TemplatesDir, "imgLocalChatIcon.png");
 
         // Задаем базовые прямоугольные области для сканирования графического интерфейса
-        Rect localRegion1 = new(5, 5, 500, 750);
-        Rect localRegion2 = new(5, 650, 100, 120);
+        Rect localRegion1 = GameRegions.LocalChat.GetOpenCvRect();
+        Rect localRegion2 = GameRegions.LocalChatIcon.GetOpenCvRect();
 
         string debugDir = Path.GetFullPath(Path.Combine(Program.TemplatesDir, "..", "DebugScreenshots"));
 
@@ -890,7 +890,8 @@ public partial class ActiveBotAccount
             return;
         }
 
-        Rect searchRegion = new(5, 220, 300, 500);
+        Rect searchRegion = GameRegions.ChatsLabels.GetOpenCvRect();
+        //Rect searchRegion = new(5, 220, 300, 500);
         Point? foundChat = null;
         bool isCorpChat = false;
         Mat? screenshot = null;
