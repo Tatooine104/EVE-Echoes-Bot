@@ -152,7 +152,7 @@ public static class Logger
             _webLogsCache.Enqueue(webFormattedMessage);
 
             // Держим жесткий лимит строго в 13 строк, выбрасывая старое
-            while (_webLogsCache.Count > 8)
+            while (_webLogsCache.Count > 10)
             {
                 _webLogsCache.TryDequeue(out _);
             }
