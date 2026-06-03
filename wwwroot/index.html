@@ -54,10 +54,10 @@
                 <thead>
                     <tr>
                         <th>Эмулятор</th>
-                        <th>Состояние</th>
                         <th>Аккаунт</th>
+                        <th>Состояние</th>
+                        <th>Действия</th>
                         <th>В работе</th>
-                        <th style="text-align: right;">Действия</th>
                     </tr>
                 </thead>
                 <tbody id="accounts-table">
@@ -104,14 +104,14 @@
                     return `
                         <tr>
                             <td style="font-weight: 600;">${acc.name}</td>
-                            <td><span class="badge ${badgeClass}">${acc.state}</span></td>
                             <td style="color: #9ca3af;">${taskName}</td>
-                            <td style="font-family: monospace; color: #22d3ee;">${acc.runtime}</td>
-                            <td style="text-align: right;">
+                            <td><span class="badge ${badgeClass}">${acc.state}</span></td>
+                            <td>
                                 <button onclick="sendCmd(${acc.id}, 'start')" class="btn btn-start">Старт</button>
                                 <button onclick="sendCmd(${acc.id}, 'pause')" class="btn btn-pause">Пауза</button>
                                 <button onclick="sendCmd(${acc.id}, 'stop')" class="btn btn-stop">Стоп</button>
                             </td>
+                            <td style="font-family: monospace; color: #22d3ee;">${acc.runtime}</td>
                         </tr>
                     `;
                 }).join('');
