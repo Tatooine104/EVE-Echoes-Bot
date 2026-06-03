@@ -10,7 +10,7 @@
     <DebugType>none</DebugType>
 
     <!-- 1. ГЛАВНАЯ ТОЧКА УПРАВЛЕНИЯ ВЕРСИЕЙ (меняйте только тут) -->
-    <Version>0.01.000</Version>
+    <Version>0.01.001</Version>
 
     <!-- 2. Имя EXE собирается автоматически. %20 — это пробелы -->
     <AssemblyName>EVE%20Echoes%20Bot%20v.$(Version)</AssemblyName>
