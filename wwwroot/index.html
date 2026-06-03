@@ -9,7 +9,7 @@
         .container { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
         .panel { background-color: #1f2937; padding: 20px; border: 1px solid #374151; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
         h2 { margin-top: 0; margin-bottom: 16px; font-size: 1.25rem; font-weight: bold; }
-        .text-blue { color: #60a5fa; } .text-green { color: #34d399; } .text-amber { color: #fbbf24; }
+        .text-blue { color: #60a5fa; } .text-green { color: #34d399; } .text-amber { color: #fbbf24; } .text-red { color: #ff4b4b; }
         
         /* Таблица аккаунтов */
         table { border-collapse: collapse; width: 100%; text-align: left; }
@@ -45,7 +45,7 @@
         <!-- ВЕРХНЯЯ ЧАСТЬ: Информация о потоках -->
         <div class="panel">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                <h2 class="text-blue" style="margin: 0;">Управление потоками (Аккаунты)</h2>
+                <h2 style="margin: 0; color: #fd5050;">EVE Echoes Bot <span class="text-blue">Управление эмуляторами</span></h2>
                 <button onclick="shutdownSystem()" class="btn btn-stop" style="background-color: #991b1b; padding: 8px 16px; font-weight: bold; font-size: 0.825rem;">
                     🛑 Выключить бота
                 </button>
@@ -53,10 +53,10 @@
             <table>
                 <thead>
                     <tr>
-                        <th>Название аккаунта</th>
+                        <th>Эмулятор</th>
                         <th>Состояние</th>
-                        <th>Исполняемый сценарий</th>
-                        <th>Время работы</th>
+                        <th>Аккаунт</th>
+                        <th>В работе</th>
                         <th style="text-align: right;">Действия</th>
                     </tr>
                 </thead>
@@ -68,7 +68,7 @@
 
         <!-- СРЕДНЯЯ ЧАСТЬ: Статика воркеров -->
         <div class="panel">
-            <h2 class="text-green">Статистика запущенных воркеров</h2>
+            <h2 class="text-green">Статистика запущенных эмуляторов</h2>
             <div id="stats-container" class="stats-grid">
                 <!-- Заполняется из JS -->
             </div>
@@ -76,7 +76,7 @@
 
         <!-- НИЖНЯЯ ЧАСТЬ: Лог приложения (Макс 13 строк) -->
         <div class="panel">
-            <h2 class="text-amber">Лог приложения (Последние 13 сообщений)</h2>
+            <h2 class="text-amber">Лог приложения</h2>
             <div id="log-container" class="log-box">
                 <!-- Заполняется из JS -->
             </div>
@@ -124,7 +124,7 @@
 
                     let locationText = "Определение...";
                     if (ext.inSpace === true) locationText = "🚀 В космосе";
-                    if (ext.inSpace === false) locationText = "🛸 В доке (Станция)";
+                    if (ext.inSpace === false) locationText = "🛸 В доке";
 
                     return `
                         <div class="stat-card">

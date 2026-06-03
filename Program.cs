@@ -687,26 +687,37 @@ static partial class Program
 
 /*
 
-### КОНТЕКСТ ПРОЕКТА: EVEEchoesBot (Ветка: Work)
-**Архитектура:** .NET 9+, C#, Дерево поведения (Behavior Tree) вместо старого FSM.
-**Масштаб:** ~4140 строк кода (высокая плотность инфраструктуры).
+### АРХИТЕКТУРНОЕ МЕМО: EVEEchoesBot (Ветка: Work)
 
-**Текущие ключевые компоненты:**
-1. `ScenarioFactory` (static) — фабрика сборки BT (`BuildLocalWatcherTree()` и `BuildMinerTree()`). Поддерживает фолбек `BuildDefaultFallbackTree()`.
-2. `ActiveBotAccount` (partial) — основной класс аккаунта. Хранит свойства стейта: `_inSpace`, `_currenttarget`, `AccountTask CurrentTask` (enum), а также флаги `_iswarping`, `_hastarget`, `_weaponryactive`, `IsInMiningZone`.
-3. `AccountStateDto` — объект для синхронизации и сохранения стейта в JSON под `lock (_taskLock)`.
-4. `RunLoopAsync` — рабочий цикл с адаптивными тиками (1 сек в состоянии `Running` для быстрой реакции на угрозы, 5 сек в простое).
-5. `OcrService` — сервис локального OCR (пакет `TesseractOCR`, параллельный движок `"eng+rus"` из `resources`, чтение через `TesseractOCR.Pix.Image.LoadFromMemory`).
+#### 1. Общая архитектура и масштабы
+- **Платформа:** .NET 9+, C#, Windows Forms (WinExe).
+- **Паттерн логики:** Дерево поведения (Behavior Tree) вместо устаревшего FSM.
 
-**Текущий статус задач в ветке `Work`:**
-- **Сценарий «Глаз» (LocalWatcher):** Дерево настроено, интегрировано переключение `AccountTask.CheckSecurity`, `SendAliChatWarning` и `CheckYourOwnState`.
-- **Сценарий «Шахтер» (Miner):** Реализовано дерево по линейному ТЗ (Проверка локала -> Выход -> Выбор белта -> Проверка локала -> Варп -> Добыча/Мониторинг -> Возврат при угрозе/полном трюме -> Выгрузка). Интегрированы изменения `bot.CurrentTask`. Все методы взаимодействия с игрой вынесены в `ActiveBotAccount` в качестве заглушек (stubs). Проект успешно компилируется.
-- **Динамическая смена сценариев:** Согласован подход горячей подмены корня `_behaviorTree` через метод `SwitchScenario(string newScenarioName)` для долгосрочной смены ролей бота на лету.
+#### 2. Веб-интерфейс и Хостинг
+- **Технология:** ASP.NET Core Minimal APIs, встроенный веб-сервер Kestrel.
+- **Сетевой адрес:** Строго `http://localhost:5000` (ListenLocalhost).
+- **Режим запуска:** Асинхронный фоновый поток (`Task.Run -> app.RunAsync()`) для бесконфликтной работы с `Application.Run()` в WinForms.
+- **Пути и статика:** Динамический расчет `projectRoot` (с обходом папки `bin` на 3 уровня вверх). `WebRootPath` жестко привязан к физической папке `wwwroot` для раздачи статики (`index.html`) через `UseDefaultFiles()` и `UseStaticFiles()`. Включен CORS (`AllowAll`).
 
-**Статус Канбан-доски (Всего 13 задач):**
-- **Test:** 2 задачи (Дерево Miner с заглушками, Интеграция Tesseract OCR).
-- **In Progress:** 1 задача.
-- **Todo:** 17 задач (+1 новая: Реализация граф-карты вселенной и BFS-автопилота с поддержкой черных списков систем).
+#### 3. API Эндпоинты
+- **`GET /api/state`** — Секундный опрос (polling) из JS. Возвращает агрегированный стейт аккаунтов из `BotAccountManager.GetAccountsState()` и последние строки логов из `Logger.GetLastLogs()`.
+- **`POST /api/control/{id:int}/{actionName}`** — Отправка команд управления конкретному боту на лету через `manager.HandleCommand()`.
+- **`POST /api/system/shutdown`** — Корректное глушение системы: вызывает `_cts.Cancel()` для остановки воркеров и `Application.Exit()` для закрытия цикла WinForms (что запускает авто-очистку `adb.exe`).
+
+#### 4. Ключевые компоненты бэкенда
+- **`BotAccountManager` (Singleton в DI):** Точка координации всех ботов, обработчик веб-команд.
+- **`ScenarioFactory` (static):** Фабрика сборки BT (`BuildLocalWatcherTree()`, `BuildMinerTree()`). Поддерживает фолбек `BuildDefaultFallbackTree()`.
+- **`ActiveBotAccount` (partial):** Основной класс аккаунта. Хранит стейт (`_inSpace`, `_currenttarget`, `AccountTask CurrentTask`) и флаги (`_iswarping`, `_hastarget`, `_weaponryactive`, `IsInMiningZone`). Содержит методы-заглушки (stubs) взаимодействия с игрой.
+- **`AccountStateDto`:** Объект для сериализации стейта в JSON под `lock (_taskLock)` для передачи в веб-интерфейс.
+- **`RunLoopAsync`:** Рабочий цикл с адаптивными тиками (1 сек в бою/активности, 5 - в простое).
+- **`OcrService`:** Локальный OCR (`TesseractOCR`), параллельный движок `"eng+rus"`, чтение через `TesseractOCR.Pix.Image.LoadFromMemory`.
+
+#### 5. Динамическое управление
+- **Горячая смена:** Метод `SwitchScenario(string newScenarioName)` меняет корень `_behaviorTree` на лету. Команды переключения поступают из UI через маршрут `/api/control/`.
+
+#### 6. Текущий статус сценариев
+- **«Глаз» (LocalWatcher):** Дерево настроено. Интегрированы `AccountTask.CheckSecurity`, `SendAliChatWarning` и `CheckYourOwnState`.
+- **«Шахтер» (Miner):** Линейная логика готова (Локал -> Выход -> Белт -> Локал -> Варп -> Добыча -> Возврат/Выгрузка). Интегрирован с `bot.CurrentTask`. Компиляция успешна.
 
 */
 
