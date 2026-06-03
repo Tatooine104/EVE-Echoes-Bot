@@ -12,7 +12,7 @@ namespace EVEEchoesBot.resources;
 // [v] TODO 2026.05.30 Добавить класс сохранения статистики по ботам (отдельно для каждого акка stat_accountname.json)
 // [v] TODO 2026.05.30 Перенести EVESystem и EVEShip в файл статистики. 
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
 #region BotConfig
 
@@ -131,9 +131,9 @@ public class AccountStateDto
 
     public bool? IsInMiningZone { get; set; }
 
-    public bool? IsWarping { get; set; }
+    public bool? _iswarping { get; set; }
 
-    public bool? HasTarget { get; set; }
+    public bool? _hastarget { get; set; }
 
     public bool? WeaponryActive { get; set; }
 
@@ -141,7 +141,85 @@ public class AccountStateDto
 
 #endregion
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    // Облегченный контейнер для передачи данных на веб-страницу
+    public class BotWebResponseDto
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = "";
+        public string State { get; set; } = "Stopped";
+        public string Runtime { get; set; } = "00 д. 00 ч. 00 м. 00 с.";
+        
+        // Вшиваем ваш реальный стейт аккаунта для средней части экрана
+        public AccountStateDto? ExtendedState { get; set; }
+    }
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+public class BotAccountManager
+    {
+        /// <summary>
+        /// Формирует актуальный снимок состояния всех ботов для отправки в веб-интерфейс.
+        /// </summary>
+        public List<BotWebResponseDto> GetAccountsState()
+        {
+            var bots = Program.GetActiveBots(); 
+
+            return bots.Select((bot, index) => {
+                // Создаем снимок на основе реальных полей ActiveBotAccount, 
+                // которые выгружаются в ваш AccountStateDto при синхронизации
+                var extended = new AccountStateDto
+                {
+                    AccountName = bot.Settings?.Name ?? $"Account_{index + 1}",
+                    CurrentTask = bot.CurrentTask.ToString(),
+                    EVESystem = bot._eveSystem,
+                    EVEShip = bot._eveShip,
+                    InSpace = bot._inSpace,
+                    CurrentTarget = bot._currenttarget?.ToString(),
+                    IsInMiningZone = bot._isinzone,
+                    _iswarping = bot._iswarping,
+                    _hastarget = bot._hastarget,
+                    WeaponryActive = bot._weaponryactive // Синхронизируем с вашим флагом активности лазеров
+                };
+
+                return new BotWebResponseDto
+                {
+                    Id = index,
+                    Name = extended.AccountName,
+                    State = bot.State.ToString(), // Наш enum (Stopped, Running, Paused)
+                    Runtime = bot.GetRuntimeString(), // Красивая строка аптайма
+                    ExtendedState = extended // Уходит в среднюю часть экрана
+                };
+            }).ToList();
+        }
+
+        /// <summary>
+        /// Маршрутизирует команды управления от кнопок браузера к конкретному боту.
+        /// </summary>
+        public void HandleCommand(int id, string action)
+        {
+            var bots = Program.GetActiveBots();
+            if (id < 0 || id >= bots.Count) return;
+
+            var targetBot = bots[id];
+
+            switch (action.ToLower())
+            {
+                case "start":
+                    targetBot.Start(Program.GetGlobalToken()); 
+                    break;
+                case "pause":
+                    targetBot.Pause();
+                    break;
+                case "stop":
+                    targetBot.Stop();
+                    break;
+            }
+        }
+    }
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
 #region ConfigManager
 
@@ -168,7 +246,7 @@ public static class ConfigManager
 
 #endregion
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
 #region BotConfig Load
 
@@ -214,7 +292,7 @@ public static BotConfig Load()
 #endregion
 
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
 #region CreateDefaultConfig
 
@@ -339,7 +417,7 @@ private static BotConfig CreateDefaultConfig()
 
 #endregion
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
 #region Save
 
@@ -375,7 +453,7 @@ public static void Save(BotConfig config)
 
 #endregion
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
 }
 

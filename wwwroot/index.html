@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>EVE Echoes Bot Control Panel</title>
+    <style>
+        /* Офлайн-стили, чтобы интерфейс работал без интернета */
+        body { background-color: #111827; color: #f9fafb; font-family: system-ui, -apple-system, sans-serif; padding: 24px; margin: 0; }
+        .container { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
+        .panel { background-color: #1f2937; padding: 20px; border: 1px solid #374151; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        h2 { margin-top: 0; margin-bottom: 16px; font-size: 1.25rem; font-weight: bold; }
+        .text-blue { color: #60a5fa; } .text-green { color: #34d399; } .text-amber { color: #fbbf24; }
+        
+        /* Таблица аккаунтов */
+        table { border-collapse: collapse; width: 100%; text-align: left; }
+        th { border-bottom: 1px solid #4b5563; padding: 10px; color: #9ca3af; font-size: 0.875rem; }
+        td { padding: 12px 10px; border-bottom: 1px solid #1f2937; }
+        tr:hover { background-color: #111827; }
+        
+        /* Статусы и Кнопки */
+        .badge { padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; }
+        .badge-running { background-color: #065f46; color: #34d399; }
+        .badge-paused { background-color: #78350f; color: #fbbf24; }
+        .badge-stopped { background-color: #374151; color: #d1d5db; }
+        .btn { padding: 6px 12px; border: none; border-radius: 4px; font-size: 0.75rem; font-weight: 500; cursor: pointer; margin-right: 4px; color: white; transition: background 0.2s; }
+        .btn-start { background-color: #059669; } .btn-start:hover { background-color: #047857; }
+        .btn-pause { background-color: #d97706; } .btn-pause:hover { background-color: #b45309; }
+        .btn-stop { background-color: #dc2626; } .btn-stop:hover { background-color: #b91c1c; }
+        
+        /* Сетка статистики */
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; }
+        .stat-card { background-color: #111827; padding: 16px; border-radius: 6px; border: 1px solid #1f2937; }
+        .stat-title { font-size: 0.875rem; font-weight: bold; color: #9ca3af; margin-bottom: 8px; }
+        .stat-row { display: flex; justify-content: space-between; font-size: 0.815rem; margin-bottom: 4px; }
+        
+        /* Лог */
+        .log-box { font-family: monospace; font-size: 0.875rem; background-color: #030712; padding: 12px; border-radius: 6px; border: 1px solid #1f2937; height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+        .log-line { padding: 2px 4px; border-radius: 2px; }
+        .log-line:hover { background-color: #111827; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <!-- ВЕРХНЯЯ ЧАСТЬ: Информация о потоках -->
+        <div class="panel">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <h2 class="text-blue" style="margin: 0;">Управление потоками (Аккаунты)</h2>
+                <button onclick="shutdownSystem()" class="btn btn-stop" style="background-color: #991b1b; padding: 8px 16px; font-weight: bold; font-size: 0.825rem;">
+                    🛑 Выключить бота
+                </button>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Название аккаунта</th>
+                        <th>Состояние</th>
+                        <th>Исполняемый сценарий</th>
+                        <th>Время работы</th>
+                        <th style="text-align: right;">Действия</th>
+                    </tr>
+                </thead>
+                <tbody id="accounts-table">
+                    <!-- Заполняется из JS -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- СРЕДНЯЯ ЧАСТЬ: Статика воркеров -->
+        <div class="panel">
+            <h2 class="text-green">Статистика запущенных воркеров</h2>
+            <div id="stats-container" class="stats-grid">
+                <!-- Заполняется из JS -->
+            </div>
+        </div>
+
+        <!-- НИЖНЯЯ ЧАСТЬ: Лог приложения (Макс 13 строк) -->
+        <div class="panel">
+            <h2 class="text-amber">Лог приложения (Последние 13 сообщений)</h2>
+            <div id="log-container" class="log-box">
+                <!-- Заполняется из JS -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Функция запроса данных с бэкенда
+        async function updateDashboard() {
+            try {
+                const response = await fetch('/api/state');
+                if (!response.ok) return;
+                const data = await response.json();
+
+                // 1. Рендеринг таблицы аккаунтов (заменили acc.scenario на acc.scenario)
+                const tableBody = document.getElementById('accounts-table');
+                tableBody.innerHTML = data.accounts.map(acc => {
+                    let badgeClass = 'badge-stopped';
+                    if (acc.state === 'Running') badgeClass = 'badge-running';
+                    if (acc.state === 'Paused') badgeClass = 'badge-paused';
+
+                    // Фикс: берем таску из extendedState.currentTask, которая заполнена в DTO
+                    const taskName = acc.extendedState ? acc.extendedState.currentTask : 'None';
+
+                    return `
+                        <tr>
+                            <td style="font-weight: 600;">${acc.name}</td>
+                            <td><span class="badge ${badgeClass}">${acc.state}</span></td>
+                            <td style="color: #9ca3af;">${taskName}</td>
+                            <td style="font-family: monospace; color: #22d3ee;">${acc.runtime}</td>
+                            <td style="text-align: right;">
+                                <button onclick="sendCmd(${acc.id}, 'start')" class="btn btn-start">Старт</button>
+                                <button onclick="sendCmd(${acc.id}, 'pause')" class="btn btn-pause">Пауза</button>
+                                <button onclick="sendCmd(${acc.id}, 'stop')" class="btn btn-stop">Стоп</button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+
+                // 2. Рендеринг расширенной статистики (заменили старые статы на реальные поля из вашего AccountStateDto)
+                const statsContainer = document.getElementById('stats-container');
+                statsContainer.innerHTML = data.accounts.map(acc => {
+                    const ext = acc.extendedState;
+                    if (!ext) return '';
+
+                    let locationText = "Определение...";
+                    if (ext.inSpace === true) locationText = "🚀 В космосе";
+                    if (ext.inSpace === false) locationText = "🛸 В доке (Станция)";
+
+                    return `
+                        <div class="stat-card">
+                            <div class="stat-title" style="color: #60a5fa; border-bottom: 1px solid #374151; padding-bottom: 4px; margin-bottom: 10px;">
+                                ${acc.name}
+                            </div>
+                            <div class="stat-row">
+                                <span>Локация:</span>
+                                <span style="font-weight: bold;">${locationText}</span>
+                            </div>
+                            <div class="stat-row">
+                                <span>Звездная система:</span>
+                                <span style="color: #e2e8f0; font-weight: bold;">${ext.eveSystem || '???'}</span>
+                            </div>
+                            <div class="stat-row">
+                                <span>Текущий корабль:</span>
+                                <span style="color: #9ca3af;">${ext.eveShip || '???'}</span>
+                            </div>
+                            <div class="stat-row">
+                                <span>Текущая цель/Белт:</span>
+                                <span style="color: #fbbf24; font-size: 0.8rem;">${ext.currentTarget || 'Нет цели'}</span>
+                            </div>
+                            <div class="stat-row" style="margin-top: 6px; border-top: 1px dashed #374151; padding-top: 4px;">
+                                <span>Срабатываний триггеров:</span>
+                                <span style="color: #f87171; font-weight: bold;">${ext.triggers || 0}</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+                // 3. Рендеринг логов (максимум 13 строк бэкенд отдаст уже отсортированными)
+                const logContainer = document.getElementById('log-container');
+                logContainer.innerHTML = data.logs.map(log => `
+                    <div class="log-line">${log}</div>
+                `).join('');
+
+            } catch (err) {
+                console.error("Ошибка обновления интерфейса:", err);
+            }
+        }
+
+        // Отправка команд на бэкенд
+        async function sendCmd(id, action) {
+            try {
+                await fetch(`/api/control/${id}/${action}`, { method: 'POST' });
+                updateDashboard();
+            } catch (err) {
+                console.error("Ошибка отправки команды:", err);
+            }
+        }
+
+        // Опрос бэкенда раз в секунду для плавного тикания таймера
+        setInterval(updateDashboard, 1000);
+        updateDashboard();
+        // Функция полного выключения всей экосистемы бота
+        async function shutdownSystem() {
+            if (!confirm("Вы уверены, что хотите полностью остановить воркеров и выключить бота?")) {
+                return;
+            }
+            
+            try {
+                // Отправляем команду на бэкенд
+                await fetch('/api/system/shutdown', { method: 'POST' });
+                
+                // Визуально информируем оператора, что сервер ушел в оффлайн
+                document.body.innerHTML = `
+                    <div style="max-w-md mx-auto mt-20 p-6 bg-gray-800 border border-red-900 rounded-lg text-center shadow-2xl">
+                        <h1 style="color: #ef4444; font-size: 1.5rem; font-weight: bold; margin-bottom: 12px;">Бот успешно выключен</h1>
+                        <p style="color: #9ca3af; font-size: 0.9rem;">Все фоновые потоки автоматизации остановлены, сессии ADB завершены. Вы можете закрыть эту вкладку.</p>
+                    </div>
+                `;
+            } catch (err) {
+                console.error("Ошибка при выключении системы:", err);
+            }
+        }
+    </script>
+</body>
+</html>

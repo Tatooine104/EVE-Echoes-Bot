@@ -1,18 +1,19 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>WinExe</OutputType> <!-- Изменено с Exe для скрытия консоли -->
+    <UseWindowsForms>true</UseWindowsForms> <!-- Добавлено для работы с иконкой в трее -->
+    <TargetFramework>net10.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <Platforms>AnyCPU;x64</Platforms>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <DebugType>none</DebugType>
 
-    <!-- 1. ГЛАВНАЯ ТОЧКА УПРАВЛЕНИЯ ВЕРСИЕЙ (меняйте только тут) -->
-    <Version>0.01.001</Version>
+    <!-- 1. ГЛАВНАЯ ТОЧКА УПРАВЛЕНИЯ ВЕРСИЕЙ -->
+    <Version>0.01.002</Version>
 
-    <!-- 2. Имя EXE собирается автоматически. %20 — это пробелы -->
+    <!-- 2. Имя EXE собирается автоматически -->
     <AssemblyName>EVE%20Echoes%20Bot%20v.$(Version)</AssemblyName>
 
     <!-- 3. ВШИВАЕМ ИКОНКУ ИЗ ПАПКИ IMAGES -->

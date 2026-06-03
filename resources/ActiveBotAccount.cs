@@ -10,6 +10,7 @@ using System.Collections.Concurrent;
 using static EVEEchoesBot.resources.Logger;
 using EVEEchoesBot.resources;
 using EVEEchoesBot.scenarios;
+using Point = OpenCvSharp.Point;
 
 // [v] TODO 2026.05.30 Привести все тексты логгера к единому стилю 
 
@@ -19,9 +20,30 @@ namespace EVEEchoesBot.resources;
 public partial class ActiveBotAccount
 {
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region BOT params
+
+    // Переменные для точного расчета времени работы (аптайма)
+    private DateTime? _startTime;
+    private TimeSpan _accumulatedTime = TimeSpan.Zero;
+
+    /// <summary>
+    /// Возвращает точную строку аптайма аккаунта в формате: "00 д. 00 ч. 00 м. 00 с."
+    /// </summary>
+    public string GetRuntimeString()
+    {
+        if (State == BotState.Stopped) 
+            return "00 д. 00 ч. 00 м. 00 с.";
+        
+        // Считаем время текущей сессии (если запущен) + то, что накопилось до пауз
+        var currentSessionTime = _startTime.HasValue ? (DateTime.Now - _startTime.Value) : TimeSpan.Zero;
+        var total = _accumulatedTime + currentSessionTime;
+
+        return $"{total.Days:D2} д. {total.Hours:D2} ч. {total.Minutes:D2} м. {total.Seconds:D2} с.";
+    }
+
+        public BotState State { get; private set; } = BotState.Stopped;
 
         /// <summary>
         /// Конфигурационные настройки текущего игрового аккаунта.
@@ -70,7 +92,7 @@ public partial class ActiveBotAccount
         internal string _eveSystem = "???";
         internal string _eveShip = "???";
         internal bool _inSpace = false;
-        internal bool _isinminingzone = false;
+        internal bool _isinzone = false;
         internal bool _iswarping = false;
         internal bool _hastarget = false;
         internal bool _weaponryactive = false;
@@ -131,7 +153,7 @@ public partial class ActiveBotAccount
     #endregion
 
 
-    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region DequeueNextTask
 
@@ -177,7 +199,7 @@ public partial class ActiveBotAccount
     #endregion
 
 
-    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region EnqueueTasks
 
@@ -215,7 +237,7 @@ public partial class ActiveBotAccount
     #endregion
 
 
-    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region AdvanceToNextTask
 
@@ -267,7 +289,7 @@ public partial class ActiveBotAccount
     #endregion
 
 
-    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region TryLoadLastStatsAndQueue
 
@@ -390,7 +412,7 @@ public partial class ActiveBotAccount
     #endregion
 
 
-    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region SaveStats
 
@@ -422,9 +444,9 @@ public partial class ActiveBotAccount
                     LastUpdate     = DateTime.Now,
 
                     InSpace        = _inSpace,
-                    IsWarping      = _iswarping,
-                    IsInMiningZone = _isinminingzone,
-                    HasTarget      = _hastarget,
+                    _iswarping      = _iswarping,
+                    IsInMiningZone = _isinzone,
+                    _hastarget      = _hastarget,
                     WeaponryActive = _weaponryactive,
                     CurrentTarget  = _currenttarget?.ToString()
                 };
@@ -444,7 +466,7 @@ public partial class ActiveBotAccount
     #endregion
 
 
-    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region Start
 
@@ -465,20 +487,62 @@ public partial class ActiveBotAccount
     #endregion
 
 
-    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region Stop
+
 
     /// <summary>
     /// Инициирует безопасную остановку рабочего цикла автоматизации текущего аккаунта.
     /// Вызывает отмену связанного токена, позволяя асинхронному потоку завершить текущий виток и сохранить статы на диск.
     /// </summary>
-    public void Stop() => _accountCts?.Cancel();
+    public void Stop()
+    {
+        // Если уже остановлен — ничего не делаем
+        if (State == BotState.Stopped) return;
+
+        State = BotState.Stopped;
+        
+        // Плавное гашение асинхронного цикла воркера
+        _accountCts?.Cancel();
+        
+        // Полный сброс таймеров аптайма (Требование №3)
+        _startTime = null;
+        _accumulatedTime = TimeSpan.Zero;
+
+        Logger.Log($"[{Settings?.Name}] Поток автоматизации полностью остановлен. Время сброшено.", LogType.Warning);
+    }
+
+
 
     #endregion
 
 
-    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    /// <summary>
+    /// Кнопка "Пауза": Приостанавливает поток автоматизации, сохраняя набранное время работы.
+    /// </summary>
+    public void Pause()
+    {
+        if (State != BotState.Running) return;
+
+        State = BotState.Paused;
+        
+        // Фиксируем пройденное за эту сессию время и сбрасываем точку отсчета
+        if (_startTime.HasValue)
+        {
+            _accumulatedTime += DateTime.Now - _startTime.Value;
+            _startTime = null;
+        }
+
+        // Вызываем отмену через ваш CTS аккаунта, чтобы RunLoopAsync плавно завершился
+        _accountCts?.Cancel();
+        
+        Logger.Log($"[{Settings?.Name}] Поток автоматизации поставлен на паузу.", LogType.Warning);
+    }
+
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region RunLoopAsync
 
@@ -575,7 +639,7 @@ public partial class ActiveBotAccount
 
 
 
-    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region ForceSaveStats
 
@@ -595,7 +659,7 @@ public partial class ActiveBotAccount
     #endregion
 
 
-    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region CheckSecurityStatus 
 
@@ -722,7 +786,7 @@ public partial class ActiveBotAccount
     #endregion
 
 
-    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region RunLocalCheck
 
@@ -793,7 +857,7 @@ public partial class ActiveBotAccount
     #endregion
 
 
-    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region AliChatWarning
 
@@ -953,7 +1017,7 @@ public partial class ActiveBotAccount
     #endregion
 
 
-    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region _isSaveLocal
 
@@ -1041,7 +1105,7 @@ public partial class ActiveBotAccount
 
     #endregion
 
-    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region ExecuteEmergencyResponse
 
@@ -1093,7 +1157,7 @@ public partial class ActiveBotAccount
 
     #endregion
 
-    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region ClearTasks
 
@@ -1252,7 +1316,7 @@ public partial class ActiveBotAccount
         await Task.Delay(150, token); // Имитация задержки на клик по модулю
         Logger.Log($"[ЗАГЛУШКА] {Settings.Name} отправил команду на активацию буровых лазеров.", LogType.Test);
         
-        // Здесь в будущем будет выставляться флаг AreLasersActive = true
+        // Здесь в будущем будет выставляться флаг _weaponryactive = true
         return true; 
     }
 
@@ -1279,7 +1343,7 @@ public partial class ActiveBotAccount
 
 }
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
 #region AccountTask
 

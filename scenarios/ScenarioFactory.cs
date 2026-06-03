@@ -220,7 +220,7 @@ public static class ScenarioFactory
                     // ШАГИ 3, 4, 5: Логика выбора белта и перелета (работает, пока мы не в зоне добычи)
                     new SequenceNode("Flight To Belt Sequence",
                         // Если мы уже прилетели в зону добычи -> возвращаем Failure, чтобы пропустить эту ветку и перейти к майнингу
-                        new ActionNode("Is NOT In Mining Zone", async (bot, token) => bot._isinminingzone ? NodeStatus.Failure : NodeStatus.Success),
+                        new ActionNode("Is NOT In Mining Zone", async (bot, token) => bot._isinzone ? NodeStatus.Failure : NodeStatus.Success),
                         
                         // ПРЕДОХРАНИТЕЛЬ ВАРПА: Если корабль уже находится в режиме варпа/полёта — просто ждем окончания
                         new ActionNode("Check If Already Warping", async (bot, token) =>
@@ -287,7 +287,7 @@ public static class ScenarioFactory
 
                     // ШАГ 6 и 7: Нахождение в белте, добыча и удержание состояния
                     new SequenceNode("Active Mining Sequence",
-                        // Дополнительное действие: раз мы зашли в эту ветку, значит bot._isinminingzone == true. 
+                        // Дополнительное действие: раз мы зашли в эту ветку, значит bot._isinzone == true. 
                         // Сбрасываем промежуточный таргет полета, он нам больше не нужен.
                         new ActionNode("Clear Flight State On Arrival", async (bot, token) =>
                         {

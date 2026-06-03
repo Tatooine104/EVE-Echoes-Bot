@@ -62,6 +62,10 @@ static partial class Program
         }
     }
 
+    public static List<ActiveBotAccount> GetActiveBots() => _activeBots;
+
+    public static CancellationToken GetGlobalToken() => _cts.Token;
+
     /// <summary>
     /// Перечисление элементов графического интерфейса игры EVE Echoes с упакованными координатами клика.
     /// Каждое значение сформировано по математическому правилу сжатия векторов: <c>ИмяЭлемента = (X * 10000) + Y</c> [INDEX].
@@ -101,8 +105,7 @@ static partial class Program
 
     #endregion
 
-
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region Main
 
@@ -112,11 +115,32 @@ static partial class Program
     /// выполняет предстартовую валидацию файлов, разворачивает многопоточную сетку окон и удерживает главный поток приложения 
     /// до получения сигнала отмены через асинхронный перехватчик аппаратных клавиш.
     /// </summary>
-    public static void Main()
+    [STAThread] // Обязательный атрибут для корректной работы Windows Forms (иконки в трее)
+    public static void Main(string[] args)
     {
-        // 1. Настраиваем системную кодировку UTF-8, чтобы любые стартовые ошибки WinAPI или JSON читались корректно
+        // 1. Настраиваем системную кодировку UTF-8
         Console.OutputEncoding = System.Text.Encoding.UTF8;
         Console.InputEncoding = System.Text.Encoding.UTF8;
+
+        AppDomain.CurrentDomain.ProcessExit += (sender, e) =>
+        {
+            try
+            {
+                using var killProcess = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "taskkill",
+                    Arguments = "/f /im adb.exe",
+                    CreateNoWindow = true,
+                    UseShellExecute = false
+                });
+                killProcess?.WaitForExit(1000); // Даем ОС максимум 1 секунду на тушение демона
+            }
+            catch { /* Подавляем ошибки при выходе */ }
+        };
+
+        // Инициализируем базовые настройки Windows Forms для работы трея
+        System.Windows.Forms.Application.EnableVisualStyles();
+        System.Windows.Forms.Application.SetCompatibleTextRenderingDefault(false);
 
         // 2. Глобальный перехват необработанных ошибок в фоновых потоках CLR
         AppDomain.CurrentDomain.UnhandledException += (sender, e) =>
@@ -125,46 +149,205 @@ static partial class Program
             Logger.Log($"КРИТИЧЕСКИЙ СБОЙ СИСТЕМЫ (UnhandledException): {exceptionMessage}", LogType.Error);
         };
 
-        // Глобальный перехват и подавление необработанных ошибок внутри асинхронных задач (Task)
         TaskScheduler.UnobservedTaskException += (sender, e) =>
         {
             Logger.Log($"КРИТИЧЕСКИЙ СБОЙ ЗАДАЧИ (UnobservedTaskException): {e.Exception?.Message}", LogType.Error);
-            e.SetObserved(); // Помечаем исключение как обработанное, предотвращая падение процесса
+            e.SetObserved(); 
         };
 
         // 3. Валидация необходимых графических файлов и шаблонов ДО старта всей системы
         if (!CheckRequiredFiles()) return;
 
-        Logger.Log("Бот успешно запущен.", LogType.Warning);
-        Logger.Log("Нажмите [ESC] в любой момент для плавной остановки.", LogType.Warning);
+        Logger.Log("Бот успешно запущен в фоновом режиме.", LogType.Warning);
 
         // 4. Запуск фонового низкоуровневого потока для непрерывного отслеживания управляющей клавиши ESC
         Thread inputThread = new(ListenForCancelKey) { IsBackground = true };
         inputThread.Start();
 
-        // 5. Инициализация и параллельный запуск многопоточной экосистемы игровых воркеров
+        // КОРРЕКЦИЯ ДЛЯ ШАГА 2: Настраиваем и запускаем встроенный веб-сервер Kestrel
+        // Мы вынесем конфигурацию роутов в отдельный метод ниже, чтобы не захламлять Main
+        var webApp = StartWebServer(args);
+
+        // КОРРЕКЦИЯ ДЛЯ ШАГА 1: Создаем иконку в трее вместо консольного окна
+        InitSystray();
+
+        // 5. Инициализация многопоточной экосистемы игровых воркеров
+        // ВНИМАНИЕ: По требованию №4 воркеры внутри StartMultiBotSystem() теперь 
+        // НЕ должны сразу вызывать свой метод .Start(), а просто создаваться в памяти!
         StartMultiBotSystem();
 
-        // 6. Ожидаем сигнала отмены от токена (блокируем главный поток, пока боты работают в ThreadPool)
-        try
-        {
-            _cts.Token.WaitHandle.WaitOne();
-        }
-        catch (Exception ex)
-        {
-            Logger.Log($"Критический сбой в главном потоке: {ex.Message}", LogType.Error);
-        }
+        // 6. КОРРЕКЦИЯ ОЖИДАНИЯ: Вместо блокировки потока запускаем цикл Windows, 
+        // который держит приложение живым в трее и обрабатывает клики мыши
+        Application.Run();
 
-        // 7. Программа выходит из ожидания. Потоки уже останавливаются методом ListenForCancelKey.
-        // Даем фиксированную задержку, чтобы фоновые потоки гарантированно успели дописать логи и сохранить файлы на диск.
+        // 7. Программа выходит из ожидания после закрытия через трей или ESC.
+        // Корректно тушим веб-сервер
+        webApp.StopAsync().Wait();
+
         Thread.Sleep(1000);
-
         Logger.Log("Бот остановлен. Сессия завершена.", LogType.Warning);
     }
 
     #endregion
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+#region StartWebServer
+
+    private static Microsoft.AspNetCore.Builder.WebApplication StartWebServer(string[] args)
+    {
+        // 1. Динамически вычисляем физический корень проекта на диске
+        string projectRoot = AppDomain.CurrentDomain.BaseDirectory;
+        
+        // Если мы запущены в режиме отладки внутри bin/Debug/..., 
+        // поднимаемся на 3 уровня вверх к исходникам проекта
+        if (projectRoot.Contains("bin"))
+        {
+            projectRoot = Path.GetFullPath(Path.Combine(projectRoot, "..", "..", ".."));
+        }
+
+        var builder = Microsoft.AspNetCore.Builder.WebApplication.CreateBuilder(new Microsoft.AspNetCore.Builder.WebApplicationOptions
+        {
+            Args = args,
+            // Явно привязываем контент-корень к исходной папке проекта
+            ContentRootPath = projectRoot
+        });
+
+        // Отключаем консольные логгеры .NET для фонового режима WinExe
+        builder.Logging.ClearProviders();
+
+        // Настраиваем Kestrel строго на локальный порт 5000
+        builder.WebHost.ConfigureKestrel(options =>
+        {
+            options.ListenLocalhost(5000);
+        });
+
+        // Включаем поддержку CORS, чтобы фронтенд мог слать запросы к API
+        builder.Services.AddCors(options =>
+        {
+            options.AddPolicy("AllowAll", policy =>
+            {
+                policy.AllowAnyOrigin()
+                      .AllowAnyMethod()
+                      .AllowAnyHeader();
+            });
+        });
+
+        // Регистрируем Менеджер Аккаунтов в DI-контейнер
+        builder.Services.AddSingleton<BotAccountManager>();
+
+        var app = builder.Build();
+
+        // Жестко задаем WebRootPath сервера на физическую папку wwwroot в проекте
+        app.Environment.WebRootPath = Path.Combine(projectRoot, "wwwroot");
+
+        // Настраиваем глобальные правила (CORS, файлы по умолчанию и статика)
+        app.UseCors("AllowAll");
+        app.UseDefaultFiles(); // Перенаправляет запрос "/" на "/index.html" автоматически
+        app.UseStaticFiles();  // Раздает файлы из переназначенного нами WebRootPath
+
+        // --- МАРШРУТЫ API ДЛЯ УПРАВЛЕНИЯ НАШИМ БОТОМ ---
+        var manager = app.Services.GetRequiredService<BotAccountManager>();
+
+        // Маршрут получения состояния (Вызывается каждую секунду из JS)
+        app.MapGet("/api/state", () => Microsoft.AspNetCore.Http.Results.Json(new {
+            Accounts = manager.GetAccountsState(),
+            Logs = Logger.GetLastLogs() // Наш логгер из 13 строк
+        }));
+
+        // Маршрут для обработки кликов по кнопкам Управления
+        app.MapPost("/api/control/{id:int}/{actionName}", (int id, string actionName) => {
+            manager.HandleCommand(id, actionName);
+            return Microsoft.AspNetCore.Http.Results.Ok();
+        });
+
+        // Маршрут для полной и безопасной остановки всей системы из браузера
+        app.MapPost("/api/system/shutdown", () => {
+            Logger.Log("Запрошено полное выключение системы через веб-интерфейс...", LogType.Warning);
+            
+            // 1. Сигнализируем всем фоновым потокам воркеров о необходимости остановиться
+            _cts.Cancel(); 
+            
+            // 2. Закрываем цикл Windows Forms (это вернет управление в конец Main, 
+            // где сработает авто-очистка adb.exe и корректно закроется Kestrel)
+            System.Windows.Forms.Application.Exit(); 
+            
+            return Microsoft.AspNetCore.Http.Results.Ok();
+        });
+
+        // Запуск веб-сервера на фоне (Task.Run) для полной совместимости с Application.Run в Main
+        Task.Run(async () => {
+            try
+            {
+                await app.RunAsync();
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Критическая ошибка веб-сервера Kestrel: {ex.Message}", LogType.Error);
+            }
+        });
+
+        // Автоматически открываем веб-интерфейс в браузере по умолчанию
+        string url = "http://localhost:5000";
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Не удалось автоматически открыть браузер: {ex.Message}", LogType.Error);
+        }
+
+        return app;
+    }
+
+
+
+
+#endregion
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+#region InitSystray
+
+    private static void InitSystray()
+    {
+        var contextMenu = new System.Windows.Forms.ContextMenuStrip();
+        
+        // Кнопка быстрого перехода в панель
+        contextMenu.Items.Add("Открыть веб-панель", null, (s, e) => {
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("http://localhost:5000") { UseShellExecute = true }); } catch { }
+        });
+        
+        contextMenu.Items.Add("-"); // Разделитель
+        
+        // Кнопка полного выхода
+        contextMenu.Items.Add("Выход из бота", null, (s, e) => {
+            Logger.Log("Запрошен выход из приложения через системный трей...", LogType.Warning);
+            
+            // Активируем токен отмены для каскадного тушения всех воркеров
+            _cts.Cancel(); 
+            
+            // Закрываем цикл обработки сообщений Windows Forms, возвращая управление в конец Main
+            System.Windows.Forms.Application.Exit(); 
+        });
+
+        var notifyIcon = new System.Windows.Forms.NotifyIcon
+        {
+            // Берем иконку, которую вы вшили в .csproj
+            Icon = System.Drawing.Icon.ExtractAssociatedIcon(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? System.Drawing.SystemIcons.Application,
+            ContextMenuStrip = contextMenu,
+            Text = $"EVE Echoes Bot v.0.01.002",
+            Visible = true
+        };
+
+        // Защищаем иконку от сборщика мусора, привязывая её к домену приложения
+        AppDomain.CurrentDomain.ProcessExit += (s, e) => notifyIcon.Visible = false;
+    }
+
+#endregion
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region Required Files Check
 
@@ -232,9 +415,9 @@ static partial class Program
     #endregion
 
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
-    #region Multi-Bot System Start
+    #region Start MultiBot System
 
     /// <summary>
     /// Производит чистый перезапуск сервера ADB, считывает глобальный конфигурационный файл,
@@ -284,7 +467,7 @@ static partial class Program
                 {
                     string targetDevice = $"127.0.0.1:{accountSettings.AdbPort}";
 
-                    // Коннектим эмулятор по порту, который вы нашли глазами в настройках BlueStacks/LDPlayer
+                    // Коннектим эмулятор по порту
                     Process.Start(new ProcessStartInfo(adbPath, $"connect {targetDevice}") { CreateNoWindow = true, UseShellExecute = false })?.WaitForExit();
 
                     // Включаем встроенную системную сетку Android для визуального контроля кликов бота
@@ -297,61 +480,52 @@ static partial class Program
                     Hwnd = hWnd
                 };
 
-                // ФОЛБЕК-ОПРОС: Если после десериализации статов поля системы или корабля остались пустыми — запрашиваем ввод у оператора
-                if (string.IsNullOrEmpty(bot._eveSystem) || bot._eveSystem == "???" ||
-                    string.IsNullOrEmpty(bot._eveShip) || bot._eveShip == "???")
+                // КОРРЕКЦИЯ: Убираем Console.ReadLine(), так как оконный режим WinExe не имеет консоли.
+                // Если данные не десериализовались, выставляем дефолт "Требуется ввод" — оператор заполнит это в веб-интерфейсе.
+                if (string.IsNullOrEmpty(bot._eveSystem) || bot._eveSystem == "???")
                 {
-                    Console.ResetColor();
-                    Console.ForegroundColor = ConsoleColor.Yellow;
-                    Console.WriteLine($"\n--- Дополнительная настройка для аккаунта [{accountSettings.Name}] ---");
-                    Console.ResetColor();
-
-                    // Опрашиваем звездную систему
-                    if (string.IsNullOrEmpty(bot._eveSystem) || bot._eveSystem == "???")
-                    {
-                        string sys = "";
-                        while (string.IsNullOrWhiteSpace(sys))
-                        {
-                            Console.Write("Введите текущую звездную систему (например, Jita): ");
-                            sys = Console.ReadLine()?.Trim() ?? "";
-                        }
-                        bot._eveSystem = sys;
-                    }
-
-                    // Опрашиваем тип игрового корабля
-                    if (string.IsNullOrEmpty(bot._eveShip) || bot._eveShip == "???")
-                    {
-                        string ship = "";
-                        while (string.IsNullOrWhiteSpace(ship))
-                        {
-                            Console.Write("Введите название корабля (например, Covetor II): ");
-                            ship = Console.ReadLine()?.Trim() ?? "";
-                        }
-                        bot._eveShip = ship;
-                    }
-
-                    Console.ForegroundColor = ConsoleColor.Green;
-                    Console.WriteLine("Данные успешно приняты!");
-                    Console.ResetColor();
+                    bot._eveSystem = "Требуется ввод";
+                }
+                if (string.IsNullOrEmpty(bot._eveShip) || bot._eveShip == "???")
+                {
+                    bot._eveShip = "Требуется ввод";
                 }
 
-                // Запускаем асинхронный воркер в ThreadPool, передавая токен отмены
-                bot.Start(_cts.Token);
+                // КОРРЕКЦИЯ: bot.Start(_cts.Token) здесь БОЛЬШЕ НЕ ВЫЗЫВАЕТСЯ.
+                // Бот просто добавляется в список инициализированных. Он ждет клика "Старт" на веб-странице.
                 _activeBots.Add(bot);
             }
 
-            Logger.Log($"Мультисистема успешно запущена. Аккаунтов в работе: {_activeBots.Count}", LogType.Info);
+            if (_activeBots.Count == 0)
+            {
+                var testSettings = new AccSettings 
+                { 
+                    Name = "Тестовый Шахтер (Эмулятор выкл)", 
+                    WindowTitle = "Симуляция" 
+                };
+                var testBot = new ActiveBotAccount(testSettings)
+                {
+                    _eveSystem = "Jita",
+                    _eveShip = "Covetor II",
+                    _inSpace = true,
+                    _currenttarget = "Астероидный пояс #1"
+                };
+                _activeBots.Add(testBot);
+            }
+
+            Logger.Log($"Мультисистема инициализирована. Аккаунтов загружено: {_activeBots.Count}. Ожидание команды Старт из веб-панели.", LogType.Info);
         }
         catch (Exception ex)
         {
             Logger.Log($"Критический сбой при запуске мультисистемы: {ex.Message}", LogType.Error);
-            _cts.Cancel(); // Сворачиваем запуск в случае непредвиденного системного исключения
+            _cts.Cancel(); 
         }
     }
 
+
     #endregion
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
 #region Stop Bot
 
@@ -392,7 +566,7 @@ static partial class Program
 
 #endregion
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
 #region ListenForCancelKey
 
@@ -407,6 +581,14 @@ static partial class Program
     {
         while (!_cts.Token.IsCancellationRequested)
         {
+            // КОРРЕКЦИЯ ДЛЯ WinExe: Если консоль отсутствует или ввод перенаправлен,
+            // мы не опрашиваем клавиши, а просто держим поток живым до отмены через _cts
+            if (Console.IsInputRedirected)
+            {
+                Thread.Sleep(500); // Увеличиваем задержку в фоне для экономии процессора
+                continue;
+            }
+
             if (Console.KeyAvailable)
             {
                 ConsoleKey pressedKey = Console.ReadKey(true).Key;
@@ -418,7 +600,7 @@ static partial class Program
                     StopMultiBotSystem();
                     break;
                 }
-                // СЦЕНАРИЙ 2: Нажата строго клавиша F10 — экстренный дамп экранов для анализа сбоя перед выходом
+                // СЦЕНАРИЙ 2: Нажата строго клавиша F10 — экстренный дамп экранов
                 else if (pressedKey == ConsoleKey.F10)
                 {
                     Logger.Log("Обнаружено нажатие [F10]. Создание экстренных снимков экрана и запуск остановки.", LogType.Warning);
@@ -429,12 +611,10 @@ static partial class Program
                     {
                         Directory.CreateDirectory(debugDir);
 
-                        // Безопасно итерируемся по копии списка живых аккаунтов
                         foreach (var bot in _activeBots.ToList())
                         {
                             if (bot.Hwnd == IntPtr.Zero) continue;
 
-                            // Захватываем текущую графическую матрицу эмулятора через GDI
                             using OpenCvSharp.Mat? screenshot = Tools.CaptureWindow(bot.Hwnd);
 
                             if (screenshot?.Empty() is false && screenshot.Width > 0 && screenshot.Height > 0)
@@ -443,7 +623,6 @@ static partial class Program
                                 string fileName = $"{bot.Settings.Name}_F10_Emergency_{timestamp}.png";
                                 string fullPath = Path.Combine(debugDir, fileName);
 
-                                // Сохраняем аварийный кадр на диск для дебага логики стендингов или чата
                                 OpenCvSharp.Cv2.ImWrite(fullPath, screenshot);
                                 Logger.Log($"Снимок экрана для аккаунта '{bot.Settings.Name}' сохранен: {fileName}", LogType.Warning);
                             }
@@ -454,7 +633,6 @@ static partial class Program
                         Logger.Log($"Не удалось выполнить экстренное сохранение снимков: {ex.Message}", LogType.Warning);
                     }
 
-                    // После сбора улик вызываем каскадное тушение потоков
                     StopMultiBotSystem();
                     break;
                 }
@@ -465,9 +643,10 @@ static partial class Program
         }
     }
 
+
 #endregion
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region ClickTo Extension
 
@@ -502,7 +681,7 @@ static partial class Program
 
 }
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
 #region MEMO
 
@@ -514,7 +693,7 @@ static partial class Program
 
 **Текущие ключевые компоненты:**
 1. `ScenarioFactory` (static) — фабрика сборки BT (`BuildLocalWatcherTree()` и `BuildMinerTree()`). Поддерживает фолбек `BuildDefaultFallbackTree()`.
-2. `ActiveBotAccount` (partial) — основной класс аккаунта. Хранит свойства стейта: `_inSpace`, `_currenttarget`, `AccountTask CurrentTask` (enum), а также флаги `IsWarping`, `HasTarget`, `AreLasersActive`, `IsInMiningZone`.
+2. `ActiveBotAccount` (partial) — основной класс аккаунта. Хранит свойства стейта: `_inSpace`, `_currenttarget`, `AccountTask CurrentTask` (enum), а также флаги `_iswarping`, `_hastarget`, `_weaponryactive`, `IsInMiningZone`.
 3. `AccountStateDto` — объект для синхронизации и сохранения стейта в JSON под `lock (_taskLock)`.
 4. `RunLoopAsync` — рабочий цикл с адаптивными тиками (1 сек в состоянии `Running` для быстрой реакции на угрозы, 5 сек в простое).
 5. `OcrService` — сервис локального OCR (пакет `TesseractOCR`, параллельный движок `"eng+rus"` из `resources`, чтение через `TesseractOCR.Pix.Image.LoadFromMemory`).
