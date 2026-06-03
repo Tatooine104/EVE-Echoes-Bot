@@ -1,220 +1,192 @@
-﻿Дата;Версия;Тип;Аккаунт;Система;Корабль;Метод;Сообщение;
-01.06.2026 18:58;v.0.01.000;Warning;System;System;Unknown;Main;Бот успешно запущен.;
-01.06.2026 18:58;v.0.01.000;Warning;System;System;Unknown;Main;Нажмите [ESC] в любой момент для плавной остановки.;
-01.06.2026 18:58;v.0.01.000;Info;System;System;Unknown;StartMultiBotSystem;Мультисистема запущена. Аккаунтов в работе: 1;
-01.06.2026 18:58;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Поток запущен. Начало работы по сценарию: 'LocalWatcher'.;
-01.06.2026 18:58;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;IsSaveLocal;Стартовая инициализация: система безопасна. Мониторинг запущен.;
-01.06.2026 19:00;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка.;
-01.06.2026 19:02;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Интерфейс чата не открылся. Повторная попытка клика.;
-01.06.2026 19:02;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка.;
-01.06.2026 19:17;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Интерфейс чата не открылся. Повторная попытка клика.;
-01.06.2026 19:17;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка.;
-01.06.2026 19:18;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Интерфейс чата не открылся. Повторная попытка клика.;
-01.06.2026 19:19;v.0.01.000;Warning;System;System;Unknown;ListenForCancelKey;Обнаружено нажатие [ESC]. Запуск остановки всех аккаунтов.;
-01.06.2026 19:19;v.0.01.000;Warning;System;System;Unknown;StopMultiBotSystem;Всем фоновым потокам отправлен сигнал остановки. Ожидание завершения...;
-01.06.2026 19:19;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Получен сигнал остановки. Фиксация состояния.;
-01.06.2026 19:19;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Состояние сохранено на диск. Рабочий поток остановлен. Время работы в сессии (сек): 1226;
-01.06.2026 19:19;v.0.01.000;Warning;System;System;Unknown;Main;Бот остановлен. Сессия завершена.;
-01.06.2026 19:20;v.0.01.000;Warning;System;System;Unknown;Main;Бот успешно запущен.;
-01.06.2026 19:20;v.0.01.000;Warning;System;System;Unknown;Main;Нажмите [ESC] в любой момент для плавной остановки.;
-01.06.2026 19:20;v.0.01.000;Info;System;System;Unknown;StartMultiBotSystem;Мультисистема запущена. Аккаунтов в работе: 1;
-01.06.2026 19:20;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Поток запущен. Начало работы по сценарию: 'LocalWatcher'.;
-01.06.2026 19:20;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;IsSaveLocal;Стартовая инициализация: система безопасна. Мониторинг запущен.;
-01.06.2026 19:32;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Интерфейс чата не открылся. Повторная попытка клика.;
-01.06.2026 19:35;v.0.01.000;Warning;System;System;Unknown;ListenForCancelKey;Обнаружено нажатие [ESC]. Запуск остановки всех аккаунтов.;
-01.06.2026 19:35;v.0.01.000;Warning;System;System;Unknown;StopMultiBotSystem;Всем фоновым потокам отправлен сигнал остановки. Ожидание завершения...;
-01.06.2026 19:35;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Получен сигнал остановки. Фиксация состояния.;
-01.06.2026 19:35;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Состояние сохранено на диск. Рабочий поток остановлен. Время работы в сессии (сек): 858;
-01.06.2026 19:35;v.0.01.000;Warning;System;System;Unknown;Main;Бот остановлен. Сессия завершена.;
-01.06.2026 19:47;v.0.01.000;Warning;System;System;Unknown;Main;Бот успешно запущен.;
-01.06.2026 19:47;v.0.01.000;Warning;System;System;Unknown;Main;Нажмите [ESC] в любой момент для плавной остановки.;
-01.06.2026 19:47;v.0.01.000;Info;System;System;Unknown;StartMultiBotSystem;Мультисистема запущена. Аккаунтов в работе: 1;
-01.06.2026 19:47;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Поток запущен. Начало работы по сценарию: 'LocalWatcher'.;
-01.06.2026 19:47;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;IsSaveLocal;Стартовая инициализация: система безопасна. Мониторинг запущен.;
-01.06.2026 19:47;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Интерфейс чата не открылся. Повторная попытка клика.;
-01.06.2026 20:03;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Интерфейс чата не открылся. Повторная попытка клика.;
-01.06.2026 20:18;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Интерфейс чата не открылся. Повторная попытка клика.;
-01.06.2026 20:22;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Интерфейс чата не открылся. Повторная попытка клика.;
-01.06.2026 20:33;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Интерфейс чата не открылся. Повторная попытка клика.;
-01.06.2026 20:48;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Интерфейс чата не открылся. Повторная попытка клика.;
-01.06.2026 21:03;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Интерфейс чата не открылся. Повторная попытка клика.;
-01.06.2026 21:21;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Интерфейс чата не открылся. Повторная попытка клика.;
-01.06.2026 21:36;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Интерфейс чата не открылся. Повторная попытка клика.;
-01.06.2026 21:51;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Интерфейс чата не открылся. Повторная попытка клика.;
-01.06.2026 21:52;v.0.01.000;Warning;System;System;Unknown;ListenForCancelKey;Обнаружено нажатие [ESC]. Запуск остановки всех аккаунтов.;
-01.06.2026 21:52;v.0.01.000;Warning;System;System;Unknown;StopMultiBotSystem;Всем фоновым потокам отправлен сигнал остановки. Ожидание завершения...;
-01.06.2026 21:52;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Получен сигнал остановки. Фиксация состояния.;
-01.06.2026 21:52;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Состояние сохранено на диск. Рабочий поток остановлен. Время работы в сессии (сек): 7474;
-01.06.2026 21:52;v.0.01.000;Warning;System;System;Unknown;Main;Бот остановлен. Сессия завершена.;
-02.06.2026 6:48;v.0.01.000;Warning;System;System;Unknown;Main;Бот успешно запущен.;
-02.06.2026 6:48;v.0.01.000;Warning;System;System;Unknown;Main;Нажмите [ESC] в любой момент для плавной остановки.;
-02.06.2026 6:48;v.0.01.000;Info;System;System;Unknown;StartMultiBotSystem;Мультисистема запущена. Аккаунтов в работе: 1;
-02.06.2026 6:48;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Поток запущен. Начало работы по сценарию: 'LocalWatcher'.;
-02.06.2026 6:48;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;IsSaveLocal;Стартовая инициализация: система безопасна. Мониторинг запущен.;
-02.06.2026 8:01;v.0.01.000;Warning;System;System;Unknown;ListenForCancelKey;Обнаружено нажатие [ESC]. Запуск остановки всех аккаунтов.;
-02.06.2026 8:01;v.0.01.000;Warning;System;System;Unknown;StopMultiBotSystem;Всем фоновым потокам отправлен сигнал остановки. Ожидание завершения...;
-02.06.2026 8:01;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Получен сигнал остановки. Фиксация состояния.;
-02.06.2026 8:01;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Состояние сохранено на диск. Рабочий поток остановлен. Время работы в сессии (сек): 4328;
-02.06.2026 8:01;v.0.01.000;Warning;System;System;Unknown;Main;Бот остановлен. Сессия завершена.;
-02.06.2026 18:25;v.0.01.000;Warning;System;System;Unknown;Main;Бот успешно запущен.;
-02.06.2026 18:25;v.0.01.000;Warning;System;System;Unknown;Main;Нажмите [ESC] в любой момент для плавной остановки.;
-02.06.2026 18:25;v.0.01.000;Info;System;System;Unknown;StartMultiBotSystem;Мультисистема успешно запущена. Аккаунтов в работе: 1;
-02.06.2026 18:25;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Поток запущен. Начало работы по Дереву поведения: 'LocalWatcher'.;
-02.06.2026 18:25;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;IsSaveLocal;Стартовая инициализация: система безопасна. Мониторинг запущен.;
-02.06.2026 18:45;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;RunLocalCheck;ВНИМАНИЕ: Найдено маркеров безопасности: 2 из 3. Фиксация угрозы!;
-02.06.2026 18:45;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;IsSaveLocal;ВНИМАНИЕ! Фиксация угрозы в системе.;
-02.06.2026 18:45;v.0.01.000;Error;Lana Muc;Z-K495;Covetor II;IsSaveLocal;Отправка оповещения: в системе обнаружен противник.;
-02.06.2026 18:45;v.0.01.000;Info;Lana Muc;Unknown;Unknown;ClearTasks;Очередь задач экстренно очищена.;
-02.06.2026 18:45;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Корабль в безопасности (станция/цитадель). Эвакуация не требуется.;
-02.06.2026 18:45;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Этот аккаунт обнаружил угрозу. Задача оповещения добавлена в очередь.;
-02.06.2026 18:45;v.0.01.000;Warning;Lana Muc;Unknown;Unknown;BuildLocalWatcherTree;Обнаружен противник! Активация цепочки кликов оповещения.;
-02.06.2026 18:45;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;RunAliChatWarningAsync;Интерфейс чата не открылся. Повторная попытка клика.;
-02.06.2026 18:45;v.0.01.000;Error;Lana Muc;Z-K495;Covetor II;RunAliChatWarningAsync;Шаблоны чата не обнаружены после повторного клика. Проверьте координаты 'ChatsInterface' в 'GameUi'.;
-02.06.2026 18:45;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Корабль в безопасности (станция/цитадель). Эвакуация не требуется.;
-02.06.2026 18:46;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;IsSaveLocal;Статус системы изменился на БЕЗОПАСНО. Враги покинули систему.;
-02.06.2026 20:24;v.0.01.000;Warning;System;System;Unknown;ListenForCancelKey;Обнаружено нажатие [ESC]. Запуск остановки всех аккаунтов.;
-02.06.2026 20:24;v.0.01.000;Warning;System;System;Unknown;StopMultiBotSystem;Всем фоновым потокам отправлен сигнал остановки. Ожидание завершения...;
-02.06.2026 20:24;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Получен сигнал остановки аккаунта. Фиксация состояния дерева.;
-02.06.2026 20:24;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Состояние сохранено на диск. Поток дерева поведения остановлен. Время работы в сессии (сек): 7103;
-02.06.2026 20:24;v.0.01.000;Warning;System;System;Unknown;Main;Бот остановлен. Сессия завершена.;
-02.06.2026 20:25;v.0.01.001;Warning;System;System;Unknown;Main;Бот успешно запущен.;
-02.06.2026 20:25;v.0.01.001;Warning;System;System;Unknown;Main;Нажмите [ESC] в любой момент для плавной остановки.;
-02.06.2026 20:25;v.0.01.001;Info;System;System;Unknown;StartMultiBotSystem;Мультисистема успешно запущена. Аккаунтов в работе: 1;
-02.06.2026 20:25;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Поток запущен. Начало работы по Дереву поведения: 'LocalWatcher'.;
-02.06.2026 20:25;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;IsSaveLocal;Стартовая инициализация: система безопасна. Мониторинг запущен.;
-02.06.2026 21:02;v.0.01.001;Warning;System;System;Unknown;ListenForCancelKey;Обнаружено нажатие [ESC]. Запуск остановки всех аккаунтов.;
-02.06.2026 21:02;v.0.01.001;Warning;System;System;Unknown;StopMultiBotSystem;Всем фоновым потокам отправлен сигнал остановки. Ожидание завершения...;
-02.06.2026 21:02;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Получен сигнал остановки аккаунта. Фиксация состояния дерева.;
-02.06.2026 21:02;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Состояние сохранено на диск. Поток дерева поведения остановлен. Время работы в сессии (сек): 2247;
-02.06.2026 21:02;v.0.01.001;Warning;System;System;Unknown;Main;Бот остановлен. Сессия завершена.;
-02.06.2026 21:04;v.0.01.001;Warning;System;System;Unknown;Main;Бот успешно запущен.;
-02.06.2026 21:04;v.0.01.001;Warning;System;System;Unknown;Main;Нажмите [ESC] в любой момент для плавной остановки.;
-02.06.2026 21:04;v.0.01.001;Info;System;System;Unknown;StartMultiBotSystem;Мультисистема успешно запущена. Аккаунтов в работе: 1;
-02.06.2026 21:04;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Поток запущен. Начало работы по Дереву поведения: 'LocalWatcher'.;
-02.06.2026 21:04;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;IsSaveLocal;Стартовая инициализация: система безопасна. Мониторинг запущен.;
-02.06.2026 21:42;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.;!
-02.06.2026 21:42;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Корабль в безопасности (станция/цитадель). Эвакуация не требуется.;
-02.06.2026 21:42;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.;
-02.06.2026 21:42;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Корабль в безопасности (станция/цитадель). Эвакуация не требуется.;
-02.06.2026 21:42;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.;
-02.06.2026 21:42;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Корабль в безопасности (станция/цитадель). Эвакуация не требуется.;
-02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.;
-02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Корабль в безопасности (станция/цитадель). Эвакуация не требуется.;
-02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.;
-02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Корабль в безопасности (станция/цитадель). Эвакуация не требуется.;
-02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.;
-02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Корабль в безопасности (станция/цитадель). Эвакуация не требуется.;
-02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.;
-02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Корабль в безопасности (станция/цитадель). Эвакуация не требуется.;
-02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.;
-02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Корабль в безопасности (станция/цитадель). Эвакуация не требуется.;
-02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.;
-02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Корабль в безопасности (станция/цитадель). Эвакуация не требуется.;
-02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.;
-02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Корабль в безопасности (станция/цитадель). Эвакуация не требуется.;
-02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.;
-02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Корабль в безопасности (станция/цитадель). Эвакуация не требуется.;
-02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.;
-02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Корабль в безопасности (станция/цитадель). Эвакуация не требуется.;
-02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.;
-02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Корабль в безопасности (станция/цитадель). Эвакуация не требуется.;
-02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.;
-02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Корабль в безопасности (станция/цитадель). Эвакуация не требуется.;
-02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.;
-02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Корабль в безопасности (станция/цитадель). Эвакуация не требуется.;
-02.06.2026 21:43;v.0.01.001;Warning;System;System;Unknown;ListenForCancelKey;Обнаружено нажатие [ESC]. Запуск остановки всех аккаунтов.;
-02.06.2026 21:43;v.0.01.001;Warning;System;System;Unknown;StopMultiBotSystem;Всем фоновым потокам отправлен сигнал остановки. Ожидание завершения...;
-02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Получен сигнал остановки аккаунта. Фиксация состояния дерева.;
-02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Состояние сохранено на диск. Поток дерева поведения остановлен. Время работы в сессии (сек): 2368;
-02.06.2026 21:43;v.0.01.001;Warning;System;System;Unknown;Main;Бот остановлен. Сессия завершена.;
-02.06.2026 21:56;v.0.01.001;Warning;System;System;Unknown;Main;Бот успешно запущен.;
-02.06.2026 21:56;v.0.01.001;Warning;System;System;Unknown;Main;Нажмите [ESC] в любой момент для плавной остановки.;
-02.06.2026 21:56;v.0.01.001;Info;System;System;Unknown;StartMultiBotSystem;Мультисистема успешно запущена. Аккаунтов в работе: 1;
-02.06.2026 21:56;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Поток запущен. Начало работы по Дереву поведения: 'LocalWatcher'.;
-02.06.2026 21:56;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;IsSaveLocal;Стартовая инициализация: система безопасна. Мониторинг запущен.;
-02.06.2026 22:14;v.0.01.001;Warning;System;System;Unknown;ListenForCancelKey;Обнаружено нажатие [ESC]. Запуск остановки всех аккаунтов.;
-02.06.2026 22:14;v.0.01.001;Warning;System;System;Unknown;StopMultiBotSystem;Всем фоновым потокам отправлен сигнал остановки. Ожидание завершения...;
-02.06.2026 22:14;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Получен сигнал остановки аккаунта. Фиксация состояния дерева.;
-02.06.2026 22:14;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Состояние сохранено на диск. Поток дерева поведения остановлен. Время работы в сессии (сек): 1023;
-02.06.2026 22:14;v.0.01.001;Warning;System;System;Unknown;Main;Бот остановлен. Сессия завершена.;
-2026.06.03 08:02:53;v.0.01.001;Warning;System;System;Unknown;Main;Бот успешно запущен.
-2026.06.03 08:02:53;v.0.01.001;Warning;System;System;Unknown;Main;Нажмите [ESC] в любой момент для плавной остановки.
-2026.06.03 08:02:58;v.0.01.001;Info;System;System;Unknown;StartMultiBotSystem;Мультисистема успешно запущена. Аккаунтов в работе: 1
-2026.06.03 08:02:58;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Поток запущен. Начало работы по Дереву поведения: 'LocalWatcher'.
-2026.06.03 08:02:59;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;IsSaveLocal;Стартовая инициализация: система безопасна. Мониторинг запущен.
-2026.06.03 08:26:42;v.0.01.001;Warning;System;System;Unknown;ListenForCancelKey;Обнаружено нажатие [ESC]. Запуск остановки всех аккаунтов.
-2026.06.03 08:26:42;v.0.01.001;Warning;System;System;Unknown;StopMultiBotSystem;Всем фоновым потокам отправлен сигнал остановки. Ожидание завершения...
-2026.06.03 08:26:42;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Получен сигнал остановки аккаунта. Фиксация состояния дерева.
-2026.06.03 08:26:42;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Состояние сохранено на диск. Поток дерева поведения остановлен. Время работы в сессии (сек): 1424
-2026.06.03 08:26:43;v.0.01.001;Warning;System;System;Unknown;Main;Бот остановлен. Сессия завершена.
-2026.06.03 16:09:14;v.0.01.002;Warning;System;System;Unknown;Main;Бот успешно запущен в фоновом режиме.
-2026.06.03 16:09:14;v.0.01.002;Error;System;System;Unknown;Main;КРИТИЧЕСКИЙ СБОЙ СИСТЕМЫ (UnhandledException): System.InvalidOperationException: Cannot see if a key has been pressed when either application does not have a console or when console input has been redirected from a file. Try Console.In.Peek.
-   at System.Console.get_KeyAvailable()
-   at EVEEchoesBot.Program.ListenForCancelKey()
-   at System.Threading.Thread.StartCallback()
-2026.06.03 16:10:15;v.0.01.002;Warning;System;System;Unknown;Main;Бот успешно запущен в фоновом режиме.
-2026.06.03 16:10:15;v.0.01.002;Error;System;System;Unknown;Main;КРИТИЧЕСКИЙ СБОЙ СИСТЕМЫ (UnhandledException): System.InvalidOperationException: Cannot see if a key has been pressed when either application does not have a console or when console input has been redirected from a file. Try Console.In.Peek.
-   at System.Console.get_KeyAvailable()
-   at EVEEchoesBot.Program.ListenForCancelKey()
-   at System.Threading.Thread.StartCallback()
-2026.06.03 16:11:02;v.0.01.002;Warning;System;System;Unknown;Main;Бот успешно запущен в фоновом режиме.
-2026.06.03 16:11:02;v.0.01.002;Error;System;System;Unknown;Main;КРИТИЧЕСКИЙ СБОЙ СИСТЕМЫ (UnhandledException): System.InvalidOperationException: Cannot see if a key has been pressed when either application does not have a console or when console input has been redirected from a file. Try Console.In.Peek.
-   at System.Console.get_KeyAvailable()
-   at EVEEchoesBot.Program.ListenForCancelKey()
-   at System.Threading.Thread.StartCallback()
-2026.06.03 16:12:44;v.0.01.002;Warning;System;System;Unknown;Main;Бот успешно запущен в фоновом режиме.
-2026.06.03 16:12:44;v.0.01.002;Error;System;System;Unknown;Main;КРИТИЧЕСКИЙ СБОЙ СИСТЕМЫ (UnhandledException): System.InvalidOperationException: Cannot see if a key has been pressed when either application does not have a console or when console input has been redirected from a file. Try Console.In.Peek.
-   at System.Console.get_KeyAvailable()
-   at EVEEchoesBot.Program.ListenForCancelKey()
-   at System.Threading.Thread.StartCallback()
-2026.06.03 16:15:08;v.0.01.002;Warning;System;System;Unknown;Main;Бот успешно запущен в фоновом режиме.
-2026.06.03 16:15:09;v.0.01.002;Error;System;System;Unknown;Main;КРИТИЧЕСКИЙ СБОЙ СИСТЕМЫ (UnhandledException): System.InvalidOperationException: Cannot see if a key has been pressed when either application does not have a console or when console input has been redirected from a file. Try Console.In.Peek.
-   at System.Console.get_KeyAvailable()
-   at EVEEchoesBot.Program.ListenForCancelKey()
-   at System.Threading.Thread.StartCallback()
-2026.06.03 16:16:05;v.0.01.002;Warning;System;System;Unknown;Main;Бот успешно запущен в фоновом режиме.
-2026.06.03 16:16:12;v.0.01.002;Error;System;System;Unknown;StartMultiBotSystem;Окно 'BlueStacks_EVE.01' для аккаунта 'Lana Muc' не найдено в ОС.
-2026.06.03 16:16:12;v.0.01.002;Info;System;System;Unknown;StartMultiBotSystem;Мультисистема инициализирована. Аккаунтов загружено: 0. Ожидание команды Старт из веб-панели.
-2026.06.03 16:18:49;v.0.01.002;Warning;System;System;Unknown;ListenForCancelKey;Обнаружено нажатие [ESC]. Запуск остановки всех аккаунтов.
-2026.06.03 16:18:49;v.0.01.002;Warning;System;System;Unknown;StopMultiBotSystem;Всем фоновым потокам отправлен сигнал остановки. Ожидание завершения...
-2026.06.03 16:18:51;v.0.01.002;Warning;System;System;Unknown;StopMultiBotSystem;Список активных аккаунтов очищен. Система полностью остановлена.
-2026.06.03 16:20:46;v.0.01.002;Warning;System;System;Unknown;Main;Бот успешно запущен в фоновом режиме.
-2026.06.03 16:20:46;v.0.01.002;Error;System;System;Unknown;Main;КРИТИЧЕСКИЙ СБОЙ СИСТЕМЫ (UnhandledException): System.InvalidOperationException: Cannot see if a key has been pressed when either application does not have a console or when console input has been redirected from a file. Try Console.In.Peek.
-   at System.Console.get_KeyAvailable()
-   at EVEEchoesBot.Program.ListenForCancelKey()
-   at System.Threading.Thread.StartCallback()
-2026.06.03 16:23:34;v.0.01.002;Warning;System;System;Unknown;Main;Бот успешно запущен в фоновом режиме.
-2026.06.03 16:23:38;v.0.01.002;Error;System;System;Unknown;StartMultiBotSystem;Окно 'BlueStacks_EVE.01' для аккаунта 'Lana Muc' не найдено в ОС.
-2026.06.03 16:23:38;v.0.01.002;Info;System;System;Unknown;StartMultiBotSystem;Мультисистема инициализирована. Аккаунтов загружено: 0. Ожидание команды Старт из веб-панели.
-2026.06.03 16:23:48;v.0.01.002;Warning;System;System;Unknown;InitSystray;Запрошен выход из приложения через системный трей...
-2026.06.03 16:23:49;v.0.01.002;Warning;System;System;Unknown;Main;Бот остановлен. Сессия завершена.
-2026.06.03 16:27:22;v.0.01.002;Warning;System;System;Unknown;Main;Бот успешно запущен в фоновом режиме.
-2026.06.03 16:27:28;v.0.01.002;Error;System;System;Unknown;StartMultiBotSystem;Окно 'BlueStacks_EVE.01' для аккаунта 'Lana Muc' не найдено в ОС.
-2026.06.03 16:27:28;v.0.01.002;Info;System;System;Unknown;StartMultiBotSystem;Мультисистема инициализирована. Аккаунтов загружено: 0. Ожидание команды Старт из веб-панели.
-2026.06.03 16:27:36;v.0.01.002;Warning;System;System;Unknown;InitSystray;Запрошен выход из приложения через системный трей...
-2026.06.03 16:27:37;v.0.01.002;Warning;System;System;Unknown;Main;Бот остановлен. Сессия завершена.
-2026.06.03 16:31:11;v.0.01.002;Warning;System;System;Unknown;Main;Бот успешно запущен в фоновом режиме.
-2026.06.03 16:31:17;v.0.01.002;Error;System;System;Unknown;StartMultiBotSystem;Окно 'BlueStacks_EVE.01' для аккаунта 'Lana Muc' не найдено в ОС.
-2026.06.03 16:31:17;v.0.01.002;Info;System;System;Unknown;StartMultiBotSystem;Мультисистема инициализирована. Аккаунтов загружено: 0. Ожидание команды Старт из веб-панели.
-2026.06.03 16:33:45;v.0.01.002;Warning;System;System;Unknown;InitSystray;Запрошен выход из приложения через системный трей...
-2026.06.03 16:33:46;v.0.01.002;Warning;System;System;Unknown;Main;Бот остановлен. Сессия завершена.
-2026.06.03 16:33:55;v.0.01.002;Warning;System;System;Unknown;Main;Бот успешно запущен в фоновом режиме.
-2026.06.03 16:34:00;v.0.01.002;Error;System;System;Unknown;StartMultiBotSystem;Окно 'BlueStacks_EVE.01' для аккаунта 'Lana Muc' не найдено в ОС.
-2026.06.03 16:34:00;v.0.01.002;Info;System;System;Unknown;StartMultiBotSystem;Мультисистема инициализирована. Аккаунтов загружено: 1. Ожидание команды Старт из веб-панели.
-2026.06.03 16:34:07;v.0.01.002;Warning;System;System;Unknown;InitSystray;Запрошен выход из приложения через системный трей...
-2026.06.03 16:34:09;v.0.01.002;Warning;System;System;Unknown;Main;Бот остановлен. Сессия завершена.
-2026.06.03 16:34:19;v.0.01.002;Warning;System;System;Unknown;Main;Бот успешно запущен в фоновом режиме.
-2026.06.03 16:34:30;v.0.01.002;Error;System;System;Unknown;StartMultiBotSystem;Окно 'BlueStacks_EVE.01' для аккаунта 'Lana Muc' не найдено в ОС.
-2026.06.03 16:34:30;v.0.01.002;Info;System;System;Unknown;StartMultiBotSystem;Мультисистема инициализирована. Аккаунтов загружено: 1. Ожидание команды Старт из веб-панели.
-2026.06.03 16:35:45;v.0.01.002;Warning;System;System;Unknown;InitSystray;Запрошен выход из приложения через системный трей...
-2026.06.03 16:35:46;v.0.01.002;Warning;System;System;Unknown;Main;Бот остановлен. Сессия завершена.
-2026.06.03 16:38:09;v.0.01.002;Warning;System;System;Unknown;Main;Бот успешно запущен в фоновом режиме.
-2026.06.03 16:38:14;v.0.01.002;Error;System;System;Unknown;StartMultiBotSystem;Окно 'BlueStacks_EVE.01' для аккаунта 'Lana Muc' не найдено в ОС.
-2026.06.03 16:38:14;v.0.01.002;Info;System;System;Unknown;StartMultiBotSystem;Мультисистема инициализирована. Аккаунтов загружено: 1. Ожидание команды Старт из веб-панели.
-2026.06.03 16:39:48;v.0.01.002;Warning;System;System;Unknown;InitSystray;Запрошен выход из приложения через системный трей...
-2026.06.03 16:39:49;v.0.01.002;Warning;System;System;Unknown;Main;Бот остановлен. Сессия завершена.
-2026.06.03 16:43:47;v.0.01.002;Warning;System;System;Unknown;Main;Бот успешно запущен в фоновом режиме.
-2026.06.03 16:43:52;v.0.01.002;Error;System;System;Unknown;StartMultiBotSystem;Окно 'BlueStacks_EVE.01' для аккаунта 'Lana Muc' не найдено в ОС.
-2026.06.03 16:43:52;v.0.01.002;Info;System;System;Unknown;StartMultiBotSystem;Мультисистема инициализирована. Аккаунтов загружено: 1. Ожидание команды Старт из веб-панели.
-2026.06.03 16:44:18;v.0.01.002;Warning;System;System;Unknown;StartWebServer;Запрошено полное выключение системы через веб-интерфейс...
-2026.06.03 16:44:19;v.0.01.002;Warning;System;System;Unknown;Main;Бот остановлен. Сессия завершена.
+﻿Дата;Версия;Тип;Аккаунт;Система;Корабль;Метод;Сообщение
+01.06.2026 18:58;v.0.01.000;Warning;System;System;Unknown;Main;Бот успешно запущен.
+01.06.2026 18:58;v.0.01.000;Warning;System;System;Unknown;Main;Нажмите [ESC] в любой момент для плавной остановки.
+01.06.2026 18:58;v.0.01.000;Info;System;System;Unknown;StartMultiBotSystem;Мультисистема запущена. Аккаунтов в работе: 1
+01.06.2026 18:58;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Поток запущен. Начало работы по сценарию: 'LocalWatcher'.
+01.06.2026 18:58;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;IsSaveLocal;Стартовая инициализация: система безопасна. Мониторинг запущен.
+01.06.2026 19:00;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка.
+01.06.2026 19:02;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Интерфейс чата не открылся. Повторная попытка клика.
+01.06.2026 19:02;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка.
+01.06.2026 19:17;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Интерфейс чата не открылся. Повторная попытка клика.
+01.06.2026 19:17;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка.
+01.06.2026 19:18;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Интерфейс чата не открылся. Повторная попытка клика.
+01.06.2026 19:19;v.0.01.000;Warning;System;System;Unknown;ListenForCancelKey;Обнаружено нажатие [ESC]. Запуск остановки всех аккаунтов.
+01.06.2026 19:19;v.0.01.000;Warning;System;System;Unknown;StopMultiBotSystem;Всем фоновым потокам отправлен сигнал остановки. Ожидание завершения...
+01.06.2026 19:19;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Получен сигнал остановки. Фиксация состояния.
+01.06.2026 19:19;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Состояние сохранено на диск. Рабочий поток остановлен. Время работы в сессии (сек): 1226
+01.06.2026 19:19;v.0.01.000;Warning;System;System;Unknown;Main;Бот остановлен. Сессия завершена.
+01.06.2026 19:20;v.0.01.000;Warning;System;System;Unknown;Main;Бот успешно запущен.
+01.06.2026 19:20;v.0.01.000;Warning;System;System;Unknown;Main;Нажмите [ESC] в любой момент для плавной остановки.
+01.06.2026 19:20;v.0.01.000;Info;System;System;Unknown;StartMultiBotSystem;Мультисистема запущена. Аккаунтов в работе: 1
+01.06.2026 19:20;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Поток запущен. Начало работы по сценарию: 'LocalWatcher'.
+01.06.2026 19:20;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;IsSaveLocal;Стартовая инициализация: система безопасна. Мониторинг запущен.
+01.06.2026 19:32;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Интерфейс чата не открылся. Повторная попытка клика.
+01.06.2026 19:35;v.0.01.000;Warning;System;System;Unknown;ListenForCancelKey;Обнаружено нажатие [ESC]. Запуск остановки всех аккаунтов.
+01.06.2026 19:35;v.0.01.000;Warning;System;System;Unknown;StopMultiBotSystem;Всем фоновым потокам отправлен сигнал остановки. Ожидание завершения...
+01.06.2026 19:35;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Получен сигнал остановки. Фиксация состояния.
+01.06.2026 19:35;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Состояние сохранено на диск. Рабочий поток остановлен. Время работы в сессии (сек): 858
+01.06.2026 19:35;v.0.01.000;Warning;System;System;Unknown;Main;Бот остановлен. Сессия завершена.
+01.06.2026 19:47;v.0.01.000;Warning;System;System;Unknown;Main;Бот успешно запущен.
+01.06.2026 19:47;v.0.01.000;Warning;System;System;Unknown;Main;Нажмите [ESC] в любой момент для плавной остановки.
+01.06.2026 19:47;v.0.01.000;Info;System;System;Unknown;StartMultiBotSystem;Мультисистема запущена. Аккаунтов в работе: 1
+01.06.2026 19:47;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Поток запущен. Начало работы по сценарию: 'LocalWatcher'.
+01.06.2026 19:47;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;IsSaveLocal;Стартовая инициализация: система безопасна. Мониторинг запущен.
+01.06.2026 19:47;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Интерфейс чата не открылся. Повторная попытка клика.
+01.06.2026 20:03;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Интерфейс чата не открылся. Повторная попытка клика.
+01.06.2026 20:18;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Интерфейс чата не открылся. Повторная попытка клика.
+01.06.2026 20:22;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Интерфейс чата не открылся. Повторная попытка клика.
+01.06.2026 20:33;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Интерфейс чата не открылся. Повторная попытка клика.
+01.06.2026 20:48;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Интерфейс чата не открылся. Повторная попытка клика.
+01.06.2026 21:03;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Интерфейс чата не открылся. Повторная попытка клика.
+01.06.2026 21:21;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Интерфейс чата не открылся. Повторная попытка клика.
+01.06.2026 21:36;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Интерфейс чата не открылся. Повторная попытка клика.
+01.06.2026 21:51;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Интерфейс чата не открылся. Повторная попытка клика.
+01.06.2026 21:52;v.0.01.000;Warning;System;System;Unknown;ListenForCancelKey;Обнаружено нажатие [ESC]. Запуск остановки всех аккаунтов.
+01.06.2026 21:52;v.0.01.000;Warning;System;System;Unknown;StopMultiBotSystem;Всем фоновым потокам отправлен сигнал остановки. Ожидание завершения...
+01.06.2026 21:52;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Получен сигнал остановки. Фиксация состояния.
+01.06.2026 21:52;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Состояние сохранено на диск. Рабочий поток остановлен. Время работы в сессии (сек): 7474
+01.06.2026 21:52;v.0.01.000;Warning;System;System;Unknown;Main;Бот остановлен. Сессия завершена.
+02.06.2026 6:48;v.0.01.000;Warning;System;System;Unknown;Main;Бот успешно запущен.
+02.06.2026 6:48;v.0.01.000;Warning;System;System;Unknown;Main;Нажмите [ESC] в любой момент для плавной остановки.
+02.06.2026 6:48;v.0.01.000;Info;System;System;Unknown;StartMultiBotSystem;Мультисистема запущена. Аккаунтов в работе: 1
+02.06.2026 6:48;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Поток запущен. Начало работы по сценарию: 'LocalWatcher'.
+02.06.2026 6:48;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;IsSaveLocal;Стартовая инициализация: система безопасна. Мониторинг запущен.
+02.06.2026 8:01;v.0.01.000;Warning;System;System;Unknown;ListenForCancelKey;Обнаружено нажатие [ESC]. Запуск остановки всех аккаунтов.
+02.06.2026 8:01;v.0.01.000;Warning;System;System;Unknown;StopMultiBotSystem;Всем фоновым потокам отправлен сигнал остановки. Ожидание завершения...
+02.06.2026 8:01;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Получен сигнал остановки. Фиксация состояния.
+02.06.2026 8:01;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Состояние сохранено на диск. Рабочий поток остановлен. Время работы в сессии (сек): 4328
+02.06.2026 8:01;v.0.01.000;Warning;System;System;Unknown;Main;Бот остановлен. Сессия завершена.
+02.06.2026 18:25;v.0.01.000;Warning;System;System;Unknown;Main;Бот успешно запущен.
+02.06.2026 18:25;v.0.01.000;Warning;System;System;Unknown;Main;Нажмите [ESC] в любой момент для плавной остановки.
+02.06.2026 18:25;v.0.01.000;Info;System;System;Unknown;StartMultiBotSystem;Мультисистема успешно запущена. Аккаунтов в работе: 1
+02.06.2026 18:25;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Поток запущен. Начало работы по Дереву поведения: 'LocalWatcher'.
+02.06.2026 18:25;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;IsSaveLocal;Стартовая инициализация: система безопасна. Мониторинг запущен.
+02.06.2026 18:45;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;RunLocalCheck;ВНИМАНИЕ: Найдено маркеров безопасности: 2 из 3. Фиксация угрозы!
+02.06.2026 18:45;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;IsSaveLocal;ВНИМАНИЕ! Фиксация угрозы в системе.
+02.06.2026 18:45;v.0.01.000;Error;Lana Muc;Z-K495;Covetor II;IsSaveLocal;Отправка оповещения: в системе обнаружен противник.
+02.06.2026 18:45;v.0.01.000;Info;Lana Muc;Unknown;Unknown;ClearTasks;Очередь задач экстренно очищена.
+02.06.2026 18:45;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Корабль в безопасности (станция/цитадель). Эвакуация не требуется.
+02.06.2026 18:45;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Этот аккаунт обнаружил угрозу. Задача оповещения добавлена в очередь.
+02.06.2026 18:45;v.0.01.000;Warning;Lana Muc;Unknown;Unknown;BuildLocalWatcherTree;Обнаружен противник! Активация цепочки кликов оповещения.
+02.06.2026 18:45;v.0.01.000;Warning;Lana Muc;Z-K495;Covetor II;RunAliChatWarningAsync;Интерфейс чата не открылся. Повторная попытка клика.
+02.06.2026 18:45;v.0.01.000;Error;Lana Muc;Z-K495;Covetor II;RunAliChatWarningAsync;Шаблоны чата не обнаружены после повторного клика. Проверьте координаты 'ChatsInterface' в 'GameUi'.
+02.06.2026 18:45;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Корабль в безопасности (станция/цитадель). Эвакуация не требуется.
+02.06.2026 18:46;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;IsSaveLocal;Статус системы изменился на БЕЗОПАСНО. Враги покинули систему.
+02.06.2026 20:24;v.0.01.000;Warning;System;System;Unknown;ListenForCancelKey;Обнаружено нажатие [ESC]. Запуск остановки всех аккаунтов.
+02.06.2026 20:24;v.0.01.000;Warning;System;System;Unknown;StopMultiBotSystem;Всем фоновым потокам отправлен сигнал остановки. Ожидание завершения...
+02.06.2026 20:24;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Получен сигнал остановки аккаунта. Фиксация состояния дерева.
+02.06.2026 20:24;v.0.01.000;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Состояние сохранено на диск. Поток дерева поведения остановлен. Время работы в сессии (сек): 7103
+02.06.2026 20:24;v.0.01.000;Warning;System;System;Unknown;Main;Бот остановлен. Сессия завершена.
+02.06.2026 20:25;v.0.01.001;Warning;System;System;Unknown;Main;Бот успешно запущен.
+02.06.2026 20:25;v.0.01.001;Warning;System;System;Unknown;Main;Нажмите [ESC] в любой момент для плавной остановки.
+02.06.2026 20:25;v.0.01.001;Info;System;System;Unknown;StartMultiBotSystem;Мультисистема успешно запущена. Аккаунтов в работе: 1
+02.06.2026 20:25;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Поток запущен. Начало работы по Дереву поведения: 'LocalWatcher'.
+02.06.2026 20:25;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;IsSaveLocal;Стартовая инициализация: система безопасна. Мониторинг запущен.
+02.06.2026 21:02;v.0.01.001;Warning;System;System;Unknown;ListenForCancelKey;Обнаружено нажатие [ESC]. Запуск остановки всех аккаунтов.
+02.06.2026 21:02;v.0.01.001;Warning;System;System;Unknown;StopMultiBotSystem;Всем фоновым потокам отправлен сигнал остановки. Ожидание завершения...
+02.06.2026 21:02;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Получен сигнал остановки аккаунта. Фиксация состояния дерева.
+02.06.2026 21:02;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Состояние сохранено на диск. Поток дерева поведения остановлен. Время работы в сессии (сек): 2247
+02.06.2026 21:02;v.0.01.001;Warning;System;System;Unknown;Main;Бот остановлен. Сессия завершена.
+02.06.2026 21:04;v.0.01.001;Warning;System;System;Unknown;Main;Бот успешно запущен.
+02.06.2026 21:04;v.0.01.001;Warning;System;System;Unknown;Main;Нажмите [ESC] в любой момент для плавной остановки.
+02.06.2026 21:04;v.0.01.001;Info;System;System;Unknown;StartMultiBotSystem;Мультисистема успешно запущена. Аккаунтов в работе: 1
+02.06.2026 21:04;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Поток запущен. Начало работы по Дереву поведения: 'LocalWatcher'.
+02.06.2026 21:04;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;IsSaveLocal;Стартовая инициализация: система безопасна. Мониторинг запущен.
+02.06.2026 21:42;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.
+02.06.2026 21:42;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Корабль в безопасности (станция/цитадель). Эвакуация не требуется.
+02.06.2026 21:42;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.
+02.06.2026 21:42;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Корабль в безопасности (станция/цитадель). Эвакуация не требуется.
+02.06.2026 21:42;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.
+02.06.2026 21:42;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Корабль в безопасности (станция/цитадель). Эвакуация не требуется.
+02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.
+02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Корабль в безопасности (станция/цитадель). Эвакуация не требуется.
+02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.
+02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Корабль в безопасности (станция/цитадель). Эвакуация не требуется.
+02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.
+02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Корабль в безопасности (станция/цитадель). Эвакуация не требуется.
+02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.
+02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Корабль в безопасности (станция/цитадель). Эвакуация не требуется.
+02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.
+02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Корабль в безопасности (станция/цитадель). Эвакуация не требуется.
+02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.
+02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Корабль в безопасности (станция/цитадель). Эвакуация не требуется.
+02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.
+02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Корабль в безопасности (станция/цитадель). Эвакуация не требуется.
+02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.
+02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Корабль в безопасности (станция/цитадель). Эвакуация не требуется.
+02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.
+02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Корабль в безопасности (станция/цитадель). Эвакуация не требуется.
+02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.
+02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Корабль в безопасности (станция/цитадель). Эвакуация не требуется.
+02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.
+02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Корабль в безопасности (станция/цитадель). Эвакуация не требуется.
+02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;CheckSecurityStatusAsync;Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.
+02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;ExecuteEmergencyResponse;Корабль в безопасности (станция/цитадель). Эвакуация не требуется.
+02.06.2026 21:43;v.0.01.001;Warning;System;System;Unknown;ListenForCancelKey;Обнаружено нажатие [ESC]. Запуск остановки всех аккаунтов.
+02.06.2026 21:43;v.0.01.001;Warning;System;System;Unknown;StopMultiBotSystem;Всем фоновым потокам отправлен сигнал остановки. Ожидание завершения...
+02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Получен сигнал остановки аккаунта. Фиксация состояния дерева.
+02.06.2026 21:43;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Состояние сохранено на диск. Поток дерева поведения остановлен. Время работы в сессии (сек): 2368
+02.06.2026 21:43;v.0.01.001;Warning;System;System;Unknown;Main;Бот остановлен. Сессия завершена.
+02.06.2026 21:56;v.0.01.001;Warning;System;System;Unknown;Main;Бот успешно запущен.
+02.06.2026 21:56;v.0.01.001;Warning;System;System;Unknown;Main;Нажмите [ESC] в любой момент для плавной остановки.
+02.06.2026 21:56;v.0.01.001;Info;System;System;Unknown;StartMultiBotSystem;Мультисистема успешно запущена. Аккаунтов в работе: 1
+02.06.2026 21:56;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Поток запущен. Начало работы по Дереву поведения: 'LocalWatcher'.
+02.06.2026 21:56;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;IsSaveLocal;Стартовая инициализация: система безопасна. Мониторинг запущен.
+02.06.2026 22:14;v.0.01.001;Warning;System;System;Unknown;ListenForCancelKey;Обнаружено нажатие [ESC]. Запуск остановки всех аккаунтов.
+02.06.2026 22:14;v.0.01.001;Warning;System;System;Unknown;StopMultiBotSystem;Всем фоновым потокам отправлен сигнал остановки. Ожидание завершения...
+02.06.2026 22:14;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Получен сигнал остановки аккаунта. Фиксация состояния дерева.
+02.06.2026 22:14;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Состояние сохранено на диск. Поток дерева поведения остановлен. Время работы в сессии (сек): 1023
+02.06.2026 22:14;v.0.01.001;Warning;System;System;Unknown;Main;Бот остановлен. Сессия завершена.
+03.06.2026 8:02;v.0.01.001;Warning;System;System;Unknown;Main;Бот успешно запущен.
+03.06.2026 8:02;v.0.01.001;Warning;System;System;Unknown;Main;Нажмите [ESC] в любой момент для плавной остановки.
+03.06.2026 8:02;v.0.01.001;Info;System;System;Unknown;StartMultiBotSystem;Мультисистема успешно запущена. Аккаунтов в работе: 1
+03.06.2026 8:02;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Поток запущен. Начало работы по Дереву поведения: 'LocalWatcher'.
+03.06.2026 8:02;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;IsSaveLocal;Стартовая инициализация: система безопасна. Мониторинг запущен.
+03.06.2026 8:26;v.0.01.001;Warning;System;System;Unknown;ListenForCancelKey;Обнаружено нажатие [ESC]. Запуск остановки всех аккаунтов.
+03.06.2026 8:26;v.0.01.001;Warning;System;System;Unknown;StopMultiBotSystem;Всем фоновым потокам отправлен сигнал остановки. Ожидание завершения...
+03.06.2026 8:26;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Получен сигнал остановки аккаунта. Фиксация состояния дерева.
+03.06.2026 8:26;v.0.01.001;Info;Lana Muc;Z-K495;Covetor II;RunLoopAsync;Состояние сохранено на диск. Поток дерева поведения остановлен. Время работы в сессии (сек): 1424
+03.06.2026 8:26;v.0.01.001;Warning;System;System;Unknown;Main;Бот остановлен. Сессия завершена.
+03.06.2026 16:09;v.0.01.002;Warning;System;System;Unknown;Main;Бот успешно запущен в фоновом режиме.
+03.06.2026 16:16;v.0.01.002;Warning;System;System;Unknown;Main;Бот успешно запущен в фоновом режиме.
+03.06.2026 16:16;v.0.01.002;Error;System;System;Unknown;StartMultiBotSystem;Окно 'BlueStacks_EVE.01' для аккаунта 'Lana Muc' не найдено в ОС.
+03.06.2026 16:16;v.0.01.002;Info;System;System;Unknown;StartMultiBotSystem;Мультисистема инициализирована. Аккаунтов загружено: 0. Ожидание команды Старт из веб-панели.
+03.06.2026 16:18;v.0.01.002;Warning;System;System;Unknown;ListenForCancelKey;Обнаружено нажатие [ESC]. Запуск остановки всех аккаунтов.
+03.06.2026 16:18;v.0.01.002;Warning;System;System;Unknown;StopMultiBotSystem;Всем фоновым потокам отправлен сигнал остановки. Ожидание завершения...
+03.06.2026 16:18;v.0.01.002;Warning;System;System;Unknown;StopMultiBotSystem;Список активных аккаунтов очищен. Система полностью остановлена.
+03.06.2026 16:20;v.0.01.002;Warning;System;System;Unknown;Main;Бот успешно запущен в фоновом режиме.
+03.06.2026 16:23;v.0.01.002;Warning;System;System;Unknown;Main;Бот успешно запущен в фоновом режиме.
+03.06.2026 16:23;v.0.01.002;Error;System;System;Unknown;StartMultiBotSystem;Окно 'BlueStacks_EVE.01' для аккаунта 'Lana Muc' не найдено в ОС.
+03.06.2026 16:23;v.0.01.002;Info;System;System;Unknown;StartMultiBotSystem;Мультисистема инициализирована. Аккаунтов загружено: 0. Ожидание команды Старт из веб-панели.
+03.06.2026 16:23;v.0.01.002;Warning;System;System;Unknown;InitSystray;Запрошен выход из приложения через системный трей...
+03.06.2026 16:23;v.0.01.002;Warning;System;System;Unknown;Main;Бот остановлен. Сессия завершена.
+03.06.2026 16:27;v.0.01.002;Warning;System;System;Unknown;Main;Бот успешно запущен в фоновом режиме.
+03.06.2026 16:27;v.0.01.002;Error;System;System;Unknown;StartMultiBotSystem;Окно 'BlueStacks_EVE.01' для аккаунта 'Lana Muc' не найдено в ОС.
+03.06.2026 16:27;v.0.01.002;Info;System;System;Unknown;StartMultiBotSystem;Мультисистема инициализирована. Аккаунтов загружено: 0. Ожидание команды Старт из веб-панели.
+03.06.2026 16:27;v.0.01.002;Warning;System;System;Unknown;InitSystray;Запрошен выход из приложения через системный трей...
+03.06.2026 16:27;v.0.01.002;Warning;System;System;Unknown;Main;Бот остановлен. Сессия завершена.
+03.06.2026 16:31;v.0.01.002;Warning;System;System;Unknown;Main;Бот успешно запущен в фоновом режиме.
+03.06.2026 16:31;v.0.01.002;Error;System;System;Unknown;StartMultiBotSystem;Окно 'BlueStacks_EVE.01' для аккаунта 'Lana Muc' не найдено в ОС.
+03.06.2026 16:31;v.0.01.002;Info;System;System;Unknown;StartMultiBotSystem;Мультисистема инициализирована. Аккаунтов загружено: 0. Ожидание команды Старт из веб-панели.
+03.06.2026 16:33;v.0.01.002;Warning;System;System;Unknown;InitSystray;Запрошен выход из приложения через системный трей...
+03.06.2026 16:33;v.0.01.002;Warning;System;System;Unknown;Main;Бот остановлен. Сессия завершена.
+03.06.2026 16:33;v.0.01.002;Warning;System;System;Unknown;Main;Бот успешно запущен в фоновом режиме.
+03.06.2026 16:34;v.0.01.002;Error;System;System;Unknown;StartMultiBotSystem;Окно 'BlueStacks_EVE.01' для аккаунта 'Lana Muc' не найдено в ОС.
+03.06.2026 16:34;v.0.01.002;Info;System;System;Unknown;StartMultiBotSystem;Мультисистема инициализирована. Аккаунтов загружено: 1. Ожидание команды Старт из веб-панели.
+03.06.2026 16:34;v.0.01.002;Warning;System;System;Unknown;InitSystray;Запрошен выход из приложения через системный трей...
+03.06.2026 16:34;v.0.01.002;Warning;System;System;Unknown;Main;Бот остановлен. Сессия завершена.
+03.06.2026 16:34;v.0.01.002;Warning;System;System;Unknown;Main;Бот успешно запущен в фоновом режиме.
+03.06.2026 16:34;v.0.01.002;Error;System;System;Unknown;StartMultiBotSystem;Окно 'BlueStacks_EVE.01' для аккаунта 'Lana Muc' не найдено в ОС.
+03.06.2026 16:34;v.0.01.002;Info;System;System;Unknown;StartMultiBotSystem;Мультисистема инициализирована. Аккаунтов загружено: 1. Ожидание команды Старт из веб-панели.
+03.06.2026 16:35;v.0.01.002;Warning;System;System;Unknown;InitSystray;Запрошен выход из приложения через системный трей...
+03.06.2026 16:35;v.0.01.002;Warning;System;System;Unknown;Main;Бот остановлен. Сессия завершена.
+03.06.2026 16:38;v.0.01.002;Warning;System;System;Unknown;Main;Бот успешно запущен в фоновом режиме.
+03.06.2026 16:38;v.0.01.002;Error;System;System;Unknown;StartMultiBotSystem;Окно 'BlueStacks_EVE.01' для аккаунта 'Lana Muc' не найдено в ОС.
+03.06.2026 16:38;v.0.01.002;Info;System;System;Unknown;StartMultiBotSystem;Мультисистема инициализирована. Аккаунтов загружено: 1. Ожидание команды Старт из веб-панели.
+03.06.2026 16:39;v.0.01.002;Warning;System;System;Unknown;InitSystray;Запрошен выход из приложения через системный трей...
+03.06.2026 16:39;v.0.01.002;Warning;System;System;Unknown;Main;Бот остановлен. Сессия завершена.
+03.06.2026 16:43;v.0.01.002;Warning;System;System;Unknown;Main;Бот успешно запущен в фоновом режиме.
+03.06.2026 16:43;v.0.01.002;Error;System;System;Unknown;StartMultiBotSystem;Окно 'BlueStacks_EVE.01' для аккаунта 'Lana Muc' не найдено в ОС.
+03.06.2026 16:43;v.0.01.002;Info;System;System;Unknown;StartMultiBotSystem;Мультисистема инициализирована. Аккаунтов загружено: 1. Ожидание команды Старт из веб-панели.
+03.06.2026 16:44;v.0.01.002;Warning;System;System;Unknown;StartWebServer;Запрошено полное выключение системы через веб-интерфейс...
+03.06.2026 16:44;v.0.01.002;Warning;System;System;Unknown;Main;Бот остановлен. Сессия завершена.
