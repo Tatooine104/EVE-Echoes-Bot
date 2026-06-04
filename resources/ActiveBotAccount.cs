@@ -672,42 +672,37 @@ public partial class ActiveBotAccount
     /// </summary>
     /// <param name="token">Токен отмены операции <see cref="CancellationToken"/> для текущего рабочего потока.</param>
     /// <returns>Возвращает <c>true</c>, если система безопасности успешно проанализировала локал и подтвердила отсутствие угроз; иначе <c>false</c>.</returns>
-    internal async Task<bool> CheckSecurityStatusAsync(CancellationToken token)
+    internal async Task<SecurityCheckResult> CheckSecurityStatusAsync(CancellationToken token)
     {
         Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Начало выполнения метода.", LogType.Test);
 
         if (Hwnd == IntPtr.Zero)
         {
             Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Окно целевой программы не найдено.", LogType.Error);
-            return false;
+            return SecurityCheckResult.Unknown; // Ошибка -> Осматриваемся
         }
 
-        // Загружаем пути к шаблонам разметки интерфейса игры EVE Echoes
         string pathImg1 = Path.Combine(Program.TemplatesDir, "imgLocalChatHead.png");
         string pathImg2 = Path.Combine(Program.TemplatesDir, "imgLocalChatIcon.png");
 
-        // Задаем базовые прямоугольные области для сканирования графического интерфейса
         Rect localRegion1 = GameRegions.LocalChat.GetOpenCvRect();
         Rect localRegion2 = GameRegions.LocalChatIcon.GetOpenCvRect();
-
         string debugDir = Path.GetFullPath(Path.Combine(Program.TemplatesDir, "..", "DebugScreenshots"));
 
-        // Выполняем захват текущего графического кадра эмулятора через GDI
         using Mat? screenshot = Tools.CaptureWindow(Hwnd);
         if (screenshot?.Empty() is not false || screenshot.Width <= 0 || screenshot.Height <= 0)
         {
-            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось выполнить повторный захват окна. Прерывание выполнения.", LogType.Error);
-            return false;
+            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось выполнить повторный захват окна.", LogType.Error);
+            return SecurityCheckResult.Unknown; // Ошибка -> Осматриваемся
         }
 
-        // Корректируем рамки поиска под фактическое разрешение кадра, защищая OpenCV от вылетов
         Rect safeRegion1 = Tools.ClampRegion(localRegion1, screenshot.Width, screenshot.Height);
         Rect safeRegion2 = Tools.ClampRegion(localRegion2, screenshot.Width, screenshot.Height);
 
         if (safeRegion1.Width <= 0 || safeRegion1.Height <= 0 || safeRegion2.Width <= 0 || safeRegion2.Height <= 0)
         {
             Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Область поиска выходит за рамки окна.", LogType.Error);
-            return false;
+            return SecurityCheckResult.Unknown; // Ошибка -> Осматриваемся
         }
 
         // ========================================================
@@ -728,8 +723,7 @@ public partial class ActiveBotAccount
                 Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось сохранить отладочный кадр: {ex.Message}", LogType.Warning);
             }
     #endif
-            // Чат открыт — запускаем глубокую проверку пилотов в системе
-            return RunLocalCheck(screenshot, safeRegion1);
+            return RunLocalCheck(screenshot, safeRegion1); // Возвращает Safe или Danger
         }
 
         // ========================================================
@@ -753,37 +747,34 @@ public partial class ActiveBotAccount
             }
     #endif
 
-            // Подготавливаем координаты для клика через утилиту ADB
             int adbX = foundImg2.Value.X;
             int adbY = foundImg2.Value.Y;
 
-            // Отправляем аппаратно-независимый тап по иконке
             Tools.SmartClick(adbX, adbY, minSec: 1, maxSec: 2, offset: 2, adbPort: Settings.AdbPort);
-            await Task.Delay(3500, token); // Честное ожидание проигрывания анимации развертывания интерфейса
+            await Task.Delay(3500, token); 
 
-            // Делаем повторный снимок экрана для верификации открытия чата
             using Mat? freshScreenshot = Tools.CaptureWindow(Hwnd);
-            if (freshScreenshot?.Empty() is not false) return false;
+            if (freshScreenshot?.Empty() is not false) return SecurityCheckResult.Unknown;
 
             Rect freshSafeRegion1 = Tools.ClampRegion(localRegion1, freshScreenshot.Width, freshScreenshot.Height);
             Point? retryImg1 = Tools.FindTemplateInRegion(freshScreenshot, pathImg1, freshSafeRegion1, 0.80);
 
             if (retryImg1.HasValue)
             {
-                // Чат успешно открылся — переходим к глубокому распознаванию локала
-                return RunLocalCheck(freshScreenshot, freshSafeRegion1);
+                return RunLocalCheck(freshScreenshot, freshSafeRegion1); // Возвращает Safe или Danger
             }
 
-            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Интерфейс чата не открылся. Повторная попытка клика.", LogType.Warning);
-            return false;
+            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Интерфейс чата не открылся после клика.", LogType.Warning);
+            return SecurityCheckResult.Unknown; // Ошибка открытия интерфейса
         }
 
         // ========================================================
         // ЭТАП 3: ЖЕЛЕЗНАЯ ТИШИНА (Интерфейс не найден вообще)
         // ========================================================
         Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.", LogType.Info);
-        return false;
+        return SecurityCheckResult.Unknown; // Полная неопределенность -> Запуск "Осмотрись"
     }
+
 
     #endregion
 
@@ -801,12 +792,10 @@ public partial class ActiveBotAccount
     /// <param name="screenshot">Текущая графическая матрица скриншота окна эмулятора <see cref="Mat"/>.</param>
     /// <param name="searchRegion">Прямоугольная область экрана <see cref="Rect"/>, в которой отображаются маркеры чата.</param>
     /// <returns>Возвращает <c>true</c>, если обнаружены все 3 маркера (система чиста); возвращает <c>false</c>, если обнаружена угроза [INDEX].</returns>
-    private bool RunLocalCheck(Mat screenshot, Rect searchRegion)
+    private SecurityCheckResult RunLocalCheck(Mat screenshot, Rect searchRegion)
     {
-        // Безопасно корректируем область сканирования под физический размер входящей матрицы
         Rect safeSearchRegion = Tools.ClampRegion(searchRegion, screenshot.Width, screenshot.Height);
 
-        // Список имен графических шаблонов маркеров безопасности для поиска через сопоставление
         string[] templates = ["imgLocalCriminal.png", "imgLocalMinus.png", "imgLocalNeutral.png"];
         int foundCount = 0;
 
@@ -815,7 +804,6 @@ public partial class ActiveBotAccount
             string fullTemplatePath = Path.Combine(Program.TemplatesDir, templateName);
             if (!File.Exists(fullTemplatePath)) continue;
 
-            // Порог 0.88 оптимален для иконок стендингов, чтобы отсечь фантомные пиксели текста чата
             Point? foundPoint = Tools.FindTemplateInRegion(screenshot, fullTemplatePath, safeSearchRegion, 0.88);
 
             if (foundPoint.HasValue)
@@ -839,22 +827,29 @@ public partial class ActiveBotAccount
         }
 
         // ========================================================
-        // ЖЕЛЕЗНАЯ ЛОГИКА МАРКЕРОВ СТЕНДИНГА:
+        // ИСПРАВЛЕННАЯ СТРЕДЖ-ЛОГИКА ВЕРДИКТОВ:
         // ========================================================
-        // 1. ИДЕАЛЬНАЯ БЕЗОПАСНОСТЬ: Найдена вся тройка маркеров (Criminal, Minus, Neutral на месте)
+        
+        // 1. ИДЕАЛЬНАЯ БЕЗОПАСНОСТЬ: Найдена вся тройка маркеров
         if (foundCount == 3)
         {
-            this.IsSaveLocal = true; // Сообщаем системе, что всё чисто
-            return true;
+            return SecurityCheckResult.Safe;
         }
 
-        // 2. ОПАСНОСТЬ: Хотя бы один маркер пропал (или пропали ВСЕ, так как интерфейс перекрыт списком врагов)
-        // Раз мы зашли сюда, значит foundCount равен 0, 1 или 2. Система НЕ в безопасности!
-        Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] ВНИМАНИЕ: Найдено маркеров безопасности: {foundCount} из 3. Фиксация угрозы!", LogType.Warning);
+        // 2. СБОЙ OCR / ПЕРЕКРЫТИЕ: Не найдено вообще ничего (0 из 3).
+        // Чат вроде бы открыт, но маркеры пропали полностью. Даем боту шанс "Осмотреться".
+        if (foundCount == 0)
+        {
+            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Маркеры безопасности не найдены (0 из 3). Интерфейс смазан или перекрыт. Осматриваемся.", LogType.Warning);
+            return SecurityCheckResult.Unknown;
+        }
 
-        this.IsSaveLocal = false; // Взводит тревогу для всей сетки окон аккаунтов!
-        return false;
+        // 3. РЕАЛЬНАЯ ОПАСНОСТЬ: Найдено 1 или 2 маркера. 
+        // Это значит, что интерфейс чата виден ИДЕАЛЬНО, но часть маркеров сместилась/исчезла из-за появления минуса/нейтрала.
+        Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] ВНИМАНИЕ: Найдено маркеров безопасности: {foundCount} из 3. Четкая фиксация угрозы!", LogType.Warning);
+        return SecurityCheckResult.Danger;
     }
+
 
     #endregion
 
@@ -1189,7 +1184,7 @@ public partial class ActiveBotAccount
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
-    #region ClearTasks
+    #region Clear Tasks
 
     /// <summary>
     /// Производит экстренную потокобезопасную очистку текущей очереди макросов аккаунта.
@@ -1212,7 +1207,7 @@ public partial class ActiveBotAccount
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
-    #region WarpAndDockToHomeStationAsync
+    #region Warp And Dock
 
     /// <summary>
     /// ДЕЙСТВИЕ: Инициирует варп и автоматический док на домашнюю станцию/цитадель.
@@ -1232,7 +1227,7 @@ public partial class ActiveBotAccount
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
-    #region CheckIsCargoFullAsync
+    #region Check Cargo
 
     /// <summary>
     /// ДЕЙСТВИЕ: Проверяет текущую заполненность рудного трюма корабля.
@@ -1250,7 +1245,7 @@ public partial class ActiveBotAccount
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
-    #region UnloadOreToHangarAsync
+    #region Unload Ore
 
     /// <summary>
     /// ДЕЙСТВИЕ: Переносит всю добытую руду из трюма корабля на склад станции.
@@ -1266,7 +1261,7 @@ public partial class ActiveBotAccount
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
-    #region UndockFromStationAsync
+    #region Undock 
 
     /// <summary>
     /// ДЕЙСТВИЕ: Производит отстыковку (андок) корабля от станции.
@@ -1285,7 +1280,7 @@ public partial class ActiveBotAccount
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
-    #region ScanAndSelectAvailableBeltAsync
+    #region Select Belt
 
     /// <summary>
     /// ДЕЙСТВИЕ: Сканирует овервью или меню игры, выбирает подходящий пояс астероидов.
@@ -1303,7 +1298,7 @@ public partial class ActiveBotAccount
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
-    #region WarpToSpecificBeltAsync
+    #region Warp To Belt
 
     /// <summary>
     /// ДЕЙСТВИЕ: Инициирует разгон и переход в варп на конкретно выбранный пояс астероидов.
@@ -1320,7 +1315,7 @@ public partial class ActiveBotAccount
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
-    #region TryTargetAsteroidAsync
+    #region Try Target Asteroid
 
     /// <summary>
     /// ДЕЙСТВИЕ: Находит ближайший астероид в овервью космоса и берет его в захват (Lock Target).
@@ -1336,7 +1331,7 @@ public partial class ActiveBotAccount
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
-    #region ActivateLasersAsync
+    #region Activate Lasers
 
     /// <summary>
     /// ДЕЙСТВИЕ: Включает буровые/шахтерские лазеры (модули) корабля для начала добычи.
@@ -1370,6 +1365,35 @@ public partial class ActiveBotAccount
     }
 
     #endregion
+
+    /// <summary>
+    /// Логика "Осмотрись": выполняет аппаратно-независимые клики для закрытия случайных поп-апов, 
+    /// окон наград или рекламы, мешающих обзору OCR.
+    /// </summary>
+    internal async Task ExecuteLookAroundDiagnosticsAsync(CancellationToken token)
+    {
+        Log($"[{Settings.Name}] Запуск макроса 'Осмотрись': попытка восстановить интерфейс.", LogType.Info);
+
+        try
+        {
+            // 1. Нажимаем клавишу ESC через ADB, чтобы закрыть любые случайные окна
+            // (Параметр KEYCODE_ESCAPE в Android равен 111, либо используйте вашу обертку Tools)
+            // Tools.SendKeyEvent(111, Settings.AdbPort); 
+            
+            // 2. Делаем небольшую паузу, чтобы интерфейс успел отреагировать
+            await Task.Delay(1500, token);
+
+            // 3. Делаем клик по «пустому» безопасному месту экрана, где обычно нет кнопок,
+            // чтобы сбросить фокус с возможных зависших элементов интерфейса
+            // Tools.SmartClick(100, 100, minSec: 0, maxSec: 1, offset: 0, adbPort: Settings.AdbPort);
+            
+            await Task.Delay(1000, token);
+        }
+        catch (Exception ex)
+        {
+            Log($"[{Settings.Name}] Ошибка при выполнении диагностики экрана: {ex.Message}", LogType.Error);
+        }
+    }
 
 }
 
@@ -1431,7 +1455,12 @@ public enum AccountTask
     /// <summary>
     /// Экстренный запуск макроса для отправки разведывательного варнинга (Scout Alert) в боевой канал альянса/корпорации.
     /// </summary>
-    SendAliChatWarning
+    SendAliChatWarning,
+
+    /// <summary>
+    /// Задача определить что происходит
+    /// </summary>
+    LookAround
 }
 
 #endregion

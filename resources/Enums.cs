@@ -98,3 +98,10 @@ public enum BotState
     Running,
     Paused
 }
+
+public enum SecurityCheckResult
+{
+    Safe,       // В локале чисто
+    Danger,     // Обнаружен враг/минус
+    Unknown     // Экран перекрыт, чат не найден, сбой OCR (Нужно осмотреться)
+}

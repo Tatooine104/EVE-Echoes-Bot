@@ -219,7 +219,7 @@ public static class Tools
                 int centerY = offsetY + maxLoc.Y + (matTemplate.Height / 2);
 
     #if DEBUG
-                Logger.Log($"Поиск '{Path.GetFileName(templatePath)}', совпадение = {maxVal * 100:F1}%, локация ({maxLoc.X}х{maxLoc.Y}), центр ({centerX}х{centerY}).", LogType.Test);
+                Logger.Log($"Поиск '{Path.GetFileName(templatePath)}', совпадение: {maxVal * 100:F1}%, локация: {maxLoc.X}х{maxLoc.Y}, центр: {centerX}х{centerY}.", LogType.Test);
     #endif
                 return new Point(centerX, centerY);
             }

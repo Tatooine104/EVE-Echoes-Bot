@@ -49,53 +49,93 @@ public static class ScenarioFactory
     {
         return new SelectorNode("LocalWatcher Root",
 
-            // ВЕТКА ТРЕВОГИ: Сработает, только если проверка безопасности обнаружила угрозу
+            // ВЕТКА ТРЕВОГИ (Враг в системе)
             new SequenceNode("Emergency Response Branch",
-
-                // Условие: Запускаем сканирование чата. 
-                new ActionNode("Scan Local Chat", async (bot, token) =>
+                // 1. Проверяем, взведен ли глобальный статус опасности для этой системы
+                new ActionNode("Check System Danger Status", async (bot, _) =>
                 {
-                    // Выставляем статус проверки безопасности для логов и DTO
-                    bot.CurrentTask = AccountTask.CheckSecurity;
-
-                    bool isSafe = await bot.CheckSecurityStatusAsync(token);
-                    return isSafe ? NodeStatus.Failure : NodeStatus.Success;
+                    // Если менеджер говорит, что система НЕ безопасна — запускаем панику
+                    var isSafe = SystemSafetyManager.GetSystemState(bot.EVESystem).IsSafe;
+                    return isSafe is false ? NodeStatus.Success : NodeStatus.Failure;
                 }),
-
-                // Действие: Каскадное оповещение окон и паника
-                new ActionNode("Trigger System Emergency", async (bot, token) =>
+                // 2. Отрабатываем эвакуацию (метод сам проверит, нужно ли слать чат-алерт и дергать соседа)
+                new ActionNode("Execute Panic Evacuation", async (bot, _) =>
                 {
-                    // Меняем статус на отправку варнинга
-                    bot.CurrentTask = AccountTask.SendAliChatWarning;
-
-                    // Проверяем статус через менеджер безопасности
-                    var systemState = SystemSafetyManager.GetSystemState(bot.EVESystem);
-
-                    // Если это окно первым обнаружило угрозу, отправляем макрос в чат
-                    if (systemState.IsSafe is false)
+                    if (bot.CurrentTask != AccountTask.GoToStation)
                     {
-                        Logger.Log($"[{bot.Settings.Name}] Обнаружен противник! Активация цепочки кликов оповещения.", LogType.Warning);
-                        await bot.RunAliChatWarningAsync(token);
+                        bot.CurrentTask = AccountTask.GoToStation;
+                        
+                        // Вызываем централизованный сеттер, чтобы он атомарно пнул соседей и запустил RunAliChatWarningAsync
+                        bot.IsSaveLocal = false; 
                     }
-
-                    bot.ExecuteEmergencyResponse(isInitiator: false);
                     return NodeStatus.Success;
                 })
             ),
 
-            // ВЕТКА МИРНОГО ПРОСТОЯ: Сработает, если верхняя ветка тревоги вернула Failure (то есть в системе всё чисто)
-            new SequenceNode("Peaceful Idle Branch",
+            // ВЕТКА ДИАГНОСТИКИ (Потеря интерфейса / Осмотрись)
+            new SequenceNode("Look Around Branch",
+                new ActionNode("Check If Interface Lost", async (bot, _) =>
+                {
+                    // Сработает, только если бот вручную переведен в режим диагностики
+                    return bot.CurrentTask == AccountTask.LookAround ? NodeStatus.Success : NodeStatus.Failure;
+                }),
+                new ActionNode("Run Diagnostics", async (bot, token) =>
+                {
+                    Logger.Log($"[{bot.Settings.Name}] Интерфейс заблокирован. Выполнение макроса очистки экрана...", LogType.Warning);
+                    
+                    // Вызываем ваш метод прожимания Esc/закрытия рекламы
+                    await bot.ExecuteLookAroundDiagnosticsAsync(token);
+                    
+                    // После чистки возвращаем базовый таск, чтобы на следующем тике запустить штатный скан
+                    bot.CurrentTask = AccountTask.CheckSecurity;
+                    return NodeStatus.Success;
+                })
+            ),
+
+            // ОСНОВНАЯ РАБОЧАЯ ВЕТКА (Штатный скан экрана и распределение состояний)
+            new SequenceNode("Standard Security Monitor Branch",
+                new ActionNode("Analyze Screen and Update State", async (bot, token) =>
+                {
+                    // Задаем таск для отображения в UI/DTO
+                    bot.CurrentTask = AccountTask.CheckSecurity;
+
+                    // Получаем один из трех вердиктов от OCR
+                    SecurityCheckResult result = await bot.CheckSecurityStatusAsync(token);
+
+                    switch (result)
+                    {
+                        case SecurityCheckResult.Safe:
+                            // Все чисто: пишем в свойство, сбрасываем панику, ветка идет дальше к мирному логу
+                            bot.IsSaveLocal = true;
+                            return NodeStatus.Success;
+
+                        case SecurityCheckResult.Danger:
+                            // Враг! Немедленно взводим IsSaveLocal в false (это запустит цепочку паники)
+                            bot.IsSaveLocal = false;
+                            // Возвращаем Failure, чтобы дерево прервало эту ветку и на следующем тике ушло в "Emergency Response Branch"
+                            return NodeStatus.Failure;
+
+                        case SecurityCheckResult.Unknown:
+                            // Потеряли глаза. Переводим бота в режим осмотра
+                            bot.CurrentTask = AccountTask.LookAround;
+                            // Прерываем ветку, уходим на диагностику
+                            return NodeStatus.Failure;
+                            
+                        default:
+                            return NodeStatus.Failure;
+                    }
+                }),
+                // Этот узел выполнится, ТОЛЬКО если предыдущий вернул NodeStatus.Success (то есть система Safe)
                 new ActionNode("Log Safe Status", async (bot, _) =>
                 {
-                    // В мирное время переводим бота в базовый режим простоя
                     bot.CurrentTask = AccountTask.CheckYourOwnState;
-
                     Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Плановый цикл мониторинга завершен. Система в безопасности.", LogType.Test);
                     return NodeStatus.Success;
                 })
             )
         );
     }
+
 
     #endregion
 
@@ -116,28 +156,63 @@ public static class ScenarioFactory
             // КРИТИЧЕСКИЙ КОНТРОЛЬ: ШАГ 7 и 8 (Постоянный перехват управления при опасности в космосе)
             // =========================================================================
             new SequenceNode("In-Flight Emergency Return",
-                // Проверяем контекст: мы должны быть в космосе (если в доке — ветка пропускается)
-                new ActionNode("Is In Space", async (bot, _) => bot._inSpace ? NodeStatus.Failure : NodeStatus.Success),
+                // 1. Проверяем контекст: мы должны быть строго в космосе!
+                // Если мы в космосе, возвращаем Success, чтобы сиквенс шел дальше
+                new ActionNode("Is In Space", async (bot, _) => bot._inSpace ? NodeStatus.Success : NodeStatus.Failure),
 
-                // ШАГ 7/8: Постоянно контролируем безопасность. Если ОПАСНОСТЬ -> Success (идем дальше)
+                // 2. Контролируем безопасность через новый enum
                 new ActionNode("Is Hostile In Local", async (bot, token) =>
                 {
-                    bool isSafe = await bot.CheckSecurityStatusAsync(token);
-                    return !isSafe ? NodeStatus.Success : NodeStatus.Failure;
+                    // Сначала проверяем глобальный статус системы. Если КТО-ТО ДРУГОЙ уже объявил панику,
+                    // нам не нужно тратить время на OCR, сразу возвращаем Success и улетаем!
+                    var systemState = SystemSafetyManager.GetSystemState(bot.EVESystem);
+                    if (systemState.IsSafe is false) return NodeStatus.Success;
+
+                    // Если глобально всё чисто, проверяем сами своим OCR
+                    SecurityCheckResult result = await bot.CheckSecurityStatusAsync(token);
+
+                    switch (result)
+                    {
+                        case SecurityCheckResult.Danger:
+                            // Мы лично увидели врага! Взводим IsSaveLocal в false. 
+                            // Это атомарно запустит RunAliChatWarningAsync и поднимет панику для ВСЕХ окон в системе.
+                            bot.IsSaveLocal = false; 
+                            return NodeStatus.Success; // Возвращаем Success, чтобы лететь на станцию
+
+                        case SecurityCheckResult.Unknown:
+                            // Ослепли в космосе (всплыло окно/интерфейс заглючил). 
+                            // В космосе оставаться вслепую опасно — переводим бота в режим "Осмотрись"
+                            if (bot.CurrentTask != AccountTask.LookAround)
+                            {
+                                bot.CurrentTask = AccountTask.LookAround;
+                                Logger.Log($"[{bot.Settings.Name}] Потеря интерфейса в космосе. Запуск диагностики...", LogType.Warning);
+                                await bot.ExecuteLookAroundDiagnosticsAsync(token);
+                            }
+                            return NodeStatus.Failure; // Прерываем сиквенс паники, даем секунду осмотреться
+
+                        case SecurityCheckResult.Safe:
+                        default:
+                            return NodeStatus.Failure; // Всё чисто, лететь на станцию не нужно
+                    }
                 }),
 
-                // Действие: Экстренный возврат на станцию
+                // ШАГ 3: Действие (Выполнится ТОЛЬКО если шаг 1 и 2 вернули NodeStatus.Success)
                 new ActionNode("Emergency Return To Station", async (bot, token) =>
                 {
-                    Logger.Log($"[{bot.Settings.Name}] КРИТИЧЕСКАЯ УГРОЗА! Срочный возврат на станцию.", LogType.Warning);
+                    // Меняем статус на эвакуацию для UI
+                    bot.CurrentTask = AccountTask.GoToStation;
+                    
+                    Logger.Log($"[{bot.Settings.Name}] КРИТИЧЕСКАЯ УГРОЗА В КОСМОСЕ! Срочный уход в варп на домашнюю станцию.", LogType.Warning);
 
                     // Сбрасываем выбранный белт на случай паники, чтобы потом начать сначала
                     bot._currenttarget = null;
 
+                    // Команда на варп и док
                     bool success = await bot.WarpAndDockToHomeStationAsync(token);
                     return success ? NodeStatus.Success : NodeStatus.Failure;
                 })
             ),
+
 
             // =========================================================================
             // БЛОК СТАНЦИИ: ШАГИ 1, 2, 8 (если прилетели полные) и 9
@@ -148,7 +223,7 @@ public static class ScenarioFactory
 
                 new SelectorNode("Station Actions",
 
-                    // ШАГ 9: Если прилетели и рудный трюм полный — выгружаемся
+                    // ВЕТКА ВЫГРУЗКИ: Если прилетели и рудный трюм полный — выгружаемся
                     new SequenceNode("Unload Cargo Sequence",
                         new ActionNode("Is Cargo Full Check", async (bot, token) =>
                         {
@@ -162,39 +237,59 @@ public static class ScenarioFactory
                         })
                     ),
 
-                    // ШАГ 1 и 2: Трюм пустой, готовы к вылету
-                    new SequenceNode("Undock Sequence",
-                        // ШАГ 1: Проверяем, что в системе безопасно перед выходом
-                        new ActionNode("Check Safe Before Undock", async (bot, token) =>
-                        {
-                            bool isSafe = await bot.CheckSecurityStatusAsync(token);
-                            if (!isSafe)
-                            {
-                                // ШАГ 1.2: Нет - ждем в доке (возвращаем Success, чтобы завершить тик и не идти к андоку)
-                                Logger.Log($"[{bot.Settings.Name}] В локале небезопасно. Ожидаю в доке...", LogType.Warning);
-                                await System.Threading.Tasks.Task.Delay(5000, token); // Защитная пауза перед следующим тиком
-                                return NodeStatus.Success;
-                            }
-                            // ШАГ 1.1: Да - переходим к следующему шагу сиквенса
-                            return NodeStatus.Success;
-                        }),
+                    // ВЕТКА АНДОКА: Сработает, только если ветка выгрузки вернула Failure (трюм уже пуст)
+                    new SequenceNode("Undock Monolithic Sequence",
 
-                        // Дополнительный предохранитель: не андокаться, если трюм всё еще полный
+                        // Предохранитель 1: На всякий случай проверяем, что трюм точно пустой перед вылетом
                         new ActionNode("Check Cargo Empty Before Undock", async (bot, token) =>
                         {
                             bool isFull = await bot.CheckIsCargoFullAsync(token);
                             return !isFull ? NodeStatus.Success : NodeStatus.Failure;
                         }),
 
-                        // ШАГ 2: Выходим из дока
-                        new ActionNode("Undock", async (bot, token) =>
+                        // Предохранитель 2: Проверяем, что в системе безопасно перед выходом
+                        new ActionNode("Check Safe Before Undock", async (bot, token) =>
+                        {
+                            bot.CurrentTask = AccountTask.CheckSecurity; // Обновляем статус для UI
+
+                            SecurityCheckResult result = await bot.CheckSecurityStatusAsync(token);
+
+                            switch (result)
+                            {
+                                case SecurityCheckResult.Safe:
+                                    Logger.Log($"[{bot.Settings.Name}] Локал чист. Безопасность подтверждена.", LogType.Info);
+                                    return NodeStatus.Success; // Разрешаем сиквенсу идти дальше к самому андоку
+
+                                case SecurityCheckResult.Danger:
+                                    bot.IsSaveLocal = false; 
+                                    Logger.Log($"[{bot.Settings.Name}] В локале небезопасно (враги). Ожидаю на станции...", LogType.Warning);
+                                    await Task.Delay(5000, token); 
+                                    return NodeStatus.Failure; // Прерываем сиквенс, до кнопки андока не дойдем
+
+                                case SecurityCheckResult.Unknown:
+                                    bot.CurrentTask = AccountTask.LookAround; 
+                                    Logger.Log($"[{bot.Settings.Name}] Статус системы неизвестен. Андок заблокирован, проверяю интерфейс...", LogType.Warning);
+                                    await bot.ExecuteLookAroundDiagnosticsAsync(token);
+                                    return NodeStatus.Failure; // Прерываем сиквенс
+
+                                default:
+                                    return NodeStatus.Failure;
+                            }
+                        }),
+                        
+                        // ШАГ 2: Сам вылет из дока. Вызовется ТОЛЬКО если трюм пуст И в локале 100% безопасно
+                        new ActionNode("Execute Undock", async (bot, token) =>
                         {
                             Logger.Log($"[{bot.Settings.Name}] В системе чисто. Выхожу из дока.", LogType.Info);
-                            return await bot.UndockFromStationAsync(token) ? NodeStatus.Success : NodeStatus.Failure;
+                            
+                            // Вызываем ваш реальный игровой метод андока
+                            bool undockSuccess = await bot.UndockFromStationAsync(token);
+                            return undockSuccess ? NodeStatus.Success : NodeStatus.Failure;
                         })
                     )
                 )
             ),
+
 
             // =========================================================================
             // БЛОК КОСМОСА: ШАГИ 3, 4, 5, 6, 7, 8
@@ -260,14 +355,45 @@ public static class ScenarioFactory
                         // ШАГ 4: Проверяем, что в системе безопасно ПЕРЕД варпом
                         new ActionNode("Check Safe Before Warp", async (bot, token) =>
                         {
-                            bool isSafe = await bot.CheckSecurityStatusAsync(token);
-                            if (!isSafe)
+                            bot.CurrentTask = AccountTask.CheckSecurity; // Обновляем статус для UI
+
+                            // 1. Быстрый чек: если КТО-ТО ДРУГОЙ уже забил тревогу, мгновенно отменяем полет
+                            var systemState = SystemSafetyManager.GetSystemState(bot.EVESystem);
+                            if (systemState.IsSafe is false)
                             {
-                                // ШАГ 4.2: Небезопасно — сбрасываем цель. На следующем тике сработает верхний блок паники
-                                bot._currenttarget = null;
+                                Logger.Log($"[{bot.Settings.Name}] Отмена варпа: получена глобальная тревога от другого окна!", LogType.Warning);
+                                bot._currenttarget = null; // Сбрасываем цель, чтобы на следующем тике уйти в док
                                 return NodeStatus.Failure;
                             }
-                            return NodeStatus.Success;
+
+                            // 2. Если глобально чисто, проверяем сами своим OCR
+                            SecurityCheckResult result = await bot.CheckSecurityStatusAsync(token);
+
+                            switch (result)
+                            {
+                                case SecurityCheckResult.Safe:
+                                    // В системе на 100% чисто — даем зеленый свет на варп в белт
+                                    return NodeStatus.Success;
+
+                                case SecurityCheckResult.Danger:
+                                    // Враг обнаружен прямо перед прыжком!
+                                    bot.IsSaveLocal = false; // Атомарно взводим панику для всех окон
+                                    bot._currenttarget = null; // Сбрасываем цель копки
+                                    Logger.Log($"[{bot.Settings.Name}] Отмена варпа: обнаружен противник в системе!", LogType.Warning);
+                                    return NodeStatus.Failure; // Прерываем сиквенс полета
+
+                                case SecurityCheckResult.Unknown:
+                                    // Ослепли (например, мигнул экран перехода). 
+                                    // Чтобы не потерять цель (белт) из-за случайного лага, НЕ сбрасываем _currenttarget.
+                                    // Просто возвращаем Failure, чтобы сиквенс замер на один тик и бот попробовал снова.
+                                    bot.CurrentTask = AccountTask.LookAround;
+                                    Logger.Log($"[{bot.Settings.Name}] Предупреждение перед варпом: интерфейс не определен. Ожидание стабилизации...", LogType.Warning);
+                                    await bot.ExecuteLookAroundDiagnosticsAsync(token);
+                                    return NodeStatus.Failure;
+
+                                default:
+                                    return NodeStatus.Failure;
+                            }
                         }),
 
                         // ШАГ 5: Варпаем на конкретный выбранный пояс
