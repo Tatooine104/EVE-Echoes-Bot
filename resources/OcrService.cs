@@ -29,6 +29,14 @@ namespace EVEEchoesBot.resources
 
             // Инициализация движка: склеиваем языки через плюс, чтобы распознавать eng и rus параллельно
             _ocrEngine = new Engine(tessdataPath, "eng+rus", EngineMode.Default);
+
+            // =========================================================================
+            // НАСТРОЙКА БЕЛОГО СПИСКА СИМВОЛОВ ДЛЯ ОПТИМИЗАЦИИ ШРИФТОВ EVE Echoes
+            // =========================================================================
+            // Разрешаем только английские заглавные/строчные буквы, цифры и дефис.
+            // Это заставит Tesseract выбирать между '8' и 'B'/'O' гораздо строже.
+            _ocrEngine.SetVariable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-");
+
         }
 
         /// <summary>

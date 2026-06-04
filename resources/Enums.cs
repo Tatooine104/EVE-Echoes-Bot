@@ -42,8 +42,9 @@ namespace EVEEchoesBot.resources;
         /// <summary>Финальная кнопка "Send" для отправки сформированного пакета данных в активный канал.</summary>
         ChatButtSend = 4450695,
 
-        CharMenu = 500040,
-        Fitting = 1850210
+        CharMenu =   500070,
+        Fitting  =  1850240,
+        XButton  = 12300065
 
     }
 
@@ -65,7 +66,7 @@ public enum GameRegions : long
     /// <summary>Пример: Область обзора локального чата (X=10, Y=80, W=400, H=600)</summary>
     //LocalChatArea = 10L | (80L << 16) | (400L << 32) | (600L << 48)
 
-    SystemName = 110L | (15L  << 16) | (140L << 32) | (30L << 48),
+    SystemName = 110L | (20L  << 16) | (140L << 32) | (35L << 48),
     ShipName   = 6L   | (215L << 16) | (300L << 32) | (50L << 48)
 }
 

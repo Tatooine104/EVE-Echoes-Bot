@@ -51,21 +51,16 @@ public static class ScenarioFactory
 
             // ВЕТКА ТРЕВОГИ (Враг в системе)
             new SequenceNode("Emergency Response Branch",
-                // 1. Проверяем, взведен ли глобальный статус опасности для этой системы
                 new ActionNode("Check System Danger Status", async (bot, _) =>
                 {
-                    // Если менеджер говорит, что система НЕ безопасна — запускаем панику
                     var isSafe = SystemSafetyManager.GetSystemState(bot.EVESystem).IsSafe;
                     return isSafe is false ? NodeStatus.Success : NodeStatus.Failure;
                 }),
-                // 2. Отрабатываем эвакуацию (метод сам проверит, нужно ли слать чат-алерт и дергать соседа)
                 new ActionNode("Execute Panic Evacuation", async (bot, _) =>
                 {
                     if (bot.CurrentTask != AccountTask.GoToStation)
                     {
                         bot.CurrentTask = AccountTask.GoToStation;
-
-                        // Вызываем централизованный сеттер, чтобы он атомарно пнул соседей и запустил RunAliChatWarningAsync
                         bot.IsSaveLocal = false;
                     }
                     return NodeStatus.Success;
@@ -76,17 +71,12 @@ public static class ScenarioFactory
             new SequenceNode("Look Around Branch",
                 new ActionNode("Check If Interface Lost", async (bot, _) =>
                 {
-                    // Сработает, только если бот вручную переведен в режим диагностики
                     return bot.CurrentTask == AccountTask.LookAround ? NodeStatus.Success : NodeStatus.Failure;
                 }),
                 new ActionNode("Run Diagnostics", async (bot, token) =>
                 {
                     Logger.Log($"[{bot.Settings.Name}] Интерфейс заблокирован. Выполнение макроса очистки экрана...", LogType.Warning);
-
-                    // Вызываем ваш метод прожимания Esc/закрытия рекламы
                     await bot.ExecuteLookAroundDiagnosticsAsync(token);
-
-                    // После чистки возвращаем базовый таск, чтобы на следующем тике запустить штатный скан
                     bot.CurrentTask = AccountTask.CheckSecurity;
                     return NodeStatus.Success;
                 })
@@ -96,36 +86,81 @@ public static class ScenarioFactory
             new SequenceNode("Standard Security Monitor Branch",
                 new ActionNode("Analyze Screen and Update State", async (bot, token) =>
                 {
-                    // Задаем таск для отображения в UI/DTO
                     bot.CurrentTask = AccountTask.CheckSecurity;
 
-                    // Получаем один из трех вердиктов от OCR
                     SecurityCheckResult result = await bot.CheckSecurityStatusAsync(token);
 
                     switch (result)
                     {
                         case SecurityCheckResult.Safe:
-                            // Все чисто: пишем в свойство, сбрасываем панику, ветка идет дальше к мирному логу
                             bot.IsSaveLocal = true;
                             return NodeStatus.Success;
 
                         case SecurityCheckResult.Danger:
-                            // Враг! Немедленно взводим IsSaveLocal в false (это запустит цепочку паники)
                             bot.IsSaveLocal = false;
-                            // Возвращаем Failure, чтобы дерево прервало эту ветку и на следующем тике ушло в "Emergency Response Branch"
                             return NodeStatus.Failure;
 
                         case SecurityCheckResult.Unknown:
-                            // Потеряли глаза. Переводим бота в режим осмотра
                             bot.CurrentTask = AccountTask.LookAround;
-                            // Прерываем ветку, уходим на диагностику
                             return NodeStatus.Failure;
 
                         default:
                             return NodeStatus.Failure;
                     }
                 }),
-                // Этот узел выполнится, ТОЛЬКО если предыдущий вернул NodeStatus.Success (то есть система Safe)
+
+                // =========================================================================
+                // НОВЫЙ УЗЕЛ: ИНТЕГРАЦИЯ МАКРОСОВ СКАНИРОВАНИЯ КОРАБЛЯ И СИСТЕМЫ
+                // =========================================================================
+                new ActionNode("Scan Metadata If Needed", async (bot, token) =>
+                {
+                    // 1. СКАНИРУЕМ СИСТЕМУ (Только если она еще не определена)
+                    if (string.IsNullOrWhiteSpace(bot.EVESystem) || bot.EVESystem == "Требуется ввод" || bot.EVESystem == "Не определена")
+                    {
+                        // Проверяем: если меню корабля сейчас НЕ открывается, сканируем систему в спокойном состоянии интерфейса
+                        if (bot.CurrentTask != AccountTask.CheckYourOwnState)
+                        {
+                            await bot.ScanCurrentSystemAsync();
+                            
+                            // Если OCR вернул пустоту, временно фиксируем заглушку, чтобы не циклиться каждую секунду
+                            if (string.IsNullOrWhiteSpace(bot.EVESystem) || bot.EVESystem == "Требуется ввод")
+                            {
+                                bot._eveSystem = "Не определена";
+                            }
+                            
+                            // Даем небольшую паузу после скана системы
+                            await Task.Delay(1000, token);
+                        }
+                    }
+
+                    // 2. СКАНИРУЕМ КОРАБЛЬ (Только если он еще не определен)
+                    if (string.IsNullOrWhiteSpace(bot.EVEShip) || bot.EVEShip == "Требуется ввод" || bot.EVEShip == "Не определен")
+                    {
+                        // Переключаем таск, чтобы визуально заблокировать параллельный скан системы во время макроса
+                        bot.CurrentTask = AccountTask.CheckYourOwnState; 
+
+                        // Запускаем макрос с кликами и закрытием через XButton
+                        await bot.ScanCurrentShipAsync();
+                        
+                        if (string.IsNullOrWhiteSpace(bot.EVEShip) || bot.EVEShip.Length < 3 || bot.EVEShip.Contains("ввод"))
+                        {
+                            bot._eveShip = "Не определен"; 
+                        }
+
+                        // ЖЕСТКИЙ ПРЕДОХРАНИТЕЛЬ: После закрытия меню хангара кнопкой XButton
+                        // даем игре честные 5 секунд, чтобы оверлей полностью скрылся, 
+                        // и экран вернулся в исходное чистое состояние!
+                        await Task.Delay(5000, token);
+                        
+                        // Возвращаем штатный таск
+                        bot.CurrentTask = AccountTask.CheckSecurity;
+                    }
+
+                    return NodeStatus.Success;
+                }),
+                // =========================================================================
+
+                // Этот узел выполнится, ТОЛЬКО если сканирование метаданных завершилось успехом
                 new ActionNode("Log Safe Status", async (bot, _) =>
                 {
                     bot.CurrentTask = AccountTask.CheckYourOwnState;
@@ -135,6 +170,7 @@ public static class ScenarioFactory
             )
         );
     }
+
 
 
     #endregion

@@ -1450,54 +1450,116 @@ public partial class ActiveBotAccount
             try
             {
                 using Mat? screenshot = Tools.CaptureWindow(Hwnd);
-                if (screenshot?.Empty() is not false) return _eveSystem;
+                if (screenshot?.Empty() is not false || screenshot.Width <= 0 || screenshot.Height <= 0) 
+                    return _eveSystem;
 
-                // Извлекаем регион названия звездной системы (убедитесь, что GameRegions.SystemName настроен)
-                Rect systemRegion = GameRegions.SystemName.GetOpenCvRect();
-                Rect safeRegion = Tools.ClampRegion(systemRegion, screenshot.Width, screenshot.Height);
+                // 1. Распаковываем чистые исходные координаты из enum
+                OpenCvSharp.Rect systemRegion = GameRegions.SystemName.GetOpenCvRect();
+                
+                // Компенсация верхнего статус-бара эмулятора
+                int androidStatusBarHeight = 28;  
 
+                // =========================================================================
+                // ИДЕАЛЬНЫЙ ГЕОМЕТРИЧЕСКИЙ СРЕЗ ПОД CLAIM-НУЛИ
+                // =========================================================================
+                // - Сдвигаем X чуть вправо (+4), чтобы отрезать левую вертикальную рамку интерфейса.
+                // - Уменьшаем ширину (Width) со 140 до 85 пикселей. Это железно отрежет 
+                //   статус безопасности ":0.6" и правую рамку, оставив только имя системы.
+                // - Сдвигаем Y чуть ниже (+2), чтобы убрать верхнюю горизонтальную полосу.
+                // - Уменьшаем высоту (Height) на 4 пикселя, чтобы срезать нижнюю обводку.
+                OpenCvSharp.Rect compensatedRegion = new OpenCvSharp.Rect(
+                    systemRegion.X + 4, 
+                    systemRegion.Y + androidStatusBarHeight + 2,
+                    85, // Жесткая чистая ширина под само название системы
+                    systemRegion.Height - 4
+                );
+
+                // 2. Защищаем OpenCV от вылета за границы
+                OpenCvSharp.Rect safeRegion = Tools.ClampRegion(compensatedRegion, screenshot.Width, screenshot.Height);
                 if (safeRegion.Width <= 0 || safeRegion.Height <= 0) return _eveSystem;
 
+                // 3. Вырезаем область названия звездной системы
                 using Mat cropped = new(screenshot, safeRegion);
 
-                // Очистка изображения под требования Tesseract (черно-белый контрастный текст)
+                // =========================================================================
+                // МОЩНАЯ ОПТИЧЕСКАЯ ПРЕДОБРАБОТКА ПОД ПИКСЕЛЬНЫЙ ШРИФТ EVE ECHOES
+                // =========================================================================
                 using Mat gray = new();
                 Cv2.CvtColor(cropped, gray, ColorConversionCodes.BGR2GRAY);
+
+                // Шаг А: Увеличиваем изображение ровно в 2 раза.
+                // Кубическая интерполяция (Cubic) аккуратно сгладит и разведет слипшиеся 
+                // внутренние перемычки букв и цифр, превращая "B" обратно в "8".
+                using Mat resized = new();
+                Cv2.Resize(gray, resized, new OpenCvSharp.Size(gray.Width * 2, gray.Height * 2), 0, 0, InterpolationFlags.Cubic);
+
+                // Шаг Б: Применяем адаптивную бинаризацию вместо Otsu.
+                // Она рассчитывает порог локально для каждого пикселя. Это сделает буквы 
+                // более тонкими и четкими, полностью проявив внутренние овалы восьмерок.
                 using Mat binarized = new();
-                Cv2.Threshold(gray, binarized, 0, 255, ThresholdTypes.Otsu);
+                Cv2.AdaptiveThreshold(resized, binarized, 255, AdaptiveThresholdTypes.MeanC, ThresholdTypes.Binary, 15, 4);
+
+                // ВАЖНО: Адаптивный порог делает буквы ЧЕРНЫМИ на БЕЛОМ фоне.
+                // Tesseract OCR по умолчанию обучается на книгах и читает черные буквы на белом 
+                // фоне в разы точнее. Оставляем этот вариант для максимального распознавания!
+                // =========================================================================
+
+    #if DEBUG
+                try
+                {
+                    string debugDir = Path.GetFullPath(Path.Combine(Program.TemplatesDir, "..", "DebugScreenshots"));
+                    Directory.CreateDirectory(debugDir);
+                    // Сохраняем обновленный, увеличенный и контрастный кадр для проверки глазами
+                    Cv2.ImWrite(Path.Combine(debugDir, $"{Settings?.Name}_imgSystemName_FOUND.png"), binarized);
+                }
+                catch (Exception ex) 
+                {
+                    Console.WriteLine($"[Debug] Не удалось сохранить кадр системы: {ex.Message}");
+                }
+    #endif
 
                 byte[] imgBytes = binarized.ToBytes(".png");
+                string rawResult = OcrService.Instance.RecognizeText(imgBytes);
 
-                // Вызываем ваш метод через синглтон
-                string result = OcrService.Instance.RecognizeText(imgBytes);
-
-                if (!string.IsNullOrEmpty(result))
+                if (!string.IsNullOrEmpty(rawResult))
                 {
-                    // ФИКС: Используем сгенерированную во время компиляции регулярку вместо динамической
-                    result = CleanOcrTextRegex().Replace(result, "").Trim();
+                    // Оставляем только английские буквы, цифры и пробелы (убирает шевроны, кавычки, точки)
+                    string cleanResult = System.Text.RegularExpressions.Regex.Replace(rawResult, @"[^a-zA-Z0-9\s]", "").Trim();
+                    
+                    // Фикс двойных пробелов, если Tesseract их сгенерирует
+                    cleanResult = System.Text.RegularExpressions.Regex.Replace(cleanResult, @"\s+", " ");
 
-                    if (!string.IsNullOrEmpty(result))
+                    if (!string.IsNullOrEmpty(cleanResult) && cleanResult.Length > 3)
                     {
-                        _eveSystem = result;
-                        return _eveSystem;
+                        Logger.Log($"[{Settings?.Name}] OCR Корабля: Успешно распознан корабль '{cleanResult}' (Сырой текст: '{rawResult.Replace("\n", " ")}')", LogType.Info);
+                        
+                        _eveShip = cleanResult;
+                        return _eveShip;
                     }
                 }
+                
+                Logger.Log($"[{Settings?.Name}] OCR Системы: Текст не найден или область пустая.", LogType.Warning);
             }
             catch (Exception ex)
             {
-                Log($"Ошибка сканирования звездной системы: {ex.Message}", LogType.Warning);
+                Logger.Log($"[{Settings?.Name}] Ошибка сканирования звездной системы: {ex.Message}", LogType.Error);
             }
 
             return _eveSystem;
         });
     }
 
+
+
     // Компилятор .NET 9 сам сгенерирует сверхбыстрый код для этой регулярки на этапе сборки
     [GeneratedRegex(@"[^a-zA-Z0-9\-\s]")]
     private static partial Regex CleanOcrTextRegex();
 
+
     /// <summary>
-    /// Оптически распознает текущий корабль на основе скриншота экрана.
+    /// Выполняет цепочку макро-кликов для открытия меню корабля, 
+    /// оптически распознает его название с математическим стиранием мусора справа,
+    /// сохраняет отладочный кадр и закрывает интерфейс через XButton.
     /// </summary>
     internal async Task<string> ScanCurrentShipAsync()
     {
@@ -1506,23 +1568,21 @@ public partial class ActiveBotAccount
         try
         {
             // ========================================================
-            // ЭТАП 1: ВЫПОЛНЕНИЕ МАКРОСА ИНТЕРФЕЙСА (Два клика)
+            // ЭТАП 1: ВЫПОЛНЕНИЕ МАКРОСА ИНТЕРФЕЙСА (Открытие меню)
             // ========================================================
-            var macroSteps = new (GameUi Element, int DelayMs)[2]
-            {
-                // ШАГ 1: Нажимаем на иконку профиля / меню и ждем открытия оверлея
-                (GameUi.CharMenu, 2000),
+            Logger.Log($"[{Settings?.Name}] OCR Корабля: Запуск макроса кликов интерфейса...", LogType.Info);
 
-                // ШАГ 2: Нажимаем на подменю корабля или хангара и ждем прорисовки текста
-                (GameUi.Fitting, 2500)
+            var macroSteps = new (GameUi Element, int DelayMs)[]
+            {
+                (GameUi.CharMenu, 2000), // Открываем меню профиля
+                (GameUi.Fitting, 2500) // Переходим во вкладку корабля
             };
 
-            // Деконструкция кортежа прямо в цикле для строгого пошагового выполнения
             foreach (var (element, delayMs) in macroSteps)
             {
-                // Используем ваш родной метод клика по абстрактным элементам UI
+                // Вызываем ваш штатный метод клика по элементам UI
                 this.ClickTo(element);
-
+                
                 if (delayMs > 0)
                 {
                     await Task.Delay(delayMs, Program.GetGlobalToken());
@@ -1530,49 +1590,116 @@ public partial class ActiveBotAccount
             }
 
             // ========================================================
-            // ЭТАП 2: ЗАХВАТ КАДРА И РАСПОЗНАВАНИЕ ТЕКСТА
+            // ЭТАП 2: ЗАХВАТ КАДРА И КЛИЕНТСКАЯ ГЕОМЕТРИЯ OpenCV
             // ========================================================
-
-            // Делаем снимок, когда нужный экран гарантированно открылся
+            // Делаем снимок чистой клиентской области Android, где левый верхний угол — это 0,0
             using Mat? screenshot = Tools.CaptureWindow(Hwnd);
-            if (screenshot?.Empty() is not false) return _eveShip;
+            if (screenshot?.Empty() is not false || screenshot.Width <= 0 || screenshot.Height <= 0) 
+                return _eveShip;
 
-            // Извлекаем и корректируем регион названия корабля под размер окна
-            Rect shipRegion = GameRegions.ShipName.GetOpenCvRect();
-            Rect safeRegion = Tools.ClampRegion(shipRegion, screenshot.Width, screenshot.Height);
+            // Распаковываем исходные широкие координаты из битовой маски (X=6, Y=215, W=300, H=50)
+            OpenCvSharp.Rect shipRegion = GameRegions.ShipName.GetOpenCvRect();
 
+            // Компенсация высоты верхнего статус-бара BlueStacks (опускаем рамку на 40 пикселей вниз)
+            int androidStatusBarHeight = 40; 
+
+            OpenCvSharp.Rect compensatedRegion = new OpenCvSharp.Rect(
+                shipRegion.X, 
+                shipRegion.Y + androidStatusBarHeight, 
+                shipRegion.Width, // Исходная полная ширина 300 пикселей сохранена!
+                shipRegion.Height
+            );
+
+            // Защищаем OpenCV от вылета за физические границы матрицы скриншота
+            OpenCvSharp.Rect safeRegion = Tools.ClampRegion(compensatedRegion, screenshot.Width, screenshot.Height);
             if (safeRegion.Width <= 0 || safeRegion.Height <= 0) return _eveShip;
 
+            // Вырезаем область названия корабля
             using Mat cropped = new(screenshot, safeRegion);
 
-            // Предобработка: очищаем изображение для Tesseract
+            // ========================================================
+            // ЭТАП 3: ОПТИЧЕСКАЯ ПОДГОТОВКА И МАСКИРОВАНИЕ ХВОСТОВ
+            // ========================================================
             using Mat gray = new();
             Cv2.CvtColor(cropped, gray, ColorConversionCodes.BGR2GRAY);
+
+            // Увеличиваем изображение в 2 раза кубической интерполяцией, чтобы проявить пиксели
+            using Mat resized = new();
+            Cv2.Resize(gray, resized, new OpenCvSharp.Size(gray.Width * 2, gray.Height * 2), 0, 0, InterpolationFlags.Cubic);
+
+            // Применяем адаптивную бинаризацию (буквы станут черными на чистом белом фоне)
             using Mat binarized = new();
-            Cv2.Threshold(gray, binarized, 0, 255, ThresholdTypes.Otsu); // Исправленный флаг без дублирования
+            Cv2.AdaptiveThreshold(resized, binarized, 255, AdaptiveThresholdTypes.MeanC, ThresholdTypes.Binary, 15, 4);
 
-            // Кодируем в байты PNG
-            byte[] imgBytes = binarized.ToBytes(".png");
+            // УДАЛЕНИЕ ШЕВРОНОВ » И ЦИФР СПРАВА:
+            // Оставляем первые 65% ширины под текст названия, а последние 35% справа жестко затираем.
+            int clearStartLeft = (int)(binarized.Width * 0.65); 
+            int clearWidth = binarized.Width - clearStartLeft;
 
-            // Распознаем через наш запечатанный потокобезопасный синглтон
-            string result = OcrService.Instance.RecognizeText(imgBytes);
+            OpenCvSharp.Rect trashZone = new OpenCvSharp.Rect(clearStartLeft, 0, clearWidth, binarized.Height);
 
-            if (!string.IsNullOrEmpty(result))
+            // Заливаем зону мусора сплошным БЕЛЫМ цветом (255), полностью стирая шевроны
+            binarized.SubMat(trashZone).SetTo(new Scalar(255));
+
+            // ========================================================
+            // ЭТАП 4: СОХРАНЕНИЕ ОТЛАДКИ И РАСПОЗНАВАНИЕ Tesseract
+            // ========================================================
+#if DEBUG
+            try
             {
-                result = result.Trim();
-                if (!string.IsNullOrEmpty(result))
+                string debugDir = Path.GetFullPath(Path.Combine(Program.TemplatesDir, "..", "DebugScreenshots"));
+                Directory.CreateDirectory(debugDir);
+                // Сохраняем итоговый замаскированный кадр, правая часть будет идеально белой
+                Cv2.ImWrite(Path.Combine(debugDir, $"{Settings?.Name}_imgShipName_FOUND.png"), binarized);
+            }
+            catch (Exception ex) 
+            {
+                Console.WriteLine($"[Debug Error] Не удалось сохранить отладочный кадр корабля: {ex.Message}");
+            }
+#endif
+
+            // Кодируем подготовленную матрицу в байты PNG для Tesseract
+            byte[] imgBytes = binarized.ToBytes(".png");
+            string rawResult = OcrService.Instance.RecognizeText(imgBytes);
+
+            if (!string.IsNullOrEmpty(rawResult))
+            {
+                // Вычищаем результат регуляркой: оставляем только английские буквы, цифры и пробелы
+                string cleanResult = Regex.Replace(rawResult, @"[^a-zA-Z0-9\s]", "").Trim();
+                
+                // Схлопываем множественные пробелы в один, если они возникли
+                cleanResult = Regex.Replace(cleanResult, @"\s+", " ");
+
+                if (!string.IsNullOrEmpty(cleanResult) && cleanResult.Length > 3)
                 {
-                    _eveShip = result; // Записываем реальное название (например, "Retriever")
+                    Logger.Log($"[{Settings?.Name}] OCR Корабля: Успешно распознан корабль '{cleanResult}' (Сырой текст Tesseract: '{rawResult.Replace("\n", " ")}')", LogType.Info);
+                    
+                    _eveShip = cleanResult; // Перезаписываем "Требуется ввод"
                 }
             }
+            else
+            {
+                Logger.Log($"[{Settings?.Name}] OCR Корабля: Текст названия корабля не обнаружен.", LogType.Warning);
+            }
+
+            // ========================================================
+            // ЭТАП 5: ЗАКРЫТИЕ ИНТЕРФЕЙСА (Клик по XButton)
+            // ========================================================
+            Logger.Log($"[{Settings?.Name}] OCR Корабля: Закрытие меню через XButton.", LogType.Info);
+            
+            this.ClickTo(GameUi.XButton); 
+            
+            // Даем честную паузу, чтобы оверлей хангара успел полностью свернуться
+            await Task.Delay(1500, Program.GetGlobalToken());
         }
         catch (Exception ex)
         {
-            Log($"Ошибка макро-сканирования названия корабля: {ex.Message}", LogType.Warning);
+            Logger.Log($"[{Settings?.Name}] Критическая ошибка макро-сканирования корабля: {ex.Message}", LogType.Error);
         }
 
         return _eveShip;
     }
+
 
 
 }
