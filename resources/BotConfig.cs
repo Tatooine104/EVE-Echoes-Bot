@@ -151,6 +151,8 @@ public class AccountStateDto
         public string State { get; set; } = "Stopped";
         public string Runtime { get; set; } = "00 д. 00 ч. 00 м. 00 с.";
 
+        public string EmulatorTitle { get; set; } = "";
+
         // Вшиваем ваш реальный стейт аккаунта для средней части экрана
         public AccountStateDto? ExtendedState { get; set; }
     }
@@ -187,10 +189,12 @@ public class BotAccountManager
                     Name = extended.AccountName,
                     State = bot.State.ToString(),
                     Runtime = bot.GetRuntimeString(),
+                    EmulatorTitle = bot.Settings?.WindowTitle ?? $"LDPlayer-{index + 1}", // <-- ЗАПОЛНЯЕМ ИЗ КОНФИГА БОТА
                     ExtendedState = extended
                 };
             })];
         }
+
 
         /// <summary>
         /// Маршрутизирует команды управления от кнопок браузера к конкретному боту.

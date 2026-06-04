@@ -4,36 +4,33 @@
     <meta charset="UTF-8">
     <title>EVE Echoes Bot Control Panel</title>
     <style>
-        /* Офлайн-стили, чтобы интерфейс работал без интернета */
         body { background-color: #111827; color: #f9fafb; font-family: system-ui, -apple-system, sans-serif; padding: 24px; margin: 0; }
         .container { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
         .panel { background-color: #1f2937; padding: 20px; border: 1px solid #374151; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
         h2 { margin-top: 0; margin-bottom: 16px; font-size: 1.25rem; font-weight: bold; }
         .text-blue { color: #60a5fa; } .text-green { color: #34d399; } .text-amber { color: #fbbf24; } .text-red { color: #ff4b4b; }
         
-        /* Таблица аккаунтов */
         table { border-collapse: collapse; width: 100%; text-align: left; }
         th { border-bottom: 1px solid #4b5563; padding: 10px; color: #9ca3af; font-size: 0.875rem; }
         td { padding: 12px 10px; border-bottom: 1px solid #1f2937; }
         tr:hover { background-color: #111827; }
         
-        /* Статусы и Кнопки */
         .badge { padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; }
         .badge-running { background-color: #065f46; color: #34d399; }
         .badge-paused { background-color: #78350f; color: #fbbf24; }
         .badge-stopped { background-color: #374151; color: #d1d5db; }
+        
         .btn { padding: 6px 12px; border: none; border-radius: 4px; font-size: 0.75rem; font-weight: 500; cursor: pointer; margin-right: 4px; color: white; transition: background 0.2s; }
         .btn-start { background-color: #059669; } .btn-start:hover { background-color: #047857; }
         .btn-pause { background-color: #d97706; } .btn-pause:hover { background-color: #b45309; }
         .btn-stop { background-color: #dc2626; } .btn-stop:hover { background-color: #b91c1c; }
         
-        /* Сетка статистики */
         .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; }
-        .stat-card { background-color: #111827; padding: 16px; border-radius: 6px; border: 1px solid #1f2937; }
+        .stat-card { background-color: #111827; padding: 16px; border-radius: 6px; border: 1px solid #1f2937; transition: all 0.3s; }
+        .stat-card.danger { border-color: #ef4444; box-shadow: 0 0 12px rgba(239, 68, 68, 0.2); }
         .stat-title { font-size: 0.875rem; font-weight: bold; color: #9ca3af; margin-bottom: 8px; }
         .stat-row { display: flex; justify-content: space-between; font-size: 0.815rem; margin-bottom: 4px; }
         
-        /* Лог */
         .log-box { font-family: monospace; font-size: 0.875rem; background-color: #030712; padding: 12px; border-radius: 6px; border: 1px solid #1f2937; height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
         .log-line { padding: 2px 4px; border-radius: 2px; }
         .log-line:hover { background-color: #111827; }
@@ -42,7 +39,6 @@
 <body>
 
     <div class="container">
-        <!-- ВЕРХНЯЯ ЧАСТЬ: Информация о потоках -->
         <div class="panel">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
                 <h2 style="margin: 0; color: #fd5050;">EVE Echoes Bot <span class="text-blue">Панель управления</span></h2>
@@ -55,6 +51,7 @@
                     <tr>
                         <th>Эмулятор</th>
                         <th>Аккаунт</th>
+                        <th>Текущая задача</th>
                         <th>Состояние</th>
                         <th>Действия</th>
                         <th>В работе</th>
@@ -66,7 +63,6 @@
             </table>
         </div>
 
-        <!-- СРЕДНЯЯ ЧАСТЬ: Статика воркеров -->
         <div class="panel">
             <h2 class="text-green">Статистика запущенных эмуляторов</h2>
             <div id="stats-container" class="stats-grid">
@@ -74,7 +70,6 @@
             </div>
         </div>
 
-        <!-- НИЖНЯЯ ЧАСТЬ: Лог приложения (Макс 13 строк) -->
         <div class="panel">
             <h2 class="text-amber">Лог приложения</h2>
             <div id="log-container" class="log-box">
@@ -84,27 +79,51 @@
     </div>
 
     <script>
-        // Функция запроса данных с бэкенда
+        let userIsScrolling = false;
+
+        // Отслеживаем скролл пользователя, чтобы автопрокрутка логов не сбивала обзор
+        const logContainer = document.getElementById('log-container');
+        logContainer.addEventListener('scroll', () => {
+            userIsScrolling = (logContainer.scrollHeight - logContainer.scrollTop - logContainer.clientHeight) > 40;
+        });
+
+        // Вспомогательная функция для красивого форматирования времени работы (RuntimeSeconds -> ЧЧ:ММ:СС)
+        function formatRuntime(seconds) {
+            if (!seconds || isNaN(seconds)) return "00:00:00";
+            const hrs = Math.floor(seconds / 3600).toString().padStart(2, '0');
+            const mins = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
+            const secs = Math.floor(seconds % 60).toString().padStart(2, '0');
+            return `${hrs}:${mins}:${secs}`;
+        }
+
+        // Главная функция запроса данных с бэкенда (Секундный Polling)
         async function updateDashboard() {
             try {
                 const response = await fetch('/api/state');
                 if (!response.ok) return;
                 const data = await response.json();
 
-                // 1. Рендеринг таблицы аккаунтов (заменили acc.scenario на acc.scenario)
+                // ВАЖНО: Предполагаем, что бэкенд возвращает объект { accounts: [AccountStateDto, ...], logs: [...] }
+                // Если бэкенд возвращает массив напрямую, замените data.accounts на data
+                const accounts = data.accounts || [];
+                const logs = data.logs || [];
+
+                // 1. РЕНДЕРИНГ ТАБЛИЦЫ АККАУНТОВ
                 const tableBody = document.getElementById('accounts-table');
                 tableBody.innerHTML = data.accounts.map(acc => {
                     let badgeClass = 'badge-stopped';
                     if (acc.state === 'Running') badgeClass = 'badge-running';
                     if (acc.state === 'Paused') badgeClass = 'badge-paused';
 
-                    // Фикс: берем таску из extendedState.currentTask, которая заполнена в DTO
+                    // Вытаскиваем таску из вложенного extendedState
                     const taskName = acc.extendedState ? acc.extendedState.currentTask : 'None';
+                    const emulator = acc.emulatorTitle || `LDPlayer-${acc.id + 1}`;
 
                     return `
                         <tr>
-                            <td style="font-weight: 600;">${acc.name}</td>
-                            <td style="color: #9ca3af;">${taskName}</td>
+                            <td style="font-weight: 600; color: #60a5fa;">${emulator}</td>
+                            <td style="color: #e2e8f0; font-weight: 500;">${acc.name}</td> 
+                            <td style="color: #fbbf24; font-weight: 500;">${taskName}</td> 
                             <td><span class="badge ${badgeClass}">${acc.state}</span></td>
                             <td>
                                 <button onclick="sendCmd(${acc.id}, 'start')" class="btn btn-start">Старт</button>
@@ -116,7 +135,7 @@
                     `;
                 }).join('');
 
-                // 2. Рендеринг расширенной статистики (заменили старые статы на реальные поля из вашего AccountStateDto)
+                // 2. РЕНДЕРИНГ КАРТОЧЕК СТАТИСТИКИ
                 const statsContainer = document.getElementById('stats-container');
                 statsContainer.innerHTML = data.accounts.map(acc => {
                     const ext = acc.extendedState;
@@ -124,61 +143,58 @@
 
                     let locationText = "Определение...";
                     if (ext.inSpace === true) locationText = "🚀 В космосе";
-                    if (ext.inSpace === false) locationText = "🛸 В доке";
+                    if (ext.inSpace === false) locationText = "🛸 В доке станции";
+
+                    const isEvacuating = ext.currentTask === "EmergencyEvacuation" || ext.currentTask === "GoToStation";
+                    const emulator = acc.emulatorTitle || `LDPlayer-${acc.id + 1}`;
 
                     return `
-                        <div class="stat-card">
-                            <div class="stat-title" style="color: #60a5fa; border-bottom: 1px solid #374151; padding-bottom: 4px; margin-bottom: 10px;">
-                                ${acc.name}
+                        <div class="stat-card ${isEvacuating ? 'danger' : ''}">
+                            <div class="stat-title" style="color: #60a5fa; border-bottom: 1px solid #374151; padding-bottom: 4px; margin-bottom: 10px; font-weight: bold;">
+                                ${emulator} ➔ <span style="color: #fff;">${acc.name}</span>
                             </div>
                             <div class="stat-row">
                                 <span>Локация:</span>
-                                <span style="font-weight: bold;">${locationText}</span>
+                                <span style="font-weight: bold; color: ${ext.inSpace ? '#34d399' : '#a7f3d0'};">${locationText}</span>
                             </div>
                             <div class="stat-row">
                                 <span>Звездная система:</span>
-                                <span style="color: #e2e8f0; font-weight: bold;">${ext.eveSystem || '???'}</span>
+                                <span style="color: #f3f4f6; font-weight: bold;">${ext.eveSystem || 'Неизвестно'}</span>
                             </div>
                             <div class="stat-row">
                                 <span>Текущий корабль:</span>
-                                <span style="color: #9ca3af;">${ext.eveShip || '???'}</span>
+                                <span style="color: #9ca3af;">${ext.eveShip || 'Не определен'}</span>
                             </div>
                             <div class="stat-row">
-                                <span>Текущая цель/Белт:</span>
-                                <span style="color: #fbbf24; font-size: 0.8rem;">${ext.currentTarget || 'Нет цели'}</span>
-                            </div>
-                            <div class="stat-row" style="margin-top: 6px; border-top: 1px dashed #374151; padding-top: 4px;">
-                                <span>Срабатываний триггеров:</span>
-                                <span style="color: #f87171; font-weight: bold;">${ext.triggers || 0}</span>
+                                <span>Цель / Астероидный пояс:</span>
+                                <span style="color: #fbbf24; font-size: 0.8rem; font-weight: 500;">${ext.currentTarget || 'Нет цели'}</span>
                             </div>
                         </div>
                     `;
                 }).join('');
 
-                // 3. Рендеринг логов (максимум 13 строк бэкенд отдаст уже отсортированными)
-                const logContainer = document.getElementById('log-container');
-                logContainer.innerHTML = data.logs.map(log => `
-                    <div class="log-line">${log}</div>
-                `).join('');
+
+                // 3. УМНЫЙ РЕНДЕРИНГ ЛОГОВ БЕЗ ПРЫЖКОВ СКРОЛЛА
+                logContainer.innerHTML = logs.map(log => `<div class="log-line">${log}</div>`).join('');
+                if (!userIsScrolling) {
+                    logContainer.scrollTop = logContainer.scrollHeight;
+                }
 
             } catch (err) {
                 console.error("Ошибка обновления интерфейса:", err);
             }
         }
 
-        // Отправка команд на бэкенд
+        // Отправка команд управления на бэкенд
         async function sendCmd(id, action) {
             try {
                 await fetch(`/api/control/${id}/${action}`, { method: 'POST' });
-                updateDashboard();
+                updateDashboard(); // Мгновенно обновляем интерфейс после клика
             } catch (err) {
                 console.error("Ошибка отправки команды:", err);
             }
         }
 
-        // Опрос бэкенда раз в секунду для плавного тикания таймера
-        setInterval(updateDashboard, 1000);
-        updateDashboard();
         // Функция полного выключения всей экосистемы бота
         async function shutdownSystem() {
             if (!confirm("Вы уверены, что хотите полностью остановить воркеров и выключить бота?")) {
@@ -186,20 +202,22 @@
             }
             
             try {
-                // Отправляем команду на бэкенд
                 await fetch('/api/system/shutdown', { method: 'POST' });
                 
-                // Визуально информируем оператора, что сервер ушел в оффлайн
                 document.body.innerHTML = `
-                    <div style="max-w-md mx-auto mt-20 p-6 bg-gray-800 border border-red-900 rounded-lg text-center shadow-2xl">
+                    <div style="max-width: 500px; margin: 100px auto 0 auto; padding: 24px; background-color: #1f2937; border: 1px solid #dc2626; border-radius: 8px; text-align: center; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);">
                         <h1 style="color: #ef4444; font-size: 1.5rem; font-weight: bold; margin-bottom: 12px;">Бот успешно выключен</h1>
-                        <p style="color: #9ca3af; font-size: 0.9rem;">Все фоновые потоки автоматизации остановлены, сессии ADB завершены. Вы можете закрыть эту вкладку.</p>
+                        <p style="color: #9ca3af; font-size: 0.9rem; line-height: 1.5;">Все фоновые потоки автоматизации остановлены, сессии ADB завершены. Вы можете закрыть эту вкладку.</p>
                     </div>
                 `;
             } catch (err) {
                 console.error("Ошибка при выключении системы:", err);
             }
         }
+
+        // Запуск цикла обновления (раз в 1000 мс)
+        setInterval(updateDashboard, 1000);
+        updateDashboard();
     </script>
 </body>
 </html>

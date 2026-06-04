@@ -215,10 +215,10 @@ static partial class Program
         // --- МАРШРУТЫ API ДЛЯ УПРАВЛЕНИЯ НАШИМ БОТОМ ---
         var manager = app.Services.GetRequiredService<BotAccountManager>();
 
-        // Маршрут получения состояния (Вызывается каждую секунду из JS)
+        // Маршрут получения состояния (Простой и надежный)
         app.MapGet("/api/state", () => Microsoft.AspNetCore.Http.Results.Json(new {
             Accounts = manager.GetAccountsState(),
-            Logs = Logger.GetLastLogs() // Наш логгер из 13 строк
+            Logs = Logger.GetLastLogs()
         }));
 
         // Маршрут для обработки кликов по кнопкам Управления
@@ -231,15 +231,31 @@ static partial class Program
         app.MapPost("/api/system/shutdown", () => {
             Logger.Log("Запрошено полное выключение системы через веб-интерфейс...", LogType.Warning);
 
-            // 1. Сигнализируем всем фоновым потокам воркеров о необходимости остановиться
             _cts.Cancel();
 
-            // 2. Закрываем цикл Windows Forms (это вернет управление в конец Main, 
-            // где сработает авто-очистка adb.exe и корректно закроется Kestrel)
-            System.Windows.Forms.Application.Exit();
+            // 1. Проверяем, есть ли вообще открытые окна
+            if (System.Windows.Forms.Application.OpenForms.Count > 0)
+            {
+                // 2. ФИКС: Берем ПЕРВОЕ конкретное окно (индекс 0) из коллекции
+                var mainForm = System.Windows.Forms.Application.OpenForms[0];
+
+                // 3. Безопасно проверяем, что форма существует и не уничтожена
+                if (mainForm?.IsDisposed is false)
+                {
+                    // 4. Вызываем маршалинг потока у конкретного окна через стрелочную лямбду
+                    mainForm.BeginInvoke(() => System.Windows.Forms.Application.Exit());
+                }
+            }
+            else
+            {
+                // Если окон нет (работаем в консольном режиме/сервисе), тушим напрямую
+                System.Windows.Forms.Application.Exit();
+            }
 
             return Microsoft.AspNetCore.Http.Results.Ok();
         });
+
+
 
         // Запуск веб-сервера на фоне (Task.Run) для полной совместимости с Application.Run в Main
         Task.Run(async () => {
