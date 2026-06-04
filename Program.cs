@@ -37,6 +37,12 @@ static partial class Program
     public static readonly List<ActiveBotAccount> _activeBots = [];
 
     /// <summary>
+    /// Объект блокировки для потокобезопасного доступа к списку активных ботов.
+    /// </summary>
+    public static readonly System.Threading.Lock ActiveBotsLock = new(); // <-- ДОБАВИТЬ ЭТУ СТРОКУ
+
+
+    /// <summary>
     /// Ссылка на объект глобальной конфигурации приложения, содержащий параметры всех аккаунтов.
     /// </summary>
     private static BotConfig? _config;

@@ -1024,6 +1024,9 @@ public partial class ActiveBotAccount
 
     #region _isSaveLocal
 
+    private readonly System.Threading.Lock _localStateLock = new();
+
+
     /// <summary>
     /// Глобальное свойство безопасности звездной системы текущего аккаунта.
     /// <para>Чтение (get): Возвращает актуальный статус безопасности из синглтона <see cref="SystemSafetyManager"/>.</para>
@@ -1037,70 +1040,94 @@ public partial class ActiveBotAccount
         {
             if (string.IsNullOrEmpty(EVESystem) || EVESystem == "Неизвестно" || value == null) return;
 
-            var systemState = SystemSafetyManager.GetSystemState(EVESystem);
-            bool? currentStatus = systemState.IsSafe;
-
-            // ========================================================
-            // ИСПРАВЛЕННАЯ ЗАЩИТА СТАРТА: 
-            // ========================================================
-            if (_isFirstSecurityCheck)
+            // Защищаем внутренние флаги бота от гонок
+            lock (_localStateLock)
             {
-                _isFirstSecurityCheck = false; // Сбрасываем флаг первой проверки
-
-                if (value is true)
+                if (_isFirstSecurityCheck)
                 {
-                    // Если при старте всё чисто — просто фиксируем и молча выходим
-                    systemState.SetSafe();
-                    Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Стартовая инициализация: система безопасна. Мониторинг запущен.", LogType.Info);
-                    return;
-                }
+                    _isFirstSecurityCheck = false;
 
-                // Если же при старте СРАЗУ обнаружена опасность (value is false),
-                // мы НЕ делаем return! Мы разрешаем коду пройти ниже, чтобы 
-                // бот сразу же отработал экстренный сценарий и отправил чат-варнинг!
-                Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Стартовая проверка: система СРАЗУ ОПАСНА! Запуск экстренных процедур.", LogType.Warning);
-            }
-            else
-            {
-                // Для всех последующих проверок: если статус в памяти совпадает с новым — игнорируем
-                if (currentStatus == value) return;
+                    if (value is true)
+                    {
+                        SystemSafetyManager.SetSystemSafe(EVESystem);
+                        Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Стартовая инициализация: система безопасна. Мониторинг запущен.", LogType.Info);
+                        return;
+                    }
+
+                    Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Стартовая проверка: система СРАЗУ ОПАСНА! Запуск экстренных процедур.", LogType.Warning);
+                    // При опасности на старте не делаем return, идем обрабатывать угрозу локально
+                }
             }
 
             // ========================================================
-            // РЕАКЦИЯ НА РЕАЛЬНОЕ ИЗМЕНЕНИЕ СТАТУСА (Или на опасность при старте)
+            // ОБРАБОТКА ИЗМЕНЕНИЯ СТАТУСА
             // ========================================================
             if (value is false)
             {
-                bool shouldSendAllianceAlert = systemState.SetDanger();
-                _triggerCount++;
+                // Пытаемся перевести систему в статус опасности.
+                // Вызов вернет true ТОЛЬКО ОДИН РАЗ — в секунду фиксации первой угрозы.
+                bool isFirstAlert = SystemSafetyManager.TrySetSystemDanger(EVESystem);
 
-                Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] ВНИМАНИЕ! Фиксация угрозы в системе.", LogType.Warning);
-
-                if (shouldSendAllianceAlert)
+                if (isFirstAlert)
                 {
-                    Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Отправка оповещения: в системе обнаружен противник.", LogType.Error);
-                }
+                    Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] ВНИМАНИЕ! Первичная фиксация угрозы в системе. Запуск каскадной паники.", LogType.Warning);
 
-                // Рассылаем сигналы паники остальным окнам в этой же звездной системе
-                var botsInSystem = Program._activeBots.ToList();
-                foreach (var bot in botsInSystem)
-                {
-                    if (bot == this) continue;
-
-                    if (bot.EVESystem == this.EVESystem)
+                    // ========================================================
+                    // СТРОГО ОДНОКРАТНАЯ ОТПРАВКА УВЕДОМЛЕНИЯ В ЧАТ
+                    // ========================================================
+                    // Запускаем асинхронную отправку в фоне, чтобы не вешать текущий тик BT
+                    Task.Run(async () =>
                     {
-                        bot.ClearTasks();
-                        bot.ExecuteEmergencyResponse(isInitiator: false);
-                    }
+                        try
+                        {
+                            // Безопасно берем токен аккаунта. Если он null, берем глобальный токен приложения
+                            CancellationToken token = _accountCts?.Token ?? Program.GetGlobalToken();
+
+                            await RunAliChatWarningAsync(token);
+                        }
+                        catch (Exception ex)
+                        {
+                            Log($"Ошибка отправки сообщения в чат альянса: {ex.Message}", LogType.Error);
+                        }
+                    });
+
+                    // Рассылаем панику остальным окнам
+                    Task.Run(() =>
+                    {
+                        List<ActiveBotAccount> botsToPanic;
+                        lock (Program.ActiveBotsLock)
+                        {
+                            botsToPanic = [.. Program._activeBots.Where(b => b != this && b.EVESystem == this.EVESystem)];
+                        }
+
+                        foreach (var bot in botsToPanic)
+                        {
+                            try
+                            {
+                                bot.ClearTasks();
+                                bot.ExecuteEmergencyResponse(isInitiator: false);
+                            }
+                            catch (Exception ex)
+                            {
+                                Log($"Ошибка паники для окна {bot.Settings.Name}: {ex.Message}", LogType.Error);
+                            }
+                        }
+                    });
                 }
 
-                // Назначаем экстренную панику себе (текущему окну-инициатору)
-                this.ClearTasks();
-                this.ExecuteEmergencyResponse(isInitiator: true);
+                // Текущее окно уводим в док/на станцию
+                if (this.CurrentTask != AccountTask.GoToStation)
+                {
+                    this.ClearTasks();
+                    this.ExecuteEmergencyResponse(isInitiator: isFirstAlert);
+                }
             }
             else if (value is true)
             {
-                systemState.SetSafe();
+                // Проверяем текущее состояние из синглтона. Если там и так Safe — игнорируем, чтобы не спамить лог.
+                if (SystemSafetyManager.GetSystemState(EVESystem).IsSafe is true) return;
+
+                SystemSafetyManager.SetSystemSafe(EVESystem);
                 Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Статус системы изменился на БЕЗОПАСНО. Враги покинули систему.", LogType.Info);
             }
         }

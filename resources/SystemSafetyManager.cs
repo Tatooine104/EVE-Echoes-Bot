@@ -11,6 +11,34 @@ namespace EVEEchoesBot.resources;
 public static class SystemSafetyManager
 {
 
+    private static readonly Lock _globalLock = new();
+
+    /// <summary>
+    /// Потокобезопасно устанавливает статус опасности для системы.
+    /// </summary>
+    /// <returns>True, если статус РЕАЛЬНО изменился с безопасного на опасный</returns>
+    public static bool TrySetSystemDanger(string systemName)
+    {
+        lock (_globalLock)
+        {
+            var state = GetSystemState(systemName);
+            if (state.IsSafe is false)
+                return false; // Сигнал уже обработан ранее, дублировать панику не нужно
+
+            state.SetDanger(); // Переводим в статус Danger внутри вашего менеджера
+            return true; // Статус реально изменился впервые
+        }
+    }
+
+    public static void SetSystemSafe(string systemName)
+    {
+        lock (_globalLock)
+        {
+            var state = GetSystemState(systemName);
+            state.SetSafe();
+        }
+    }
+
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region Static Fields
