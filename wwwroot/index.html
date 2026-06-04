@@ -87,94 +87,124 @@
             userIsScrolling = (logContainer.scrollHeight - logContainer.scrollTop - logContainer.clientHeight) > 40;
         });
 
-        // Вспомогательная функция для красивого форматирования времени работы (RuntimeSeconds -> ЧЧ:ММ:СС)
-        function formatRuntime(seconds) {
-            if (!seconds || isNaN(seconds)) return "00:00:00";
-            const hrs = Math.floor(seconds / 3600).toString().padStart(2, '0');
-            const mins = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
-            const secs = Math.floor(seconds % 60).toString().padStart(2, '0');
-            return `${hrs}:${mins}:${secs}`;
+        // Функция форматирования времени (универсальная: принимает секунды или готовую строку)
+        function formatRuntime(runtimeValue, runtimeSeconds) {
+            // 1. Если бэкенд уже прислал готовую строку в acc.runtime (например "01:23:45"), берем её
+            if (runtimeValue && typeof runtimeValue === 'string' && runtimeValue !== "00:00:00") {
+                return runtimeValue;
+            }
+            // 2. Если прислал секунды — форматируем на ходу
+            if (runtimeSeconds && !isNaN(runtimeSeconds)) {
+                const hrs = Math.floor(runtimeSeconds / 3600).toString().padStart(2, '0');
+                const mins = Math.floor((runtimeSeconds % 3600) / 60).toString().padStart(2, '0');
+                const secs = Math.floor(runtimeSeconds % 60).toString().padStart(2, '0');
+                return `${hrs}:${mins}:${secs}`;
+            }
+            return "00:00:00";
         }
 
-        // Главная функция запроса данных с бэкенда (Секундный Polling)
         async function updateDashboard() {
             try {
                 const response = await fetch('/api/state');
                 if (!response.ok) return;
                 const data = await response.json();
 
-                // ВАЖНО: Предполагаем, что бэкенд возвращает объект { accounts: [AccountStateDto, ...], logs: [...] }
-                // Если бэкенд возвращает массив напрямую, замените data.accounts на data
-                const accounts = data.accounts || [];
-                const logs = data.logs || [];
+                // Защита от разного регистра ключей верхнего уровня (accounts / Accounts, logs / Logs)
+                const accounts = data.accounts || data.Accounts || [];
+                const logs = data.logs || data.Logs || [];
 
                 // 1. РЕНДЕРИНГ ТАБЛИЦЫ АККАУНТОВ
                 const tableBody = document.getElementById('accounts-table');
-                tableBody.innerHTML = data.accounts.map(acc => {
-                    let badgeClass = 'badge-stopped';
-                    if (acc.state === 'Running') badgeClass = 'badge-running';
-                    if (acc.state === 'Paused') badgeClass = 'badge-paused';
+                tableBody.innerHTML = accounts.map((acc, index) => {
+                    
+                    // Защита регистра для полей BotWebResponseDto (id/Id, name/Name, state/State, runtime/Runtime)
+                    const botId = acc.id !== undefined ? acc.id : (acc.Id !== undefined ? acc.Id : index);
+                    const botName = acc.name || acc.Name || 'Без имени';
+                    const botState = acc.state || acc.State || 'Stopped';
+                    const botRuntimeStr = acc.runtime || acc.Runtime || '';
+                    const emuTitle = acc.emulatorTitle || acc.EmulatorTitle || `LDPlayer-${botId + 1}`;
 
-                    // Вытаскиваем таску из вложенного extendedState
-                    const taskName = acc.extendedState ? acc.extendedState.currentTask : 'None';
-                    const emulator = acc.emulatorTitle || `LDPlayer-${acc.id + 1}`;
+                    // Извлекаем вложенный стейт (extendedState или ExtendedState)
+                    const ext = acc.extendedState || acc.ExtendedState;
+                    const taskName = ext ? (ext.currentTask || ext.CurrentTask || 'Ожидание...') : 'Ожидание...';
+                    const runtimeSec = ext ? (ext.runtimeSeconds || ext.RuntimeSeconds || 0) : 0;
+
+                    let badgeClass = 'badge-stopped';
+                    if (botState === 'Running' || botState === 'Active') badgeClass = 'badge-running';
+                    if (botState === 'Paused') badgeClass = 'badge-paused';
 
                     return `
                         <tr>
-                            <td style="font-weight: 600; color: #60a5fa;">${emulator}</td>
-                            <td style="color: #e2e8f0; font-weight: 500;">${acc.name}</td> 
+                            <td style="font-weight: 600; color: #60a5fa;">${emuTitle}</td>
+                            <td style="color: #e2e8f0; font-weight: 500;">${botName}</td> 
                             <td style="color: #fbbf24; font-weight: 500;">${taskName}</td> 
-                            <td><span class="badge ${badgeClass}">${acc.state}</span></td>
+                            <td><span class="badge ${badgeClass}">${botState}</span></td>
                             <td>
-                                <button onclick="sendCmd(${acc.id}, 'start')" class="btn btn-start">Старт</button>
-                                <button onclick="sendCmd(${acc.id}, 'pause')" class="btn btn-pause">Пауза</button>
-                                <button onclick="sendCmd(${acc.id}, 'stop')" class="btn btn-stop">Стоп</button>
+                                <button onclick="sendCmd(${botId}, 'start')" class="btn btn-start">Старт</button>
+                                <button onclick="sendCmd(${botId}, 'pause')" class="btn btn-pause">Пауза</button>
+                                <button onclick="sendCmd(${botId}, 'stop')" class="btn btn-stop">Стоп</button>
                             </td>
-                            <td style="font-family: monospace; color: #22d3ee;">${acc.runtime}</td>
+                            <td style="font-family: monospace; color: #22d3ee; font-weight: bold;">
+                                ${formatRuntime(botRuntimeStr, runtimeSec)}
+                            </td>
                         </tr>
                     `;
                 }).join('');
 
                 // 2. РЕНДЕРИНГ КАРТОЧЕК СТАТИСТИКИ
                 const statsContainer = document.getElementById('stats-container');
-                statsContainer.innerHTML = data.accounts.map(acc => {
-                    const ext = acc.extendedState;
+                statsContainer.innerHTML = accounts.map((acc, index) => {
+                    const botId = acc.id !== undefined ? acc.id : (acc.Id !== undefined ? acc.Id : index);
+                    const botName = acc.name || acc.Name || 'Аккаунт';
+                    const emuTitle = acc.emulatorTitle || acc.EmulatorTitle || `LDPlayer-${botId + 1}`;
+                    
+                    const ext = acc.extendedState || acc.ExtendedState;
                     if (!ext) return '';
 
-                    let locationText = "Определение...";
-                    if (ext.inSpace === true) locationText = "🚀 В космосе";
-                    if (ext.inSpace === false) locationText = "🛸 В доке станции";
+                    // Защита регистра для полей внутри AccountStateDto
+                    const inSpace = ext.inSpace !== undefined ? ext.inSpace : ext.InSpace;
+                    const eveSystem = ext.eveSystem || ext.EVESystem || 'Неизвестно';
+                    const eveShip = ext.eveShip || ext.EVEShip || 'Не определен';
+                    const currentTarget = ext.currentTarget || ext.CurrentTarget || 'Нет цели';
+                    const triggers = ext.triggers !== undefined ? ext.triggers : (ext.Triggers || 0);
+                    const taskName = ext.currentTask || ext.CurrentTask || '';
 
-                    const isEvacuating = ext.currentTask === "EmergencyEvacuation" || ext.currentTask === "GoToStation";
-                    const emulator = acc.emulatorTitle || `LDPlayer-${acc.id + 1}`;
+                    let locationText = "Определение...";
+                    if (inSpace === true) locationText = "🚀 В космосе";
+                    if (inSpace === false) locationText = "🛸 В доке станции";
+
+                    const isEvacuating = taskName === "EmergencyEvacuation" || taskName === "GoToStation";
 
                     return `
                         <div class="stat-card ${isEvacuating ? 'danger' : ''}">
                             <div class="stat-title" style="color: #60a5fa; border-bottom: 1px solid #374151; padding-bottom: 4px; margin-bottom: 10px; font-weight: bold;">
-                                ${emulator} ➔ <span style="color: #fff;">${acc.name}</span>
+                                ${emuTitle} ➔ <span style="color: #fff;">${botName}</span>
                             </div>
                             <div class="stat-row">
                                 <span>Локация:</span>
-                                <span style="font-weight: bold; color: ${ext.inSpace ? '#34d399' : '#a7f3d0'};">${locationText}</span>
+                                <span style="font-weight: bold; color: ${inSpace ? '#34d399' : '#a7f3d0'};">${locationText}</span>
                             </div>
                             <div class="stat-row">
-                                <span>Звездная система:</span>
-                                <span style="color: #f3f4f6; font-weight: bold;">${ext.eveSystem || 'Неизвестно'}</span>
+                                <span>Система:</span>
+                                <span style="color: #f3f4f6; font-weight: bold;">${eveSystem}</span>
                             </div>
                             <div class="stat-row">
-                                <span>Текущий корабль:</span>
-                                <span style="color: #9ca3af;">${ext.eveShip || 'Не определен'}</span>
+                                <span>Корабль:</span>
+                                <span style="color: #9ca3af;">${eveShip}</span>
                             </div>
                             <div class="stat-row">
-                                <span>Цель / Астероидный пояс:</span>
-                                <span style="color: #fbbf24; font-size: 0.8rem; font-weight: 500;">${ext.currentTarget || 'Нет цели'}</span>
+                                <span>Цель:</span>
+                                <span style="color: #fbbf24; font-size: 0.8rem; font-weight: 500;">${currentTarget}</span>
+                            </div>
+                            <div class="stat-row" style="margin-top: 6px; border-top: 1px dashed #374151; padding-top: 4px;">
+                                <span>Фиксаций угроз:</span>
+                                <span style="color: #f87171; font-weight: bold;">${triggers}</span>
                             </div>
                         </div>
                     `;
                 }).join('');
 
-
-                // 3. УМНЫЙ РЕНДЕРИНГ ЛОГОВ БЕЗ ПРЫЖКОВ СКРОЛЛА
+                // 3. РЕНДЕРИНГ ЛОГОВ БЕЗ ПРЫЖКОВ СКРОЛЛА
                 logContainer.innerHTML = logs.map(log => `<div class="log-line">${log}</div>`).join('');
                 if (!userIsScrolling) {
                     logContainer.scrollTop = logContainer.scrollHeight;

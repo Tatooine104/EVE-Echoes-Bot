@@ -173,6 +173,7 @@ public class BotAccountManager
                 {
                     AccountName = bot.Settings?.Name ?? $"Account_{index + 1}",
                     CurrentTask = bot.CurrentTask.ToString(),
+                    RuntimeSeconds = bot.RuntimeSeconds, // <-- ДОБАВЬТЕ ЭТУ СТРОКУ СЮДА!
                     EVESystem = bot._eveSystem,
                     EVEShip = bot._eveShip,
                     InSpace = bot._inSpace,

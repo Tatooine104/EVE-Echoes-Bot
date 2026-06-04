@@ -40,7 +40,11 @@ namespace EVEEchoesBot.resources;
         ChatMessScout = 3000600,
 
         /// <summary>Финальная кнопка "Send" для отправки сформированного пакета данных в активный канал.</summary>
-        ChatButtSend = 4450695
+        ChatButtSend = 4450695,
+
+        CharMenu = 500040,
+        Fitting = 1850210
+
     }
 
 #endregion
@@ -56,10 +60,13 @@ public enum GameRegions : long
     LocalChatIcon = 5L | (650L << 16) | (100L << 32) | (120L << 48),
 
     /// <summary>Пример: Область лейбов чатов (X=1, Y=5, W=150, H=750)</summary>
-    ChatsLabels  = 1L | (5L << 16) | (150L << 32) | (750L << 48)
+    ChatsLabels  = 1L | (5L << 16) | (150L << 32) | (750L << 48),
 
     /// <summary>Пример: Область обзора локального чата (X=10, Y=80, W=400, H=600)</summary>
     //LocalChatArea = 10L | (80L << 16) | (400L << 32) | (600L << 48)
+
+    SystemName = 110L | (15L  << 16) | (140L << 32) | (30L << 48),
+    ShipName   = 6L   | (215L << 16) | (300L << 32) | (50L << 48)
 }
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -

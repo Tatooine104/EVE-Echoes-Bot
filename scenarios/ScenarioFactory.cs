@@ -64,9 +64,9 @@ public static class ScenarioFactory
                     if (bot.CurrentTask != AccountTask.GoToStation)
                     {
                         bot.CurrentTask = AccountTask.GoToStation;
-                        
+
                         // Вызываем централизованный сеттер, чтобы он атомарно пнул соседей и запустил RunAliChatWarningAsync
-                        bot.IsSaveLocal = false; 
+                        bot.IsSaveLocal = false;
                     }
                     return NodeStatus.Success;
                 })
@@ -82,10 +82,10 @@ public static class ScenarioFactory
                 new ActionNode("Run Diagnostics", async (bot, token) =>
                 {
                     Logger.Log($"[{bot.Settings.Name}] Интерфейс заблокирован. Выполнение макроса очистки экрана...", LogType.Warning);
-                    
+
                     // Вызываем ваш метод прожимания Esc/закрытия рекламы
                     await bot.ExecuteLookAroundDiagnosticsAsync(token);
-                    
+
                     // После чистки возвращаем базовый таск, чтобы на следующем тике запустить штатный скан
                     bot.CurrentTask = AccountTask.CheckSecurity;
                     return NodeStatus.Success;
@@ -120,7 +120,7 @@ public static class ScenarioFactory
                             bot.CurrentTask = AccountTask.LookAround;
                             // Прерываем ветку, уходим на диагностику
                             return NodeStatus.Failure;
-                            
+
                         default:
                             return NodeStatus.Failure;
                     }
@@ -176,7 +176,7 @@ public static class ScenarioFactory
                         case SecurityCheckResult.Danger:
                             // Мы лично увидели врага! Взводим IsSaveLocal в false. 
                             // Это атомарно запустит RunAliChatWarningAsync и поднимет панику для ВСЕХ окон в системе.
-                            bot.IsSaveLocal = false; 
+                            bot.IsSaveLocal = false;
                             return NodeStatus.Success; // Возвращаем Success, чтобы лететь на станцию
 
                         case SecurityCheckResult.Unknown:
@@ -201,7 +201,7 @@ public static class ScenarioFactory
                 {
                     // Меняем статус на эвакуацию для UI
                     bot.CurrentTask = AccountTask.GoToStation;
-                    
+
                     Logger.Log($"[{bot.Settings.Name}] КРИТИЧЕСКАЯ УГРОЗА В КОСМОСЕ! Срочный уход в варп на домашнюю станцию.", LogType.Warning);
 
                     // Сбрасываем выбранный белт на случай паники, чтобы потом начать сначала
@@ -261,13 +261,13 @@ public static class ScenarioFactory
                                     return NodeStatus.Success; // Разрешаем сиквенсу идти дальше к самому андоку
 
                                 case SecurityCheckResult.Danger:
-                                    bot.IsSaveLocal = false; 
+                                    bot.IsSaveLocal = false;
                                     Logger.Log($"[{bot.Settings.Name}] В локале небезопасно (враги). Ожидаю на станции...", LogType.Warning);
-                                    await Task.Delay(5000, token); 
+                                    await Task.Delay(5000, token);
                                     return NodeStatus.Failure; // Прерываем сиквенс, до кнопки андока не дойдем
 
                                 case SecurityCheckResult.Unknown:
-                                    bot.CurrentTask = AccountTask.LookAround; 
+                                    bot.CurrentTask = AccountTask.LookAround;
                                     Logger.Log($"[{bot.Settings.Name}] Статус системы неизвестен. Андок заблокирован, проверяю интерфейс...", LogType.Warning);
                                     await bot.ExecuteLookAroundDiagnosticsAsync(token);
                                     return NodeStatus.Failure; // Прерываем сиквенс
@@ -276,12 +276,12 @@ public static class ScenarioFactory
                                     return NodeStatus.Failure;
                             }
                         }),
-                        
+
                         // ШАГ 2: Сам вылет из дока. Вызовется ТОЛЬКО если трюм пуст И в локале 100% безопасно
                         new ActionNode("Execute Undock", async (bot, token) =>
                         {
                             Logger.Log($"[{bot.Settings.Name}] В системе чисто. Выхожу из дока.", LogType.Info);
-                            
+
                             // Вызываем ваш реальный игровой метод андока
                             bool undockSuccess = await bot.UndockFromStationAsync(token);
                             return undockSuccess ? NodeStatus.Success : NodeStatus.Failure;

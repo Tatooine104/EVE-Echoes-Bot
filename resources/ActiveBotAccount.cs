@@ -11,6 +11,7 @@ using static EVEEchoesBot.resources.Logger;
 using EVEEchoesBot.resources;
 using EVEEchoesBot.scenarios;
 using Point = OpenCvSharp.Point;
+using System.Text.RegularExpressions;
 
 // [v] TODO 2026.05.30 Привести все тексты логгера к единому стилю 
 
@@ -470,6 +471,7 @@ public partial class ActiveBotAccount
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
+
     #region Start
 
     /// <summary>
@@ -479,12 +481,22 @@ public partial class ActiveBotAccount
     /// <param name="globalToken">Глобальный токен отмены приложения (<see cref="CancellationToken"/>), сигнализирующий о закрытии бота.</param>
     public void Start(CancellationToken globalToken)
     {
-        // Создаем сквозную связку: поток закроется либо при ручной остановке аккаунта, либо при выходе из всего бота
+        // 1. Взводим правильный статус для веб-панели
+        this.State = BotState.Running;
+
+        // 2. Если запускаемся впервые или после Стопа — фиксируем точку отсчета
+        if (_startTime == null)
+        {
+            _startTime = DateTime.Now;
+        }
+
+        // Создаем сквозную связку токенов
         _accountCts = CancellationTokenSource.CreateLinkedTokenSource(globalToken);
 
-        // Передаем токен созданной связки вторым параметром в Task.Run для безопасного планирования задачи в ThreadPool
+        // Передаем токен созданной связки вторым параметром в Task.Run
         Task.Run(async () => await RunLoopAsync(_accountCts.Token), _accountCts.Token);
     }
+
 
     #endregion
 
@@ -529,22 +541,42 @@ public partial class ActiveBotAccount
     {
         if (State != BotState.Running) return;
 
-        State = BotState.Paused;
+        this.State = BotState.Paused;
 
-        // Фиксируем пройденное за эту сессию время и сбрасываем точку отсчета
-        if (_startTime.HasValue)
+        // Фиксируем отработанное время в накопитель перед сбросом точки старта
+        if (_startTime != null)
         {
-            _accumulatedTime += DateTime.Now - _startTime.Value;
-            _startTime = null;
+            _accumulatedTime += (DateTime.Now - _startTime.Value);
         }
+        
+        _startTime = null; // Сбрасываем точку старта, останавливая отсчет
 
-        // Вызываем отмену через ваш CTS аккаунта, чтобы RunLoopAsync плавно завершился
+        // Плавное гашение асинхронного цикла воркера
         _accountCts?.Cancel();
-
-        Logger.Log($"[{Settings?.Name}] Поток автоматизации поставлен на паузу.", LogType.Warning);
+        
+        Logger.Log($"[{Settings?.Name}] Поток автоматизации приостановлен (Пауза). Время сохранено.", LogType.Warning);
     }
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    public double RuntimeSeconds
+    {
+        get
+        {
+            // Если бот работает прямо сейчас, возвращаем накопленное время + время текущей сессии
+            if (State == BotState.Running && _startTime != null)
+            {
+                return (_accumulatedTime + (DateTime.Now - _startTime.Value)).TotalSeconds;
+            }
+            // Если бот на паузе или стопе, возвращаем только то, что успели накопить
+            return _accumulatedTime.TotalSeconds;
+        }
+        set
+        {
+            // Пустой сеттер, если коду где-то нужно принудительно обнулить поле (например в Stop())
+            if (value == 0) _accumulatedTime = TimeSpan.Zero;
+        }
+    }
 
     #region RunLoopAsync
 
@@ -573,6 +605,17 @@ public partial class ActiveBotAccount
             {
                 try
                 {
+
+                    // ДИНАМИЧЕСКИЙ РАСЧЕТ ВРЕМЕНИ ДЛЯ ВЕБ-ИНТЕРФЕЙСА (внутри RunLoopAsync)
+                    if (this.State == BotState.Running && _startTime != null)
+                    {
+                        // Текущий аптайм = то, что накопили на прошлых паузах + разница с момента текущего старта
+                        TimeSpan currentUptime = _accumulatedTime + (DateTime.Now - _startTime.Value);
+                        
+                        // Передаем чистые секунды типа double в поле DTO
+                        this.RuntimeSeconds = currentUptime.TotalSeconds;
+                    }
+
                     // ОБНОВЛЕНИЕ ВРЕМЕНИ: Прибавляем секунды текущей сессии к базовому времени из файла
                     _accumulatedSeconds = baseSeconds + (sessionStopwatch.ElapsedMilliseconds / 1000);
 
@@ -751,7 +794,7 @@ public partial class ActiveBotAccount
             int adbY = foundImg2.Value.Y;
 
             Tools.SmartClick(adbX, adbY, minSec: 1, maxSec: 2, offset: 2, adbPort: Settings.AdbPort);
-            await Task.Delay(3500, token); 
+            await Task.Delay(3500, token);
 
             using Mat? freshScreenshot = Tools.CaptureWindow(Hwnd);
             if (freshScreenshot?.Empty() is not false) return SecurityCheckResult.Unknown;
@@ -829,7 +872,7 @@ public partial class ActiveBotAccount
         // ========================================================
         // ИСПРАВЛЕННАЯ СТРЕДЖ-ЛОГИКА ВЕРДИКТОВ:
         // ========================================================
-        
+
         // 1. ИДЕАЛЬНАЯ БЕЗОПАСНОСТЬ: Найдена вся тройка маркеров
         if (foundCount == 3)
         {
@@ -1367,7 +1410,7 @@ public partial class ActiveBotAccount
     #endregion
 
     /// <summary>
-    /// Логика "Осмотрись": выполняет аппаратно-независимые клики для закрытия случайных поп-апов, 
+    /// Логика "Осмотрись": выполняет аппаратно-независимые клики для закрытия случайных поп-апов,
     /// окон наград или рекламы, мешающих обзору OCR.
     /// </summary>
     internal async Task ExecuteLookAroundDiagnosticsAsync(CancellationToken token)
@@ -1379,14 +1422,14 @@ public partial class ActiveBotAccount
             // 1. Нажимаем клавишу ESC через ADB, чтобы закрыть любые случайные окна
             // (Параметр KEYCODE_ESCAPE в Android равен 111, либо используйте вашу обертку Tools)
             // Tools.SendKeyEvent(111, Settings.AdbPort); 
-            
+
             // 2. Делаем небольшую паузу, чтобы интерфейс успел отреагировать
             await Task.Delay(1500, token);
 
             // 3. Делаем клик по «пустому» безопасному месту экрана, где обычно нет кнопок,
             // чтобы сбросить фокус с возможных зависших элементов интерфейса
             // Tools.SmartClick(100, 100, minSec: 0, maxSec: 1, offset: 0, adbPort: Settings.AdbPort);
-            
+
             await Task.Delay(1000, token);
         }
         catch (Exception ex)
@@ -1394,6 +1437,143 @@ public partial class ActiveBotAccount
             Log($"[{Settings.Name}] Ошибка при выполнении диагностики экрана: {ex.Message}", LogType.Error);
         }
     }
+
+    /// <summary>
+    /// Оптически распознает текущую звездную систему на основе скриншота экрана.
+    /// </summary>
+    internal async Task<string> ScanCurrentSystemAsync()
+    {
+        if (Hwnd == IntPtr.Zero) return "Неизвестно";
+
+        return await Task.Run(() =>
+        {
+            try
+            {
+                using Mat? screenshot = Tools.CaptureWindow(Hwnd);
+                if (screenshot?.Empty() is not false) return _eveSystem;
+
+                // Извлекаем регион названия звездной системы (убедитесь, что GameRegions.SystemName настроен)
+                Rect systemRegion = GameRegions.SystemName.GetOpenCvRect();
+                Rect safeRegion = Tools.ClampRegion(systemRegion, screenshot.Width, screenshot.Height);
+
+                if (safeRegion.Width <= 0 || safeRegion.Height <= 0) return _eveSystem;
+
+                using Mat cropped = new(screenshot, safeRegion);
+
+                // Очистка изображения под требования Tesseract (черно-белый контрастный текст)
+                using Mat gray = new();
+                Cv2.CvtColor(cropped, gray, ColorConversionCodes.BGR2GRAY);
+                using Mat binarized = new();
+                Cv2.Threshold(gray, binarized, 0, 255, ThresholdTypes.Otsu);
+
+                byte[] imgBytes = binarized.ToBytes(".png");
+
+                // Вызываем ваш метод через синглтон
+                string result = OcrService.Instance.RecognizeText(imgBytes);
+
+                if (!string.IsNullOrEmpty(result))
+                {
+                    // ФИКС: Используем сгенерированную во время компиляции регулярку вместо динамической
+                    result = CleanOcrTextRegex().Replace(result, "").Trim();
+
+                    if (!string.IsNullOrEmpty(result))
+                    {
+                        _eveSystem = result;
+                        return _eveSystem;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"Ошибка сканирования звездной системы: {ex.Message}", LogType.Warning);
+            }
+
+            return _eveSystem;
+        });
+    }
+
+    // Компилятор .NET 9 сам сгенерирует сверхбыстрый код для этой регулярки на этапе сборки
+    [GeneratedRegex(@"[^a-zA-Z0-9\-\s]")]
+    private static partial Regex CleanOcrTextRegex();
+
+    /// <summary>
+    /// Оптически распознает текущий корабль на основе скриншота экрана.
+    /// </summary>
+    internal async Task<string> ScanCurrentShipAsync()
+    {
+        if (Hwnd == IntPtr.Zero) return "Неизвестно";
+
+        try
+        {
+            // ========================================================
+            // ЭТАП 1: ВЫПОЛНЕНИЕ МАКРОСА ИНТЕРФЕЙСА (Два клика)
+            // ========================================================
+            var macroSteps = new (GameUi Element, int DelayMs)[2]
+            {
+                // ШАГ 1: Нажимаем на иконку профиля / меню и ждем открытия оверлея
+                (GameUi.CharMenu, 2000),
+
+                // ШАГ 2: Нажимаем на подменю корабля или хангара и ждем прорисовки текста
+                (GameUi.Fitting, 2500)
+            };
+
+            // Деконструкция кортежа прямо в цикле для строгого пошагового выполнения
+            foreach (var (element, delayMs) in macroSteps)
+            {
+                // Используем ваш родной метод клика по абстрактным элементам UI
+                this.ClickTo(element);
+
+                if (delayMs > 0)
+                {
+                    await Task.Delay(delayMs, Program.GetGlobalToken());
+                }
+            }
+
+            // ========================================================
+            // ЭТАП 2: ЗАХВАТ КАДРА И РАСПОЗНАВАНИЕ ТЕКСТА
+            // ========================================================
+
+            // Делаем снимок, когда нужный экран гарантированно открылся
+            using Mat? screenshot = Tools.CaptureWindow(Hwnd);
+            if (screenshot?.Empty() is not false) return _eveShip;
+
+            // Извлекаем и корректируем регион названия корабля под размер окна
+            Rect shipRegion = GameRegions.ShipName.GetOpenCvRect();
+            Rect safeRegion = Tools.ClampRegion(shipRegion, screenshot.Width, screenshot.Height);
+
+            if (safeRegion.Width <= 0 || safeRegion.Height <= 0) return _eveShip;
+
+            using Mat cropped = new(screenshot, safeRegion);
+
+            // Предобработка: очищаем изображение для Tesseract
+            using Mat gray = new();
+            Cv2.CvtColor(cropped, gray, ColorConversionCodes.BGR2GRAY);
+            using Mat binarized = new();
+            Cv2.Threshold(gray, binarized, 0, 255, ThresholdTypes.Otsu); // Исправленный флаг без дублирования
+
+            // Кодируем в байты PNG
+            byte[] imgBytes = binarized.ToBytes(".png");
+
+            // Распознаем через наш запечатанный потокобезопасный синглтон
+            string result = OcrService.Instance.RecognizeText(imgBytes);
+
+            if (!string.IsNullOrEmpty(result))
+            {
+                result = result.Trim();
+                if (!string.IsNullOrEmpty(result))
+                {
+                    _eveShip = result; // Записываем реальное название (например, "Retriever")
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log($"Ошибка макро-сканирования названия корабля: {ex.Message}", LogType.Warning);
+        }
+
+        return _eveShip;
+    }
+
 
 }
 
