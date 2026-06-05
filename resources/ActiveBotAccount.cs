@@ -676,7 +676,7 @@ public partial class ActiveBotAccount
             }
             int sessionSeconds = (int)(System.DateTime.UtcNow - sessionStart).TotalSeconds;
 
-            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Состояние сохранено на диск. Поток дерева поведения остановлен. Время работы в сессии (сек): {sessionSeconds}", LogType.Info);
+            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Состояние сохранено. Поток поведения остановлен. Время работы в сессии (сек): {sessionSeconds}", LogType.Info);
         }
     }
 
