@@ -570,12 +570,12 @@ public partial class ActiveBotAccount
         {
             _accumulatedTime += (DateTime.Now - _startTime.Value);
         }
-        
+
         _startTime = null; // Сбрасываем точку старта, останавливая отсчет
 
         // Плавное гашение асинхронного цикла воркера
         _accountCts?.Cancel();
-        
+
         Logger.Log($"[{Settings?.Name}] Поток автоматизации приостановлен (Пауза). Время сохранено.", LogType.Warning);
     }
 
@@ -633,7 +633,7 @@ public partial class ActiveBotAccount
                     {
                         // Текущий аптайм = то, что накопили на прошлых паузах + разница с момента текущего старта
                         TimeSpan currentUptime = _accumulatedTime + (DateTime.Now - _startTime.Value);
-                        
+
                         // Передаем чистые секунды типа double в поле DTO
                         this.RuntimeSeconds = currentUptime.TotalSeconds;
                     }
@@ -1472,14 +1472,14 @@ public partial class ActiveBotAccount
             try
             {
                 using Mat? screenshot = Tools.CaptureWindow(Hwnd);
-                if (screenshot?.Empty() is not false || screenshot.Width <= 0 || screenshot.Height <= 0) 
+                if (screenshot?.Empty() is not false || screenshot.Width <= 0 || screenshot.Height <= 0)
                     return _eveSystem;
 
                 // 1. Распаковываем чистые исходные координаты из enum
                 OpenCvSharp.Rect systemRegion = GameRegions.SystemName.GetOpenCvRect();
-                
+
                 // Компенсация верхнего статус-бара эмулятора
-                int androidStatusBarHeight = 28;  
+                const int androidStatusBarHeight = 28;
 
                 // =========================================================================
                 // ИДЕАЛЬНЫЙ ГЕОМЕТРИЧЕСКИЙ СРЕЗ ПОД CLAIM-НУЛИ
@@ -1489,8 +1489,8 @@ public partial class ActiveBotAccount
                 //   статус безопасности ":0.6" и правую рамку, оставив только имя системы.
                 // - Сдвигаем Y чуть ниже (+2), чтобы убрать верхнюю горизонтальную полосу.
                 // - Уменьшаем высоту (Height) на 4 пикселя, чтобы срезать нижнюю обводку.
-                OpenCvSharp.Rect compensatedRegion = new OpenCvSharp.Rect(
-                    systemRegion.X + 4, 
+                OpenCvSharp.Rect compensatedRegion = new(
+                    systemRegion.X + 4,
                     systemRegion.Y + androidStatusBarHeight + 2,
                     85, // Жесткая чистая ширина под само название системы
                     systemRegion.Height - 4
@@ -1534,7 +1534,7 @@ public partial class ActiveBotAccount
                     // Сохраняем обновленный, увеличенный и контрастный кадр для проверки глазами
                     Cv2.ImWrite(Path.Combine(debugDir, $"{Settings?.Name}_imgSystemName_FOUND.png"), binarized);
                 }
-                catch (Exception ex) 
+                catch (Exception ex)
                 {
                     Console.WriteLine($"[Debug] Не удалось сохранить кадр системы: {ex.Message}");
                 }
@@ -1546,20 +1546,21 @@ public partial class ActiveBotAccount
                 if (!string.IsNullOrEmpty(rawResult))
                 {
                     // Оставляем только английские буквы, цифры и пробелы (убирает шевроны, кавычки, точки)
-                    string cleanResult = System.Text.RegularExpressions.Regex.Replace(rawResult, @"[^a-zA-Z0-9\s]", "").Trim();
-                    
+                    string cleanResult = CleanSpecialCharsRegex().Replace(rawResult, "").Trim();
+
                     // Фикс двойных пробелов, если Tesseract их сгенерирует
-                    cleanResult = System.Text.RegularExpressions.Regex.Replace(cleanResult, @"\s+", " ");
+                    cleanResult = DoubleSpacesRegex().Replace(cleanResult, " ");
+
 
                     if (!string.IsNullOrEmpty(cleanResult) && cleanResult.Length > 3)
                     {
                         Logger.Log($"[{Settings?.Name}] OCR Корабля: Успешно распознан корабль '{cleanResult}' (Сырой текст: '{rawResult.Replace("\n", " ")}')", LogType.Info);
-                        
+
                         _eveShip = cleanResult;
                         return _eveShip;
                     }
                 }
-                
+
                 Logger.Log($"[{Settings?.Name}] OCR Системы: Текст не найден или область пустая.", LogType.Warning);
             }
             catch (Exception ex)
@@ -1571,6 +1572,11 @@ public partial class ActiveBotAccount
         });
     }
 
+    [System.Text.RegularExpressions.GeneratedRegex(@"[^a-zA-Z0-9\s]")]
+    private static partial System.Text.RegularExpressions.Regex CleanSpecialCharsRegex();
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"\s+")]
+    private static partial System.Text.RegularExpressions.Regex DoubleSpacesRegex();
 
 
     // Компилятор .NET 9 сам сгенерирует сверхбыстрый код для этой регулярки на этапе сборки
@@ -1579,7 +1585,7 @@ public partial class ActiveBotAccount
 
 
     /// <summary>
-    /// Выполняет цепочку макро-кликов для открытия меню корабля, 
+    /// Выполняет цепочку макро-кликов для открытия меню корабля,
     /// оптически распознает его название с математическим стиранием мусора справа,
     /// сохраняет отладочный кадр и закрывает интерфейс через XButton.
     /// </summary>
@@ -1604,7 +1610,7 @@ public partial class ActiveBotAccount
             {
                 // Вызываем ваш штатный метод клика по элементам UI
                 this.ClickTo(element);
-                
+
                 if (delayMs > 0)
                 {
                     await Task.Delay(delayMs, Program.GetGlobalToken());
@@ -1616,18 +1622,18 @@ public partial class ActiveBotAccount
             // ========================================================
             // Делаем снимок чистой клиентской области Android, где левый верхний угол — это 0,0
             using Mat? screenshot = Tools.CaptureWindow(Hwnd);
-            if (screenshot?.Empty() is not false || screenshot.Width <= 0 || screenshot.Height <= 0) 
+            if (screenshot?.Empty() is not false || screenshot.Width <= 0 || screenshot.Height <= 0)
                 return _eveShip;
 
             // Распаковываем исходные широкие координаты из битовой маски (X=6, Y=215, W=300, H=50)
             OpenCvSharp.Rect shipRegion = GameRegions.ShipName.GetOpenCvRect();
 
             // Компенсация высоты верхнего статус-бара BlueStacks (опускаем рамку на 40 пикселей вниз)
-            int androidStatusBarHeight = 40; 
+            const int androidStatusBarHeight = 40;
 
-            OpenCvSharp.Rect compensatedRegion = new OpenCvSharp.Rect(
-                shipRegion.X, 
-                shipRegion.Y + androidStatusBarHeight, 
+            OpenCvSharp.Rect compensatedRegion = new(
+                shipRegion.X,
+                shipRegion.Y + androidStatusBarHeight,
                 shipRegion.Width, // Исходная полная ширина 300 пикселей сохранена!
                 shipRegion.Height
             );
@@ -1655,10 +1661,10 @@ public partial class ActiveBotAccount
 
             // УДАЛЕНИЕ ШЕВРОНОВ » И ЦИФР СПРАВА:
             // Оставляем первые 65% ширины под текст названия, а последние 35% справа жестко затираем.
-            int clearStartLeft = (int)(binarized.Width * 0.65); 
+            int clearStartLeft = (int)(binarized.Width * 0.65);
             int clearWidth = binarized.Width - clearStartLeft;
 
-            OpenCvSharp.Rect trashZone = new OpenCvSharp.Rect(clearStartLeft, 0, clearWidth, binarized.Height);
+            OpenCvSharp.Rect trashZone = new(clearStartLeft, 0, clearWidth, binarized.Height);
 
             // Заливаем зону мусора сплошным БЕЛЫМ цветом (255), полностью стирая шевроны
             binarized.SubMat(trashZone).SetTo(new Scalar(255));
@@ -1674,7 +1680,7 @@ public partial class ActiveBotAccount
                 // Сохраняем итоговый замаскированный кадр, правая часть будет идеально белой
                 Cv2.ImWrite(Path.Combine(debugDir, $"{Settings?.Name}_imgShipName_FOUND.png"), binarized);
             }
-            catch (Exception ex) 
+            catch (Exception ex)
             {
                 Console.WriteLine($"[Debug Error] Не удалось сохранить отладочный кадр корабля: {ex.Message}");
             }
@@ -1687,16 +1693,14 @@ public partial class ActiveBotAccount
             if (!string.IsNullOrEmpty(rawResult))
             {
                 // Вычищаем результат регуляркой: оставляем только английские буквы, цифры и пробелы
-                string cleanResult = Regex.Replace(rawResult, @"[^a-zA-Z0-9\s]", "").Trim();
-                
-                // Схлопываем множественные пробелы в один, если они возникли
-                cleanResult = Regex.Replace(cleanResult, @"\s+", " ");
+                string cleanShipResult = CleanSpecialCharsRegex().Replace(rawResult, "").Trim();
+                cleanShipResult = DoubleSpacesRegex().Replace(cleanShipResult, " ");
 
-                if (!string.IsNullOrEmpty(cleanResult) && cleanResult.Length > 3)
+                if (!string.IsNullOrEmpty(cleanShipResult) && cleanShipResult.Length > 3)
                 {
-                    Logger.Log($"[{Settings?.Name}] OCR Корабля: Успешно распознан корабль '{cleanResult}' (Сырой текст Tesseract: '{rawResult.Replace("\n", " ")}')", LogType.Info);
-                    
-                    _eveShip = cleanResult; // Перезаписываем "Требуется ввод"
+                    Logger.Log($"[{Settings?.Name}] OCR Корабля: Успешно распознан корабль '{cleanShipResult}' (Сырой текст Tesseract: '{rawResult.Replace("\n", " ")}')", LogType.Info);
+
+                    _eveShip = cleanShipResult; // Перезаписываем "Требуется ввод"
                 }
             }
             else
@@ -1721,8 +1725,6 @@ public partial class ActiveBotAccount
 
         return _eveShip;
     }
-
-
 
 }
 

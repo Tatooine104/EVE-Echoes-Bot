@@ -70,9 +70,8 @@ public static class ScenarioFactory
             // ВЕТКА ДИАГНОСТИКИ (Потеря интерфейса / Осмотрись)
             new SequenceNode("Look Around Branch",
                 new ActionNode("Check If Interface Lost", async (bot, _) =>
-                {
-                    return bot.CurrentTask == AccountTask.LookAround ? NodeStatus.Success : NodeStatus.Failure;
-                }),
+                    bot.CurrentTask == AccountTask.LookAround ? NodeStatus.Success : NodeStatus.Failure),
+
                 new ActionNode("Run Diagnostics", async (bot, token) =>
                 {
                     Logger.Log($"[{bot.Settings.Name}] Интерфейс заблокирован. Выполнение макроса очистки экрана...", LogType.Warning);
@@ -121,13 +120,13 @@ public static class ScenarioFactory
                         if (bot.CurrentTask != AccountTask.CheckYourOwnState)
                         {
                             await bot.ScanCurrentSystemAsync();
-                            
+
                             // Если OCR вернул пустоту, временно фиксируем заглушку, чтобы не циклиться каждую секунду
                             if (string.IsNullOrWhiteSpace(bot.EVESystem) || bot.EVESystem == "Требуется ввод")
                             {
                                 bot._eveSystem = "Не определена";
                             }
-                            
+
                             // Даем небольшую паузу после скана системы
                             await Task.Delay(1000, token);
                         }
@@ -137,21 +136,21 @@ public static class ScenarioFactory
                     if (string.IsNullOrWhiteSpace(bot.EVEShip) || bot.EVEShip == "Требуется ввод" || bot.EVEShip == "Не определен")
                     {
                         // Переключаем таск, чтобы визуально заблокировать параллельный скан системы во время макроса
-                        bot.CurrentTask = AccountTask.CheckYourOwnState; 
+                        bot.CurrentTask = AccountTask.CheckYourOwnState;
 
                         // Запускаем макрос с кликами и закрытием через XButton
                         await bot.ScanCurrentShipAsync();
-                        
+
                         if (string.IsNullOrWhiteSpace(bot.EVEShip) || bot.EVEShip.Length < 3 || bot.EVEShip.Contains("ввод"))
                         {
-                            bot._eveShip = "Не определен"; 
+                            bot._eveShip = "Не определен";
                         }
 
                         // ЖЕСТКИЙ ПРЕДОХРАНИТЕЛЬ: После закрытия меню хангара кнопкой XButton
                         // даем игре честные 5 секунд, чтобы оверлей полностью скрылся, 
                         // и экран вернулся в исходное чистое состояние!
                         await Task.Delay(5000, token);
-                        
+
                         // Возвращаем штатный таск
                         bot.CurrentTask = AccountTask.CheckSecurity;
                     }
