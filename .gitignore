@@ -17,7 +17,6 @@ debug_screenshot.png
 # === Локальные файлы логов и статистики ===
 *.log
 *.csv
-EVE_Echoes_Bot_log.csv
 _stats.json
 accounts_stats/
 

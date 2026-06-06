@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>EVE Echoes Bot Control Panel</title>
+    <style>
+        body { background-color: #111827; color: #f9fafb; font-family: system-ui, -apple-system, sans-serif; padding: 24px; margin: 0; }
+        .container { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
+        .panel { background-color: #1f2937; padding: 20px; border: 1px solid #374151; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        h2 { margin-top: 0; margin-bottom: 16px; font-size: 1.25rem; font-weight: bold; }
+        .text-blue { color: #60a5fa; } .text-green { color: #34d399; } .text-amber { color: #fbbf24; } .text-red { color: #ff4b4b; }
+        
+        table { border-collapse: collapse; width: 100%; text-align: left; }
+        th { border-bottom: 1px solid #4b5563; padding: 10px; color: #9ca3af; font-size: 0.875rem; }
+        td { padding: 12px 10px; border-bottom: 1px solid #1f2937; }
+        tr:hover { background-color: #111827; }
+        
+        .badge { padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; }
+        .badge-running { background-color: #065f46; color: #34d399; }
+        .badge-paused { background-color: #78350f; color: #fbbf24; }
+        .badge-stopped { background-color: #374151; color: #d1d5db; }
+        
+        .btn { padding: 6px 12px; border: none; border-radius: 4px; font-size: 0.75rem; font-weight: 500; cursor: pointer; margin-right: 4px; color: white; transition: background 0.2s; }
+        .btn-start { background-color: #059669; } .btn-start:hover { background-color: #047857; }
+        .btn-pause { background-color: #d97706; } .btn-pause:hover { background-color: #b45309; }
+        .btn-stop { background-color: #dc2626; } .btn-stop:hover { background-color: #b91c1c; }
+        
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; }
+        .stat-card { background-color: #111827; padding: 16px; border-radius: 6px; border: 1px solid #1f2937; transition: all 0.3s; }
+        .stat-card.danger { border-color: #ef4444; box-shadow: 0 0 12px rgba(239, 68, 68, 0.2); }
+        .stat-title { font-size: 0.875rem; font-weight: bold; color: #9ca3af; margin-bottom: 8px; }
+        .stat-row { display: flex; justify-content: space-between; font-size: 0.815rem; margin-bottom: 4px; }
+        
+        .log-box { font-family: monospace; font-size: 0.875rem; background-color: #030712; padding: 12px; border-radius: 6px; border: 1px solid #1f2937; height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+        .log-line { padding: 2px 4px; border-radius: 2px; }
+        .log-line:hover { background-color: #111827; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div class="panel">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <h2 style="margin: 0; color: #fd5050;">EVE Echoes Bot <span class="text-blue">Панель управления</span></h2>
+                <button onclick="shutdownSystem()" class="btn btn-stop" style="background-color: #991b1b; padding: 8px 16px; font-weight: bold; font-size: 0.825rem;">
+                    🛑 Выключить бота
+                </button>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Эмулятор</th>
+                        <th>Аккаунт</th>
+                        <th>Текущая задача</th>
+                        <th>Состояние</th>
+                        <th>Действия</th>
+                        <th>В работе</th>
+                    </tr>
+                </thead>
+                <tbody id="accounts-table">
+                    <!-- Заполняется из JS -->
+                </tbody>
+            </table>
+        </div>
+
+        <div class="panel">
+            <h2 class="text-green">Статистика запущенных эмуляторов</h2>
+            <div id="stats-container" class="stats-grid">
+                <!-- Заполняется из JS -->
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2 class="text-amber">Лог приложения</h2>
+            <div id="log-container" class="log-box">
+                <!-- Заполняется из JS -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+
+        let userIsScrolling = false;
+        let isPollingPaused = false;
+
+        // Отслеживаем скролл пользователя, чтобы автопрокрутка логов не сбивала обзор
+        const logContainer = document.getElementById('log-container');
+        logContainer.addEventListener('scroll', () => {
+            userIsScrolling = (logContainer.scrollHeight - logContainer.scrollTop - logContainer.clientHeight) > 40;
+        });
+
+        // Функция форматирования времени (универсальная: принимает секунды или готовую строку)
+        function formatRuntime(runtimeValue, runtimeSeconds) {
+            // 1. Если бэкенд уже прислал готовую строку в acc.runtime (например "01:23:45"), берем её
+            if (runtimeValue && typeof runtimeValue === 'string' && runtimeValue !== "00:00:00") {
+                return runtimeValue;
+            }
+            // 2. Если прислал секунды — форматируем на ходу
+            if (runtimeSeconds && !isNaN(runtimeSeconds)) {
+                const hrs = Math.floor(runtimeSeconds / 3600).toString().padStart(2, '0');
+                const mins = Math.floor((runtimeSeconds % 3600) / 60).toString().padStart(2, '0');
+                const secs = Math.floor(runtimeSeconds % 60).toString().padStart(2, '0');
+                return `${hrs}:${mins}:${secs}`;
+            }
+            return "00:00:00";
+        }
+
+        // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+        // Функция, которая отрисовывает карточки эмуляторов в #stats-container
+        function updateStatsUI(accounts) {
+            const container = document.getElementById('stats-container');
+            container.innerHTML = ''; 
+
+            accounts.forEach(account => {
+                // Защита на случай, если extendedState пришел с маленькой или большой буквы
+                const ext = account.extendedState || account.ExtendedState || {};
+                
+                const card = document.createElement('div');
+                card.className = 'account-card'; 
+                
+                // Берем EVESystem и EVEShip из вложенного объекта extendedState
+                const system = ext.evesystem || ext.EVESystem || 'Кликните для ввода';
+                const ship = ext.eveship || ext.EVEShip || 'Кликните для ввода';
+
+                card.innerHTML = `
+                    <h3>Эмулятор: ${account.name || account.Name || 'Без имени'} (ID: ${account.id ?? account.Id})</h3>
+                    <p>Статус: <span>${account.state || account.State || 'Данные отсутствуют'}</span></p>
+                    <p>В работе: <span>${formatRuntime(account.runtime, ext.runtimeSeconds || ext.RuntimeSeconds)}</span></p>
+                    
+                    <p>Система: 
+                        <span class="editable-field" style="border-bottom: 1px dashed #007bff; cursor: pointer; color: #007bff;" 
+                            onclick="editProperty(${account.id ?? account.Id}, 'System', this)">
+                            ${system}
+                        </span>
+                    </p>
+                    <p>Корабль: 
+                        <span class="editable-field" style="border-bottom: 1px dashed #007bff; cursor: pointer; color: #007bff;" 
+                            onclick="editProperty(${account.id ?? account.Id}, 'Ship', this)">
+                            ${ship}
+                        </span>
+                    </p>
+                `;
+                
+                container.appendChild(card);
+            });
+        }
+
+
+        // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+        // Функция вызова всплывающего окна для ввода Системы или Корабля
+        async function editProperty(accountId, propertyName, element) {
+            // 1. Предполагаем, что у вас есть переменная интервала поллинга (например, pollingInterval)
+            // Если она называется иначе, временно остановите ваш таймер здесь
+            if (typeof pollingInterval !== 'undefined' && pollingInterval !== null) {
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+            }
+
+            const currentValue = element.innerText.trim();
+            const label = propertyName === 'System' ? 'звездную систему' : 'название корабля';
+            
+            // 2. Показываем стандартное окно ввода
+            const newValue = prompt(`Введите ${label}:`, currentValue === 'Кликните для ввода' ? '' : currentValue);
+
+            // Если нажали "Отмена" или ввели пустоту — ничего не делаем
+            if (newValue === null || newValue.trim() === "") {
+                // Перезапускаем ваш поллинг (подставьте вашу функцию запуска, если она есть)
+                if (typeof startPolling === 'function') startPolling();
+                return;
+            }
+
+            const cleanValue = newValue.trim();
+            const actionName = propertyName === 'System' ? 'setSystem' : 'setShip';
+
+            try {
+                // 3. Отправляем POST-запрос на бэкенд по вашему шаблону маршрута
+                const response = await fetch(`/api/control/${accountId}/${actionName}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ value: cleanValue })
+                });
+
+                if (response.ok) {
+                    element.innerText = cleanValue; // Мгновенно обновляем текст в UI
+                } else {
+                    alert('Не удалось обновить данные на сервере');
+                }
+            } catch (error) {
+                console.error('Ошибка сети при отправке данных:', error);
+            } finally {
+                // 4. В любом случае возвращаем автообновление страницы
+                if (typeof startPolling === 'function') startPolling();
+            }
+        }
+
+        // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+        // Функция вызова всплывающего окна для ввода Системы или Корабля
+        async function editProperty(accountId, propertyName, element) {
+            console.log(`[UI] Клик зафиксирован! Аккаунт: ${accountId}, Свойство: ${propertyName}`);
+            
+            // 1. Замораживаем автообновление
+            isPollingPaused = true;
+
+            // Получаем текущий текст
+            const currentValue = element.innerText.trim();
+            const label = propertyName === 'System' ? 'звездную систему' : 'название корабля';
+            
+            // 2. Показываем стандартное окно ввода
+            const newValue = prompt(`Введите ${label}:`, currentValue === 'Кликните для ввода' ? '' : currentValue);
+
+            // Если нажали "Отмена" или ввели пустоту — снимаем паузу и выходим
+            if (newValue === null || newValue.trim() === "") {
+                console.log("[UI] Ввод отменен пользователем");
+                isPollingPaused = false;
+                return;
+            }
+
+            const cleanValue = newValue.trim();
+            const actionName = propertyName === 'System' ? 'setSystem' : 'setShip';
+            console.log(`[UI] Отправка на бэкенд: ${actionName} -> ${cleanValue}`);
+
+            try {
+                // 3. Отправляем POST-запрос с JSON телом
+                const response = await fetch(`/api/control/${accountId}/${actionName}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ value: cleanValue })
+                });
+
+                if (response.ok) {
+                    console.log("[UI] Бэкенд успешно сохранил значение");
+                    element.innerText = cleanValue; // Мгновенно обновляем текст на экране
+                } else {
+                    console.error(`[UI] Ошибка сервера: ${response.status}`);
+                    alert('Не удалось обновить данные на сервере');
+                }
+            } catch (error) {
+                console.error('[UI] Ошибка сети при отправке данных:', error);
+            } finally {
+                // 4. Обязательно снимаем паузу опроса
+                isPollingPaused = false;
+            }
+        }
+
+        // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+        async function updateDashboard() {
+            // Если поднята пауза (пользователь вводит данные) — пропускаем этот тик
+            if (isPollingPaused) return;
+            try {
+                const response = await fetch('/api/state');
+                if (!response.ok) return;
+                const data = await response.json();
+
+                // Защита от разного регистра ключей верхнего уровня (accounts / Accounts, logs / Logs)
+                const accounts = data.accounts || data.Accounts || [];
+                const logs = data.logs || data.Logs || [];
+
+                // 1. РЕНДЕРИНГ ТАБЛИЦЫ АККАУНТОВ
+                const tableBody = document.getElementById('accounts-table');
+                tableBody.innerHTML = accounts.map((acc, index) => {
+                    
+                    // Защита регистра для полей BotWebResponseDto (id/Id, name/Name, state/State, runtime/Runtime)
+                    const botId = acc.id !== undefined ? acc.id : (acc.Id !== undefined ? acc.Id : index);
+                    const botName = acc.name || acc.Name || 'Без имени';
+                    const botState = acc.state || acc.State || 'Stopped';
+                    const botRuntimeStr = acc.runtime || acc.Runtime || '';
+                    const emuTitle = acc.emulatorTitle || acc.EmulatorTitle || `LDPlayer-${botId + 1}`;
+
+                    // Извлекаем вложенный стейт (extendedState или ExtendedState)
+                    const ext = acc.extendedState || acc.ExtendedState;
+                    const taskName = ext ? (ext.currentTask || ext.CurrentTask || 'Ожидание...') : 'Ожидание...';
+                    const runtimeSec = ext ? (ext.runtimeSeconds || ext.RuntimeSeconds || 0) : 0;
+
+                    let badgeClass = 'badge-stopped';
+                    if (botState === 'Running' || botState === 'Active') badgeClass = 'badge-running';
+                    if (botState === 'Paused') badgeClass = 'badge-paused';
+
+                    return `
+                        <tr>
+                            <td style="font-weight: 600; color: #60a5fa;">${emuTitle}</td>
+                            <td style="color: #e2e8f0; font-weight: 500;">${botName}</td> 
+                            <td style="color: #fbbf24; font-weight: 500;">${taskName}</td> 
+                            <td><span class="badge ${badgeClass}">${botState}</span></td>
+                            <td>
+                                <button onclick="sendCmd(${botId}, 'start')" class="btn btn-start">Старт</button>
+                                <button onclick="sendCmd(${botId}, 'pause')" class="btn btn-pause">Пауза</button>
+                                <button onclick="sendCmd(${botId}, 'stop')" class="btn btn-stop">Стоп</button>
+                            </td>
+                            <td style="font-family: monospace; color: #22d3ee; font-weight: bold;">
+                                ${formatRuntime(botRuntimeStr, runtimeSec)}
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+
+                // 2. РЕНДЕРИНГ КАРТОЧЕК СТАТИСТИКИ
+                const statsContainer = document.getElementById('stats-container');
+                statsContainer.innerHTML = accounts.map((acc, index) => {
+                    const botId = acc.id !== undefined ? acc.id : (acc.Id !== undefined ? acc.Id : index);
+                    const botName = acc.name || acc.Name || 'Аккаунт';
+                    const emuTitle = acc.emulatorTitle || acc.EmulatorTitle || `LDPlayer-${botId + 1}`;
+                    
+                    const ext = acc.extendedState || acc.ExtendedState;
+                    if (!ext) return '';
+
+                    // Защита регистра для полей внутри AccountStateDto
+                    const inSpace = ext.inSpace !== undefined ? ext.inSpace : ext.InSpace;
+                    const eveSystem = ext.eveSystem || ext.EVESystem || 'Неизвестно';
+                    const eveShip = ext.eveShip || ext.EVEShip || 'Не определен';
+                    const currentTarget = ext.currentTarget || ext.CurrentTarget || 'Нет цели';
+                    const triggers = ext.triggers !== undefined ? ext.triggers : (ext.Triggers || 0);
+                    const taskName = ext.currentTask || ext.CurrentTask || '';
+
+                    let locationText = "Определение...";
+                    if (inSpace === true) locationText = "🚀 В космосе";
+                    if (inSpace === false) locationText = "🛸 В доке станции";
+
+                    const isEvacuating = taskName === "EmergencyEvacuation" || taskName === "GoToStation";
+
+                    return `
+                        <div class="stat-card ${isEvacuating ? 'danger' : ''}">
+                            <div class="stat-title" style="color: #60a5fa; border-bottom: 1px solid #374151; padding-bottom: 4px; margin-bottom: 10px; font-weight: bold;">
+                                ${emuTitle} ➔ <span style="color: #fff;">${botName}</span>
+                            </div>
+                            <div class="stat-row">
+                                <span>Локация:</span>
+                                <span style="font-weight: bold; color: ${inSpace ? '#34d399' : '#a7f3d0'};">${locationText}</span>
+                            </div>
+                            <div class="stat-row">
+                                <span>Система:</span>
+                                <span style="color: #f3f4f6; font-weight: bold;">${eveSystem}</span>
+                            </div>
+                            <div class="stat-row">
+                                <span>Корабль:</span>
+                                <span style="color: #9ca3af;">${eveShip}</span>
+                            </div>
+                            <div class="stat-row">
+                                <span>Цель:</span>
+                                <span style="color: #fbbf24; font-size: 0.8rem; font-weight: 500;">${currentTarget}</span>
+                            </div>
+                            <div class="stat-row" style="margin-top: 6px; border-top: 1px dashed #374151; padding-top: 4px;">
+                                <span>Фиксаций угроз:</span>
+                                <span style="color: #f87171; font-weight: bold;">${triggers}</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+                // 3. РЕНДЕРИНГ ЛОГОВ БЕЗ ПРЫЖКОВ СКРОЛЛА
+                logContainer.innerHTML = logs.map(log => `<div class="log-line">${log}</div>`).join('');
+                if (!userIsScrolling) {
+                    logContainer.scrollTop = logContainer.scrollHeight;
+                }
+
+            } catch (err) {
+                console.error("Ошибка обновления интерфейса:", err);
+            }
+        }
+
+        // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+        // Отправка команд управления на бэкенд
+        async function sendCmd(id, action) {
+            try {
+                await fetch(`/api/control/${id}/${action}`, { method: 'POST' });
+                updateDashboard(); // Мгновенно обновляем интерфейс после клика
+            } catch (err) {
+                console.error("Ошибка отправки команды:", err);
+            }
+        }
+
+        // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+        // Функция полного выключения всей экосистемы бота
+        async function shutdownSystem() {
+            if (!confirm("Вы уверены, что хотите полностью остановить воркеров и выключить бота?")) {
+                return;
+            }
+            
+            try {
+                await fetch('/api/system/shutdown', { method: 'POST' });
+                
+                document.body.innerHTML = `
+                    <div style="max-width: 500px; margin: 100px auto 0 auto; padding: 24px; background-color: #1f2937; border: 1px solid #dc2626; border-radius: 8px; text-align: center; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);">
+                        <h1 style="color: #ef4444; font-size: 1.5rem; font-weight: bold; margin-bottom: 12px;">Бот успешно выключен</h1>
+                        <p style="color: #9ca3af; font-size: 0.9rem; line-height: 1.5;">Все фоновые потоки автоматизации остановлены, сессии ADB завершены. Вы можете закрыть эту вкладку.</p>
+                    </div>
+                `;
+            } catch (err) {
+                console.error("Ошибка при выключении системы:", err);
+            }
+        }
+
+        // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+        // Запуск цикла обновления (раз в 1000 мс)
+        setInterval(updateDashboard, 1000);
+        updateDashboard();
+
+        // Автономный перехватчик кликов с динамическим поиском строк "Система" и "Корабль"
+        document.addEventListener('click', function (event) {
+            // 1. Проверяем, кликнули ли мы по элементу, содержащему текст "Система" или "Корабль"
+            // Или по его дочернему элементу (например, по значению)
+            let targetElement = event.target;
+            let textContent = targetElement.innerText || "";
+            let parentContent = targetElement.parentElement ? targetElement.parentElement.innerText : "";
+            
+            const hasSystem = textContent.includes("Система") || textContent.includes("System") || parentContent.includes("Система") || parentContent.includes("System");
+            const hasShip = textContent.includes("Корабль") || textContent.includes("Ship") || parentContent.includes("Корабль") || parentContent.includes("Ship");
+            
+            if (!hasSystem && !hasShip) return; // Кликнули вообще мимо нужных строк
+
+            console.log("[GLOBAL] Клик по строке параметров перехвачен!");
+            
+            // Определяем, какое именно свойство редактируем
+            const propertyName = hasSystem ? 'System' : 'Ship';
+
+            // 2. Ищем контейнер карточки, чтобы вытащить ID аккаунта
+            const card = targetElement.closest('.panel') || targetElement.closest('div') || targetElement.parentElement;
+            let accountId = 0;
+            if (card) {
+                const idMatch = card.innerText.match(/(?:ID|ID:|\s)\s*(\d+)/i);
+                if (idMatch && idMatch[1]) accountId = parseInt(idMatch[1], 10);
+            }
+
+            // Если кликнули по текстовому узлу, выделим конкретно ту часть, где лежит значение
+            // Для prompt нам нужен сам узел, куда мы запишем результат
+            let valueElement = targetElement;
+            if (targetElement.tagName === 'P' || targetElement.tagName === 'DIV') {
+                // Если кликнули по всему параграфу, попробуем найти внутри тег span или использовать сам элемент
+                const span = targetElement.querySelector('span');
+                if (span) valueElement = span;
+            }
+
+            // 3. Вызываем нашу функцию ввода
+            if (typeof editProperty === 'function') {
+                editProperty(accountId, propertyName, valueElement);
+            } else {
+                alert("Ошибка: Функция editProperty отсутствует в памяти. Перезагрузите страницу через Ctrl+F5.");
+            }
+        });
+
+    </script>
+</body>
+</html>

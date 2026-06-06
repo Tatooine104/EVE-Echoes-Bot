@@ -1,18 +1,19 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>WinExe</OutputType> <!-- Изменено с Exe для скрытия консоли -->
+    <UseWindowsForms>true</UseWindowsForms> <!-- Добавлено для работы с иконкой в трее -->
+    <TargetFramework>net10.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <Platforms>AnyCPU;x64</Platforms>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <DebugType>none</DebugType>
 
-    <!-- 1. ГЛАВНАЯ ТОЧКА УПРАВЛЕНИЯ ВЕРСИЕЙ (меняйте только тут) -->
-    <Version>0.01.000</Version>
+    <!-- 1. ГЛАВНАЯ ТОЧКА УПРАВЛЕНИЯ ВЕРСИЕЙ -->
+    <Version>0.01.004</Version>
 
-    <!-- 2. Имя EXE собирается автоматически. %20 — это пробелы -->
+    <!-- 2. Имя EXE собирается автоматически -->
     <AssemblyName>EVE%20Echoes%20Bot%20v.$(Version)</AssemblyName>
 
     <!-- 3. ВШИВАЕМ ИКОНКУ ИЗ ПАПКИ IMAGES -->
@@ -22,18 +23,19 @@
   <ItemGroup>
     <PackageReference Include="OpenCvSharp4" Version="4.13.0.20260427" />
     <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.13.0.20260302" />
+    <PackageReference Include="TesseractOCR" Version="5.5.2" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Автоматически копируем сам кликер -->
-    <None Update="adb.exe">
+    <!-- Автоматически копируем сам кликер из папки resources -->
+    <None Update="resources\adb.exe">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <!-- Добавляем автоматическое копирование двух необходимых DLL -->
-    <None Update="AdbWinApi.dll">
+    <!-- Добавляем автоматическое копирование двух необходимых DLL из папки resources -->
+    <None Update="resources\AdbWinApi.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Update="AdbWinUsbApi.dll">
+    <None Update="resources\AdbWinUsbApi.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
@@ -52,10 +54,13 @@
     <Content Remove="bin\**" />
 
     <!-- Очищаем старые правила, включая поиск в корне -->
-    <None Remove="imgLocalMinus.png" />
-    <None Remove="imgLocalNeutral.png" />
     <None Remove="*.png" />
     <None Remove="**/*.png" />
+
+    <!-- Говорим компилятору всегда копировать файлы моделей в билд -->
+    <None Update="resources\**\*.traineddata">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
 
     <!-- ГЛАВНОЕ ПРАВИЛО: Автоматически копируем папку images со всем содержимым -->
     <Content Include="images\**\*.png">
