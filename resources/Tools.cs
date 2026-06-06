@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using OpenCvSharp;
 using System.Diagnostics;
 using System.IO;
+using Point = OpenCvSharp.Point;
 
 namespace EVEEchoesBot.resources;
 
@@ -13,7 +14,7 @@ namespace EVEEchoesBot.resources;
 public static class Tools
 {
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region Globals
 
@@ -31,7 +32,7 @@ public static class Tools
     #endregion
 
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region CaptureWindow
 
@@ -49,9 +50,11 @@ public static class Tools
             return null;
         }
 
-        if (!WinAPI.GetWindowRect(hWnd, out WinAPI.RECT rect))
+        // ИСПРАВЛЕНИЕ №1: Заменили GetWindowRect на GetClientRect!
+        // Теперь rect содержит чистые размеры внутренней рабочей области Android эмулятора.
+        if (!WinAPI.GetClientRect(hWnd, out WinAPI.RECT rect))
         {
-            Logger.Log($"Не удалось получить геометрические размеры окна {hWnd}", LogType.Error);
+            Logger.Log($"Не удалось получить геометрические клиентские размеры окна {hWnd}", LogType.Error);
             return null;
         }
 
@@ -74,13 +77,15 @@ public static class Tools
 
         try
         {
-            // Рендеринг содержимого окна в контекст памяти
-            if (!WinAPI.PrintWindow(hWnd, hdcMem, WinAPI.PW_RENDERFULLCONTENT))
+            // ИСПРАВЛЕНИЕ №2: Передаем 0 вместо WinAPI.PW_RENDERFULLCONTENT
+            // Это заставляет PrintWindow копировать ТОЛЬКО клиентскую область игры,
+            // полностью отрезая внешнюю рамку, заголовок Windows и боковые кнопки.
+            if (!WinAPI.PrintWindow(hWnd, hdcMem, 0))
             {
                 Logger.Log("Функция захвата окна вернула ошибку при копировании графического буфера.", LogType.Warning);
             }
 
-            // Настройка структуры BITMAPINFOHEADER (отрицательная высота переворачивает изображение правильно)
+            // --- ВЕСЬ ВАШ ОСТАЛЬНОЙ КОД СТРУКТУРЫ BITMAPINFOHEADER И MARSHAL.COPY ОСТАЕТСЯ БЕЗ ИЗМЕНЕНИЙ ---
             WinAPI.BITMAPINFOHEADER bmi = new()
             {
                 biSize = (uint)Marshal.SizeOf<WinAPI.BITMAPINFOHEADER>(),
@@ -91,34 +96,23 @@ public static class Tools
                 biCompression = 0
             };
 
-            // Извлечение пикселей в массив
             byte[] rawPixels = new byte[width * height * 4];
             WinAPI.GetDIBits(hdcMem, hBitmap, 0, (uint)height, rawPixels, ref bmi, 0);
 
-            // Создание матрицы OpenCV (BGRA, 4 канала) и заполнение данными
             mat = new Mat(height, width, MatType.CV_8UC4);
             Marshal.Copy(rawPixels, 0, mat.Data, rawPixels.Length);
 
     #if DEBUG
             try
             {
-                // Находим путь к папке проекта (на 3 уровня выше bin/Debug/netX.X)
                 string baseDir = AppDomain.CurrentDomain.BaseDirectory;
                 string projectDir = Path.GetFullPath(Path.Combine(baseDir, @"..\..\..\"));
-
-                // Формируем путь и гарантируем создание целевой папки
                 string targetFolder = Path.Combine(projectDir, "DebugScreenshots");
-                if (!Directory.Exists(targetFolder))
-                {
-                    Directory.CreateDirectory(targetFolder);
-                }
+                if (!Directory.Exists(targetFolder)) Directory.CreateDirectory(targetFolder);
 
                 const string fileName = "debug_screenshot.png";
-                string filePath = Path.Combine(targetFolder, fileName);
-
-                // Сохраняем матрицу на диск
-                Cv2.ImWrite(filePath, mat);
-                Logger.Log($"Снимок экрана сохранен по пути '{fileName}'.", LogType.Test);
+                Cv2.ImWrite(Path.Combine(targetFolder, fileName), mat);
+                Logger.Log($"Чистый снимок клиентской области сохранен по пути '{fileName}'.", LogType.Test);
             }
             catch (Exception dbgEx)
             {
@@ -131,19 +125,15 @@ public static class Tools
         catch (Exception ex)
         {
             Logger.Log($"Критический сбой при захвате экрана: {ex.Message}", LogType.Error);
-
-            // Защита от утечки памяти: если матрица была создана, но упал копирующий маршаллинг
             mat?.Dispose();
             return null;
         }
         finally
         {
-            // Корректное и безопасное освобождение всех выделенных ресурсов GDI
             WinAPI.SelectObject(hdcMem, hOldBmp);
             WinAPI.DeleteObject(hBitmap);
             WinAPI.DeleteDC(hdcMem);
 
-            // Проверяем успешность освобождения контекста устройства (DC)
             if (WinAPI.ReleaseDC(hWnd, hdcWindow) == 0)
             {
                 Logger.Log("Не удалось освободить графический контекст устройства.", LogType.Warning);
@@ -151,10 +141,12 @@ public static class Tools
         }
     }
 
+
+
     #endregion
 
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region FindTemplateInRegion
 
@@ -218,7 +210,7 @@ public static class Tools
                 int centerY = offsetY + maxLoc.Y + (matTemplate.Height / 2);
 
     #if DEBUG
-                Logger.Log($"Анализ шаблона '{Path.GetFileName(templatePath)}': совпадение = {maxVal * 100:F1}%, локация (X={maxLoc.X}, Y={maxLoc.Y}), центр (X={centerX}, Y={centerY}).", LogType.Test);
+                Logger.Log($"Поиск '{Path.GetFileName(templatePath)}', совпадение: {maxVal * 100:F1}%, локация: {maxLoc.X}х{maxLoc.Y}, центр: {centerX}х{centerY}.", LogType.Test);
     #endif
                 return new Point(centerX, centerY);
             }
@@ -243,7 +235,7 @@ public static class Tools
     #endregion
 
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region ClampRegion
 
@@ -271,13 +263,13 @@ public static class Tools
     #endregion
 
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region SmartClick
 
     /// <summary>
     /// Выполняет клик по экрану Android-устройства/эмулятора с помощью утилиты ADB.
-    /// Включает симуляцию поведения человека: рандомизацию задержки, случайное смещение пикселей (анти-бан), 
+    /// Включает симуляцию поведения человека: рандомизацию задержки, случайное смещение пикселей (анти-бан),
     /// автоматическое масштабирование под внутреннее разрешение Android и компенсацию заголовка окон Windows.
     /// </summary>
     /// <param name="x">Исходная координата X (обычно полученная из OpenCV).</param>
@@ -337,7 +329,7 @@ public static class Tools
                 UseShellExecute = false,
                 RedirectStandardOutput = true
             };
-            
+
             var procSize = Process.Start(psiSize);
             string outputSize = procSize?.StandardOutput.ReadToEnd() ?? "";
             procSize?.WaitForExit();
@@ -376,7 +368,7 @@ public static class Tools
     #endregion
 
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region GetRandomDelayMs
 
@@ -406,13 +398,13 @@ public static class Tools
     #endregion
 
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region GetWindow
 
     /// <summary>
     /// Находит дескриптор (Handle) целевого окна эмулятора по его заголовку.
-    /// Если окно обнаружено впервые в текущей сессии, автоматически изменяет его геометрические размеры 
+    /// Если окно обнаружено впервые в текущей сессии, автоматически изменяет его геометрические размеры
     /// под целевое разрешение и кэширует состояние для предотвращения повторной коррекции.
     /// </summary>
     /// <param name="settings">Объект конфигурации аккаунта <see cref="AccSettings"/>, содержащий заголовок окна и параметры целевого размера.</param>
@@ -468,12 +460,12 @@ public static class Tools
     #endregion
 
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region ResizeWindow
 
     /// <summary>
-    /// Изменяет геометрические размеры окна BlueStacks таким образом, чтобы его полезная рабочая область 
+    /// Изменяет геометрические размеры окна BlueStacks таким образом, чтобы его полезная рабочая область
     /// соответствовала строго заданным значениям ширины и высоты.
     /// Автоматически учитывает габариты бокового тулбара, заголовка приложения и невидимых аэро-рамок Windows 10/11.
     /// </summary>
@@ -527,6 +519,6 @@ public static class Tools
     #endregion
 
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
 }

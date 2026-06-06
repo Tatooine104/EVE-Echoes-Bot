@@ -12,7 +12,7 @@ namespace EVEEchoesBot.resources;
 // [v] TODO 2026.05.30 Добавить класс сохранения статистики по ботам (отдельно для каждого акка stat_accountname.json)
 // [v] TODO 2026.05.30 Перенести EVESystem и EVEShip в файл статистики. 
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
 #region BotConfig
 
@@ -124,7 +124,7 @@ public class AccountStateDto
     public bool? InSpace { get; set; }
 
     /// <summary>
-    /// Имя или идентификатор конкретного астероидного пояса / аномалии, 
+    /// Имя или идентификатор конкретного астероидного пояса / аномалии,
     /// выбранной на Шаге 3 для совершения варпа. Очищается при прилете.
     /// </summary>
     public string? CurrentTarget { get; set; }
@@ -141,7 +141,114 @@ public class AccountStateDto
 
 #endregion
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    // Облегченный контейнер для передачи данных на веб-страницу
+    public class BotWebResponseDto
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = "";
+        public string State { get; set; } = "Stopped";
+        public string Runtime { get; set; } = "00 д. 00 ч. 00 м. 00 с.";
+
+        public string EmulatorTitle { get; set; } = "";
+
+        // Вшиваем ваш реальный стейт аккаунта для средней части экрана
+        public AccountStateDto? ExtendedState { get; set; }
+    }
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+public class BotAccountManager
+    {
+
+        public bool SetAccountSystem(int id, string systemName)
+        {
+            var bots = Program.GetActiveBots();
+            // Проверяем, что индекс (id) входит в границы списка ботов
+            if (id >= 0 && id < bots.Count)
+            {
+                bots[id].UpdateSystemManually(systemName);
+                return true;
+            }
+            return false;
+        }
+
+        public bool SetAccountShip(int id, string shipName)
+        {
+            var bots = Program.GetActiveBots();
+            // Проверяем, что индекс (id) входит в границы списка ботов
+            if (id >= 0 && id < bots.Count)
+            {
+                bots[id].UpdateShipManually(shipName);
+                return true;
+            }
+            return false;
+        }
+
+
+        /// <summary>
+        /// Формирует актуальный снимок состояния всех ботов для отправки в веб-интерфейс.
+        /// </summary>
+        public List<BotWebResponseDto> GetAccountsState()
+        {
+            var bots = Program.GetActiveBots();
+
+            return [.. bots.Select((bot, index) => {
+                var extended = new AccountStateDto
+                {
+                    AccountName = bot.Settings?.Name ?? $"Account_{index + 1}",
+                    CurrentTask = bot.CurrentTask.ToString(),
+                    RuntimeSeconds = bot.RuntimeSeconds, // <-- ДОБАВЬТЕ ЭТУ СТРОКУ СЮДА!
+                    EVESystem = bot._eveSystem,
+                    EVEShip = bot._eveShip,
+                    InSpace = bot._inSpace,
+                    CurrentTarget = bot._currenttarget?.ToString(),
+                    IsInMiningZone = bot._isinzone,
+                    IsWarping = bot._iswarping,
+                    HasTarget = bot._hastarget,
+                    WeaponryActive = bot._weaponryactive
+                };
+
+                return new BotWebResponseDto
+                {
+                    Id = index,
+                    Name = extended.AccountName,
+                    State = bot.State.ToString(),
+                    Runtime = bot.GetRuntimeString(),
+                    EmulatorTitle = bot.Settings?.WindowTitle ?? $"LDPlayer-{index + 1}", // <-- ЗАПОЛНЯЕМ ИЗ КОНФИГА БОТА
+                    ExtendedState = extended
+                };
+            })];
+        }
+
+
+        /// <summary>
+        /// Маршрутизирует команды управления от кнопок браузера к конкретному боту.
+        /// </summary>
+        public void HandleCommand(int id, string action)
+        {
+            var bots = Program.GetActiveBots();
+            if (id < 0 || id >= bots.Count) return;
+
+            var targetBot = bots[id];
+
+            switch (action.ToLower())
+            {
+                case "start":
+                    targetBot.Start(Program.GetGlobalToken());
+                    break;
+                case "pause":
+                    targetBot.Pause();
+                    break;
+                case "stop":
+                    targetBot.Stop();
+                    break;
+            }
+        }
+    }
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
 #region ConfigManager
 
@@ -168,7 +275,7 @@ public static class ConfigManager
 
 #endregion
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
 #region BotConfig Load
 
@@ -214,20 +321,20 @@ public static BotConfig Load()
 #endregion
 
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
 #region CreateDefaultConfig
 
 /// <summary>
 /// Генерирует базовую структуру конфигурации для первой сессии работы приложения.
-/// Разворачивает интерактивное CLI-меню опроса оператора в консоли, выполняет автоматический сбор 
+/// Разворачивает интерактивное CLI-меню опроса оператора в консоли, выполняет автоматический сбор
 /// заголовков активных окон Windows и собирает готовый объект настроек по умолчанию.
 /// </summary>
 /// <returns>Полностью заполненный дефолтный объект конфигурации <see cref="BotConfig"/>.</returns>
 private static BotConfig CreateDefaultConfig()
 {
     // Очищаем накопившийся буфер потока ввода консоли, чтобы избежать ложных срабатываний
-    while (Console.KeyAvailable) 
+    while (Console.KeyAvailable)
     {
         Console.ReadKey(true);
     }
@@ -339,7 +446,7 @@ private static BotConfig CreateDefaultConfig()
 
 #endregion
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
 #region Save
 
@@ -375,7 +482,7 @@ public static void Save(BotConfig config)
 
 #endregion
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - +
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
 }
 
@@ -403,7 +510,7 @@ public static partial class WindowEnumerator
     private static partial bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
 
     /// <summary>
-    /// Копирует текст заголовка указанного окна в буфер символов. 
+    /// Копирует текст заголовка указанного окна в буфер символов.
     /// Использует Юникод-версию (GetWindowTextW) для корректной поддержки кириллицы и спецсимволов.
     /// </summary>
     [LibraryImport("user32.dll", EntryPoint = "GetWindowTextW", StringMarshalling = StringMarshalling.Utf16)]
