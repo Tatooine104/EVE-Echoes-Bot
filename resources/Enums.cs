@@ -45,7 +45,11 @@ namespace EVEEchoesBot.resources;
         CharMenu =   500070,
         Fitting  =  1850240,
         XButton  = 12300065
-        // EyeIcon = 
+        // EyeIconClose = 
+        // FastMenu1 = ?
+        // FastMenu2 = ?
+        // FastMenu3 = ?
+        // FastMenu4 = ?
         // ? = ?
 
     }

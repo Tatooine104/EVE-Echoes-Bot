@@ -56,6 +56,9 @@ public partial class ActiveBotAccount
         /// </summary>
         public IntPtr Hwnd { get; set; }
 
+        public bool PlanetMining { get; set; }
+        public bool POS { get; set; }
+
         /// <summary>
         /// Текущая выполняемая ботом игровая задача.
         /// </summary>
@@ -97,6 +100,7 @@ public partial class ActiveBotAccount
         internal bool _iswarping = false;
         internal bool _hastarget = false;
         internal bool _weaponryactive = false;
+        internal DateTime? _planetassembly = null;
         internal long _triggerCount;
         #pragma warning disable IDE1006 // Отключаем проверку стиля именования
         internal object? _currenttarget { get; set; }
@@ -353,6 +357,9 @@ public partial class ActiveBotAccount
                             _eveSystem = state.EVESystem;
                         }
 
+                        // Загружаем дату последнего сбора планетарных ресурсов
+                        _planetassembly = state.PlanetAssembly;
+
                         // Проверяем и валидируем текущий корабль персонажа
                         if (string.IsNullOrEmpty(state.EVEShip) || state.EVEShip == "???")
                         {
@@ -473,6 +480,7 @@ public partial class ActiveBotAccount
                     IsInMiningZone = _isinzone,
                     HasTarget     = _hastarget,
                     WeaponryActive = _weaponryactive,
+                    PlanetAssembly = _planetassembly,
                     CurrentTarget  = _currenttarget?.ToString()
                 };
             }
@@ -1712,9 +1720,9 @@ public partial class ActiveBotAccount
             // ЭТАП 5: ЗАКРЫТИЕ ИНТЕРФЕЙСА (Клик по XButton)
             // ========================================================
             Logger.Log($"[{Settings?.Name}] OCR Корабля: Закрытие меню через XButton.", LogType.Info);
-            
-            this.ClickTo(GameUi.XButton); 
-            
+
+            this.ClickTo(GameUi.XButton);
+
             // Даем честную паузу, чтобы оверлей хангара успел полностью свернуться
             await Task.Delay(1500, Program.GetGlobalToken());
         }

@@ -137,6 +137,9 @@ public class AccountStateDto
 
     public bool? WeaponryActive { get; set; }
 
+    /// <summary>Дата и время последнего  сбора планетарных ресурсов.</summary>
+    public DateTime? PlanetAssembly { get; set;}
+
 }
 
 #endregion

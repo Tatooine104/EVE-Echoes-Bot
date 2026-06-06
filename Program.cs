@@ -231,7 +231,7 @@ static partial class Program
                 bool success = manager.SetAccountSystem(id, dto.Value);
                 return Microsoft.AspNetCore.Http.Results.Ok();
             }
-            
+
             // 2. Обработка ручной установки корабля (только если dto пришел)
             if (dto != null && actionName.Equals("setShip", StringComparison.OrdinalIgnoreCase))
             {
@@ -493,7 +493,7 @@ static partial class Program
                 _activeBots.Add(bot);
             }
 
-            if (_activeBots.Count == 0)
+            /*if (_activeBots.Count == 0)
             {
                 var testSettings = new AccSettings
                 {
@@ -508,7 +508,7 @@ static partial class Program
                     _currenttarget = "Астероидный пояс #1"
                 };
                 _activeBots.Add(testBot);
-            }
+            }*/
 
             Logger.Log($"Мультисистема инициализирована. Аккаунтов загружено: {_activeBots.Count}. Ожидание команды Старт из веб-панели.", LogType.Info);
         }
