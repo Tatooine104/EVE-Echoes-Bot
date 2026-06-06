@@ -72,6 +72,7 @@ static partial class Program
 
     public static CancellationToken GetGlobalToken() => _cts.Token;
 
+    // TODO: Выяснить что это?
     public record ControlPropertyValueDto(string Value);
 
     #endregion
@@ -477,7 +478,6 @@ static partial class Program
                     Hwnd = hWnd
                 };
 
-                // КОРРЕКЦИЯ: Убираем Console.ReadLine(), так как оконный режим WinExe не имеет консоли.
                 // Если данные не десериализовались, выставляем дефолт "Требуется ввод" — оператор заполнит это в веб-интерфейсе.
                 if (string.IsNullOrEmpty(bot._eveSystem) || bot._eveSystem == "???")
                 {
@@ -488,27 +488,9 @@ static partial class Program
                     bot._eveShip = "Требуется ввод";
                 }
 
-                // КОРРЕКЦИЯ: bot.Start(_cts.Token) здесь БОЛЬШЕ НЕ ВЫЗЫВАЕТСЯ.
                 // Бот просто добавляется в список инициализированных. Он ждет клика "Старт" на веб-странице.
                 _activeBots.Add(bot);
             }
-
-            /*if (_activeBots.Count == 0)
-            {
-                var testSettings = new AccSettings
-                {
-                    Name = "Тестовый Шахтер (Эмулятор выкл)",
-                    WindowTitle = "Симуляция"
-                };
-                var testBot = new ActiveBotAccount(testSettings)
-                {
-                    _eveSystem = "Jita",
-                    _eveShip = "Covetor II",
-                    _inSpace = true,
-                    _currenttarget = "Астероидный пояс #1"
-                };
-                _activeBots.Add(testBot);
-            }*/
 
             Logger.Log($"Мультисистема инициализирована. Аккаунтов загружено: {_activeBots.Count}. Ожидание команды Старт из веб-панели.", LogType.Info);
         }
@@ -641,9 +623,9 @@ static partial class Program
     }
 
 
-#endregion
+    #endregion
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region ClickTo Extension
 
@@ -688,7 +670,8 @@ static partial class Program
 
 #### 1. Общая архитектура и масштабы
 - **Платформа:** .NET 9+, C#, Windows Forms (WinExe).
-- **Паттерн логики:** Дерево поведения (Behavior Tree) вместо устаревшего FSM.
+- **Паттерн логики:** Дерево поведения (Behavior Tree) вместо устаревшего FSM. 
+- **Декомпозиция:** Логические узлы полностью избавлены от спагетти-кода и лямбда-выражений. Логика принятия решений (BT) строго отделена от реализации самих игровых действий.
 
 #### 2. Веб-интерфейс и Хостинг
 - **Технология:** ASP.NET Core Minimal APIs, встроенный веб-сервер Kestrel.
@@ -703,18 +686,21 @@ static partial class Program
 
 #### 4. Ключевые компоненты бэкенда
 - **`BotAccountManager` (Singleton в DI):** Точка координации всех ботов, обработчик веб-команд.
-- **`ScenarioFactory` (static):** Фабрика сборки BT (`BuildLocalWatcherTree()`, `BuildMinerTree()`). Поддерживает фолбек `BuildDefaultFallbackTree()`.
-- **`ActiveBotAccount` (partial):** Основной класс аккаунта. Хранит стейт (`_inSpace`, `_currenttarget`, `AccountTask CurrentTask`) и флаги (`_iswarping`, `_hastarget`, `_weaponryactive`, `IsInMiningZone`). Содержит методы-заглушки (stubs) взаимодействия с игрой.
+- **`ScenarioFactory` (static partial):** Расширяемая фабрика сборки BT. Физически разделена через `partial` на изолированные файлы под каждый сценарий и его атомарные действия (`ScenarioFactory.LocalWatcher.cs`, `ScenarioFactory.LowMiner.cs` и файлы действий `*.Actions.cs`). Поддерживает фолбек `BuildDefaultFallbackTree()`.
+- **`ActiveBotAccount` (partial):** Основной класс аккаунта. Хранит стейт (`_inSpace`, `_currenttarget`, `AccountTask CurrentTask`) и флаги (`_iswarping`, `_hastarget`, `_weaponryactive`, `IsInMiningZone`, `PlanetMining`, `POS`). Хранит дату последней планетарки `DateTime? _planetassembly`. Содержит методы-заглушки (stubs) взаимодействия с игрой.
 - **`AccountStateDto`:** Объект для сериализации стейта в JSON под `lock (_taskLock)` для передачи в веб-интерфейс.
 - **`RunLoopAsync`:** Рабочий цикл с адаптивными тиками (1 сек в бою/активности, 5 - в простое).
 - **`OcrService`:** Локальный OCR (`TesseractOCR`), параллельный движок `"eng+rus"`, чтение через `TesseractOCR.Pix.Image.LoadFromMemory`.
 
-#### 5. Динамическое управление
+#### 5. Динамическое управление и Глобальные обертки
 - **Горячая смена:** Метод `SwitchScenario(string newScenarioName)` меняет корень `_behaviorTree` на лету. Команды переключения поступают из UI через маршрут `/api/control/`.
+- **Глобальные надстройки (Над-дерево):** Метод `CreateTree` автоматически оборачивает любое выбранное ядро сценария в глобальный `SelectorNode` приоритетов. Это позволяет внедрять сквозную автоматизацию (например, планетарку), не вмешиваясь в код конкретных сценариев.
 
 #### 6. Текущий статус сценариев
-- **«Глаз» (LocalWatcher):** Дерево настроено. Интегрированы `AccountTask.CheckSecurity`, `SendAliChatWarning` и `CheckYourOwnState`.
-- **«Шахтер» (Miner):** Линейная логика готова (Локал -> Выход -> Белт -> Локал -> Варп -> Добыча -> Возврат/Выгрузка). Интегрирован с `bot.CurrentTask`. Компиляция успешна.
+- **Глобальный модуль планетарки:** Полностью реализован (основная логика поведения). Работает как сквозное поведение. Запускается строго на станции (`!_inSpace`) раз в 8 часов, если активен флаг `PlanetMining`. Обладает адаптивной логикой: при `POS = true` выполняет удаленный сбор на структуру, при `POS = false` выполняет только перезапуск таймеров в интерфейсе (заглушка). Безопасен при нахождении корабля в космосе.
+- **«Глаз» (LocalWatcher):** Дерево очищено от спагетти-кода. Макросы сканирования вырезаны в пользу упрощенной логики. Интегрированы `AccountTask.CheckSecurity`, диагностика интерфейса через `LookAround` и `CheckYourOwnState`.
+- **«Шахтер» (LowMiner):** Полностью переписан на декларативное дерево поведения. Избавился от дублирования кода безопасности за счет интеграции универсального метода проверки локала `EvaluateSystemSecurityAsync()`. Логика полностью декомпозирована на переиспользуемые методы (Проверка трюма -> Андок -> Навигация -> Варп -> Цикл лазеров -> Возврат). Компиляция успешна.
+
 
 */
 

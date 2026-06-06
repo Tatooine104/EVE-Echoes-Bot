@@ -69,6 +69,7 @@ public partial class ActiveBotAccount
         /// </summary>
         public long TriggerCount => Interlocked.Read(ref _triggerCount);
 
+        // TODO: Разобраться почему не используется
         /// <summary>
         /// Публичное свойство для получения общего времени работы данного аккаунта.
         /// </summary>
@@ -151,60 +152,13 @@ public partial class ActiveBotAccount
             // Старая FSM-инициализация очередей удалена. Бот готов к тикам дерева поведения.
         }
 
-
+        // TODO: Разобраться почему не используется
         /// <summary>
         /// Производит атомарный инкремент счетчика срабатываний триггеров из любой части логики автоматизации бота.
         /// </summary>
         public void IncrementTrigger() => Interlocked.Increment(ref _triggerCount);
 
     #endregion
-
-
-    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-
-    #region DequeueNextTask
-
-    /// <summary>
-    /// Потокобезопасно извлекает следующую задачу из начала очереди, удаляет её из списка ожидания,
-    /// синхронизирует измененное состояние с диском и трансформирует строковый идентификатор в системный Enum.
-    /// </summary>
-    /// <returns>
-    /// Возвращает объект <see cref="AccountTask"/>, соответствующий следующему шагу сценария.
-    /// Если очередь пуста или имя задачи не удалось распознать (опечатка), возвращает <see cref="AccountTask.CheckYourOwnState"/>.
-    /// </returns>
-    private AccountTask DequeueNextTask()
-    {
-        // Используем потокобезопасный объект синхронизации Lock из .NET 9+
-        lock (_taskLock)
-        {
-            // Если задач в очереди вообще нет, возвращаем дефолтную проверку базового состояния персонажа
-            if (_taskQueue.Count == 0)
-            {
-                return AccountTask.CheckYourOwnState;
-            }
-
-            // 1. Извлекаем текстовый идентификатор задачи из начала списка ожидания
-            string nextTaskStr = _taskQueue[0];
-
-            // 2. Удаляем её из списка, так как она переходит в активную обработку воркера
-            _taskQueue.RemoveAt(0);
-
-            // 3. Мгновенно сохраняем обновленный состав очереди на диск для защиты от сбоев
-            SaveStats();
-
-            // 4. Пытаемся преобразовать строку (например, "CheckSecurity") в строго типизированный Enum
-            if (Enum.TryParse(nextTaskStr, out AccountTask parsedTask))
-            {
-                return parsedTask;
-            }
-
-            // ФОЛБЕК-СИСТЕМА: Если перевод завершился ошибкой (например, опечатка в сценарии конфига), возвращаем дефолт
-            return AccountTask.CheckYourOwnState;
-        }
-    }
-
-    #endregion
-
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
@@ -238,58 +192,6 @@ public partial class ActiveBotAccount
 
             // Синхронизируем измененную очередь с файлом состояния на диске под защитой блокировки
             SaveStats();
-        }
-    }
-
-    #endregion
-
-
-    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-
-    #region AdvanceToNextTask
-
-    /// <summary>
-    /// Главный управляющий метод логики сценария. Потокобезопасно извлекает следующий шаг из очереди,
-    /// переключает текущее состояние бота (<see cref="CurrentTask"/>) и фиксирует изменения в файле статов на диске.
-    /// </summary>
-    /// <returns>
-    /// Возвращает <c>true</c>, если в очереди была задача и бот успешно переключился на неё.
-    /// Возвращает <c>false</c>, если очередь была пуста (в этом случае бот автоматически переводится в режим ожидания).
-    /// </returns>
-    public bool AdvanceToNextTask()
-    {
-        // Используем объект синхронизации Lock из .NET 9+ для безопасной параллельной работы
-        lock (_taskLock)
-        {
-            if (_taskQueue.Count > 0)
-            {
-                // Извлекаем первую текстовую задачу из начала списка ожидания
-                string nextTaskStr = _taskQueue[0];
-
-                // Сразу удаляем её из очереди, так как она уходит в активную обработку
-                _taskQueue.RemoveAt(0);
-
-                // Пытаемся безопасно преобразовать строку в строго типизированный Enum AccountTask
-                if (Enum.TryParse(nextTaskStr, out AccountTask parsedTask))
-                {
-                    CurrentTask = parsedTask;
-                }
-                else
-                {
-                    // ФОЛБЕК-СИСТЕМА: Если в очереди оказалась строка с опечаткой, включаем безопасный режим проверки
-                    CurrentTask = AccountTask.CheckYourOwnState;
-                    Log($"Неизвестная задача в очереди сценария: '{nextTaskStr}'. Включен защитный режим.", LogType.Warning);
-                }
-
-                // Синхронизируем обновленную очередь и новую текущую задачу с файлом состояния на диске
-                SaveStats();
-                return true;
-            }
-
-            // Если сценарий полностью исчерпан и очередь пуста, переводим бота в режим проверки себя и ожидания
-            CurrentTask = AccountTask.CheckYourOwnState;
-            SaveStats();
-            return false;
         }
     }
 
@@ -498,9 +400,7 @@ public partial class ActiveBotAccount
 
     #endregion
 
-
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-
 
     #region Start
 
@@ -530,11 +430,9 @@ public partial class ActiveBotAccount
 
     #endregion
 
-
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region Stop
-
 
     /// <summary>
     /// Инициирует безопасную остановку рабочего цикла автоматизации текущего аккаунта.
@@ -557,10 +455,7 @@ public partial class ActiveBotAccount
         Logger.Log($"[{Settings?.Name}] Поток автоматизации полностью остановлен. Время сброшено.", LogType.Warning);
     }
 
-
-
     #endregion
-
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
@@ -712,8 +607,6 @@ public partial class ActiveBotAccount
 
     #endregion
 
-
-
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region ForceSaveStats
@@ -732,7 +625,6 @@ public partial class ActiveBotAccount
     }
 
     #endregion
-
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
@@ -848,9 +740,7 @@ public partial class ActiveBotAccount
         return SecurityCheckResult.Unknown; // Полная неопределенность -> Запуск "Осмотрись"
     }
 
-
     #endregion
-
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
@@ -925,7 +815,6 @@ public partial class ActiveBotAccount
 
 
     #endregion
-
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
@@ -1086,7 +975,6 @@ public partial class ActiveBotAccount
     }
 
     #endregion
-
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
@@ -1468,272 +1356,6 @@ public partial class ActiveBotAccount
         }
     }
 
-    /// <summary>
-    /// Оптически распознает текущую звездную систему на основе скриншота экрана.
-    /// </summary>
-    internal async Task<string> ScanCurrentSystemAsync()
-    {
-        if (Hwnd == IntPtr.Zero) return "Неизвестно";
-
-        return await Task.Run(() =>
-        {
-            try
-            {
-                using Mat? screenshot = Tools.CaptureWindow(Hwnd);
-                if (screenshot?.Empty() is not false || screenshot.Width <= 0 || screenshot.Height <= 0)
-                    return _eveSystem;
-
-                // 1. Распаковываем чистые исходные координаты из enum
-                OpenCvSharp.Rect systemRegion = GameRegions.SystemName.GetOpenCvRect();
-
-                // Компенсация верхнего статус-бара эмулятора
-                const int androidStatusBarHeight = 28;
-
-                // =========================================================================
-                // ИДЕАЛЬНЫЙ ГЕОМЕТРИЧЕСКИЙ СРЕЗ ПОД CLAIM-НУЛИ
-                // =========================================================================
-                // - Сдвигаем X чуть вправо (+4), чтобы отрезать левую вертикальную рамку интерфейса.
-                // - Уменьшаем ширину (Width) со 140 до 85 пикселей. Это железно отрежет 
-                //   статус безопасности ":0.6" и правую рамку, оставив только имя системы.
-                // - Сдвигаем Y чуть ниже (+2), чтобы убрать верхнюю горизонтальную полосу.
-                // - Уменьшаем высоту (Height) на 4 пикселя, чтобы срезать нижнюю обводку.
-                OpenCvSharp.Rect compensatedRegion = new(
-                    systemRegion.X + 4,
-                    systemRegion.Y + androidStatusBarHeight + 2,
-                    85, // Жесткая чистая ширина под само название системы
-                    systemRegion.Height - 4
-                );
-
-                // 2. Защищаем OpenCV от вылета за границы
-                OpenCvSharp.Rect safeRegion = Tools.ClampRegion(compensatedRegion, screenshot.Width, screenshot.Height);
-                if (safeRegion.Width <= 0 || safeRegion.Height <= 0) return _eveSystem;
-
-                // 3. Вырезаем область названия звездной системы
-                using Mat cropped = new(screenshot, safeRegion);
-
-                // =========================================================================
-                // МОЩНАЯ ОПТИЧЕСКАЯ ПРЕДОБРАБОТКА ПОД ПИКСЕЛЬНЫЙ ШРИФТ EVE ECHOES
-                // =========================================================================
-                using Mat gray = new();
-                Cv2.CvtColor(cropped, gray, ColorConversionCodes.BGR2GRAY);
-
-                // Шаг А: Увеличиваем изображение ровно в 2 раза.
-                // Кубическая интерполяция (Cubic) аккуратно сгладит и разведет слипшиеся 
-                // внутренние перемычки букв и цифр, превращая "B" обратно в "8".
-                using Mat resized = new();
-                Cv2.Resize(gray, resized, new OpenCvSharp.Size(gray.Width * 2, gray.Height * 2), 0, 0, InterpolationFlags.Cubic);
-
-                // Шаг Б: Применяем адаптивную бинаризацию вместо Otsu.
-                // Она рассчитывает порог локально для каждого пикселя. Это сделает буквы 
-                // более тонкими и четкими, полностью проявив внутренние овалы восьмерок.
-                using Mat binarized = new();
-                Cv2.AdaptiveThreshold(resized, binarized, 255, AdaptiveThresholdTypes.MeanC, ThresholdTypes.Binary, 15, 4);
-
-                // ВАЖНО: Адаптивный порог делает буквы ЧЕРНЫМИ на БЕЛОМ фоне.
-                // Tesseract OCR по умолчанию обучается на книгах и читает черные буквы на белом 
-                // фоне в разы точнее. Оставляем этот вариант для максимального распознавания!
-                // =========================================================================
-
-    #if DEBUG
-                try
-                {
-                    string debugDir = Path.GetFullPath(Path.Combine(Program.TemplatesDir, "..", "DebugScreenshots"));
-                    Directory.CreateDirectory(debugDir);
-                    // Сохраняем обновленный, увеличенный и контрастный кадр для проверки глазами
-                    Cv2.ImWrite(Path.Combine(debugDir, $"{Settings?.Name}_imgSystemName_FOUND.png"), binarized);
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[Debug] Не удалось сохранить кадр системы: {ex.Message}");
-                }
-    #endif
-
-                byte[] imgBytes = binarized.ToBytes(".png");
-                string rawResult = OcrService.Instance.RecognizeText(imgBytes);
-
-                if (!string.IsNullOrEmpty(rawResult))
-                {
-                    // Оставляем только английские буквы, цифры и пробелы (убирает шевроны, кавычки, точки)
-                    string cleanResult = CleanSpecialCharsRegex().Replace(rawResult, "").Trim();
-
-                    // Фикс двойных пробелов, если Tesseract их сгенерирует
-                    cleanResult = DoubleSpacesRegex().Replace(cleanResult, " ");
-
-
-                    if (!string.IsNullOrEmpty(cleanResult) && cleanResult.Length > 3)
-                    {
-                        Logger.Log($"[{Settings?.Name}] OCR Корабля: Успешно распознан корабль '{cleanResult}' (Сырой текст: '{rawResult.Replace("\n", " ")}')", LogType.Info);
-
-                        _eveShip = cleanResult;
-                        return _eveShip;
-                    }
-                }
-
-                Logger.Log($"[{Settings?.Name}] OCR Системы: Текст не найден или область пустая.", LogType.Warning);
-            }
-            catch (Exception ex)
-            {
-                Logger.Log($"[{Settings?.Name}] Ошибка сканирования звездной системы: {ex.Message}", LogType.Error);
-            }
-
-            return _eveSystem;
-        });
-    }
-
-    [System.Text.RegularExpressions.GeneratedRegex(@"[^a-zA-Z0-9\s]")]
-    private static partial System.Text.RegularExpressions.Regex CleanSpecialCharsRegex();
-
-    [System.Text.RegularExpressions.GeneratedRegex(@"\s+")]
-    private static partial System.Text.RegularExpressions.Regex DoubleSpacesRegex();
-
-
-    // Компилятор .NET 9 сам сгенерирует сверхбыстрый код для этой регулярки на этапе сборки
-    [GeneratedRegex(@"[^a-zA-Z0-9\-\s]")]
-    private static partial Regex CleanOcrTextRegex();
-
-
-    /// <summary>
-    /// Выполняет цепочку макро-кликов для открытия меню корабля,
-    /// оптически распознает его название с математическим стиранием мусора справа,
-    /// сохраняет отладочный кадр и закрывает интерфейс через XButton.
-    /// </summary>
-    internal async Task<string> ScanCurrentShipAsync()
-    {
-        if (Hwnd == IntPtr.Zero) return "Неизвестно";
-
-        try
-        {
-            // ========================================================
-            // ЭТАП 1: ВЫПОЛНЕНИЕ МАКРОСА ИНТЕРФЕЙСА (Открытие меню)
-            // ========================================================
-            Logger.Log($"[{Settings?.Name}] OCR Корабля: Запуск макроса кликов интерфейса...", LogType.Info);
-
-            var macroSteps = new (GameUi Element, int DelayMs)[]
-            {
-                (GameUi.CharMenu, 2000), // Открываем меню профиля
-                (GameUi.Fitting, 2500) // Переходим во вкладку корабля
-            };
-
-            foreach (var (element, delayMs) in macroSteps)
-            {
-                // Вызываем ваш штатный метод клика по элементам UI
-                this.ClickTo(element);
-
-                if (delayMs > 0)
-                {
-                    await Task.Delay(delayMs, Program.GetGlobalToken());
-                }
-            }
-
-            // ========================================================
-            // ЭТАП 2: ЗАХВАТ КАДРА И КЛИЕНТСКАЯ ГЕОМЕТРИЯ OpenCV
-            // ========================================================
-            // Делаем снимок чистой клиентской области Android, где левый верхний угол — это 0,0
-            using Mat? screenshot = Tools.CaptureWindow(Hwnd);
-            if (screenshot?.Empty() is not false || screenshot.Width <= 0 || screenshot.Height <= 0)
-                return _eveShip;
-
-            // Распаковываем исходные широкие координаты из битовой маски (X=6, Y=215, W=300, H=50)
-            OpenCvSharp.Rect shipRegion = GameRegions.ShipName.GetOpenCvRect();
-
-            // Компенсация высоты верхнего статус-бара BlueStacks (опускаем рамку на 40 пикселей вниз)
-            const int androidStatusBarHeight = 40;
-
-            OpenCvSharp.Rect compensatedRegion = new(
-                shipRegion.X,
-                shipRegion.Y + androidStatusBarHeight,
-                shipRegion.Width, // Исходная полная ширина 300 пикселей сохранена!
-                shipRegion.Height
-            );
-
-            // Защищаем OpenCV от вылета за физические границы матрицы скриншота
-            OpenCvSharp.Rect safeRegion = Tools.ClampRegion(compensatedRegion, screenshot.Width, screenshot.Height);
-            if (safeRegion.Width <= 0 || safeRegion.Height <= 0) return _eveShip;
-
-            // Вырезаем область названия корабля
-            using Mat cropped = new(screenshot, safeRegion);
-
-            // ========================================================
-            // ЭТАП 3: ОПТИЧЕСКАЯ ПОДГОТОВКА И МАСКИРОВАНИЕ ХВОСТОВ
-            // ========================================================
-            using Mat gray = new();
-            Cv2.CvtColor(cropped, gray, ColorConversionCodes.BGR2GRAY);
-
-            // Увеличиваем изображение в 2 раза кубической интерполяцией, чтобы проявить пиксели
-            using Mat resized = new();
-            Cv2.Resize(gray, resized, new OpenCvSharp.Size(gray.Width * 2, gray.Height * 2), 0, 0, InterpolationFlags.Cubic);
-
-            // Применяем адаптивную бинаризацию (буквы станут черными на чистом белом фоне)
-            using Mat binarized = new();
-            Cv2.AdaptiveThreshold(resized, binarized, 255, AdaptiveThresholdTypes.MeanC, ThresholdTypes.Binary, 15, 4);
-
-            // УДАЛЕНИЕ ШЕВРОНОВ » И ЦИФР СПРАВА:
-            // Оставляем первые 65% ширины под текст названия, а последние 35% справа жестко затираем.
-            int clearStartLeft = (int)(binarized.Width * 0.65);
-            int clearWidth = binarized.Width - clearStartLeft;
-
-            OpenCvSharp.Rect trashZone = new(clearStartLeft, 0, clearWidth, binarized.Height);
-
-            // Заливаем зону мусора сплошным БЕЛЫМ цветом (255), полностью стирая шевроны
-            binarized.SubMat(trashZone).SetTo(new Scalar(255));
-
-            // ========================================================
-            // ЭТАП 4: СОХРАНЕНИЕ ОТЛАДКИ И РАСПОЗНАВАНИЕ Tesseract
-            // ========================================================
-#if DEBUG
-            try
-            {
-                string debugDir = Path.GetFullPath(Path.Combine(Program.TemplatesDir, "..", "DebugScreenshots"));
-                Directory.CreateDirectory(debugDir);
-                // Сохраняем итоговый замаскированный кадр, правая часть будет идеально белой
-                Cv2.ImWrite(Path.Combine(debugDir, $"{Settings?.Name}_imgShipName_FOUND.png"), binarized);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[Debug Error] Не удалось сохранить отладочный кадр корабля: {ex.Message}");
-            }
-#endif
-
-            // Кодируем подготовленную матрицу в байты PNG для Tesseract
-            byte[] imgBytes = binarized.ToBytes(".png");
-            string rawResult = OcrService.Instance.RecognizeText(imgBytes);
-
-            if (!string.IsNullOrEmpty(rawResult))
-            {
-                // Вычищаем результат регуляркой: оставляем только английские буквы, цифры и пробелы
-                string cleanShipResult = CleanSpecialCharsRegex().Replace(rawResult, "").Trim();
-                cleanShipResult = DoubleSpacesRegex().Replace(cleanShipResult, " ");
-
-                if (!string.IsNullOrEmpty(cleanShipResult) && cleanShipResult.Length > 3)
-                {
-                    Logger.Log($"[{Settings?.Name}] OCR Корабля: Успешно распознан корабль '{cleanShipResult}' (Сырой текст Tesseract: '{rawResult.Replace("\n", " ")}')", LogType.Info);
-
-                    _eveShip = cleanShipResult; // Перезаписываем "Требуется ввод"
-                }
-            }
-            else
-            {
-                Logger.Log($"[{Settings?.Name}] OCR Корабля: Текст названия корабля не обнаружен.", LogType.Warning);
-            }
-
-            // ========================================================
-            // ЭТАП 5: ЗАКРЫТИЕ ИНТЕРФЕЙСА (Клик по XButton)
-            // ========================================================
-            Logger.Log($"[{Settings?.Name}] OCR Корабля: Закрытие меню через XButton.", LogType.Info);
-
-            this.ClickTo(GameUi.XButton);
-
-            // Даем честную паузу, чтобы оверлей хангара успел полностью свернуться
-            await Task.Delay(1500, Program.GetGlobalToken());
-        }
-        catch (Exception ex)
-        {
-            Logger.Log($"[{Settings?.Name}] Критическая ошибка макро-сканирования корабля: {ex.Message}", LogType.Error);
-        }
-
-        return _eveShip;
-    }
-
 }
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
@@ -1747,39 +1369,9 @@ public partial class ActiveBotAccount
 public enum AccountTask
 {
     /// <summary>
-    /// Процесс андока: запуск выхода корабля из дока станции или цитадели в открытый космос.
-    /// </summary>
-    Undocking,
-
-    /// <summary>
-    /// Перелет (варп) к стандартному астероидному поясу (Belt) в звездной системе.
-    /// </summary>
-    GoToBelt,
-
-    /// <summary>
-    /// Перелет (варп) к координатам лунной структуры или лунного астероидного пояса.
-    /// </summary>
-    GoToMoon,
-
-    /// <summary>
-    /// Перелет (варп) к аномалиям со сжатой рудой (Condensed Ore) для высокодоходной добычи.
-    /// </summary>
-    GoToCondensed,
-
-    /// <summary>
-    /// Штатный режим добычи: активация лазеров (стрипов) и наполнение трюма корабля рудой.
-    /// </summary>
-    Mining,
-
-    /// <summary>
     /// Эвакуация или плановый возврат: запуск процесса дока (Dock) на станцию или цитадель.
     /// </summary>
     GoToStation,
-
-    /// <summary>
-    /// Выгрузка накопленных ресурсов из трюма корабля на локальный склад станции.
-    /// </summary>
-    Unloading,
 
     /// <summary>
     /// Сканирование локального чата, проверка фильтров стендингов и маркеров безопасности системы.
@@ -1790,11 +1382,6 @@ public enum AccountTask
     /// Базовый режим простоя / ожидания: проверка текущих параметров корабля, интерфейса и разворачивание сценариев рутины.
     /// </summary>
     CheckYourOwnState,
-
-    /// <summary>
-    /// Экстренный запуск макроса для отправки разведывательного варнинга (Scout Alert) в боевой канал альянса/корпорации.
-    /// </summary>
-    SendAliChatWarning,
 
     /// <summary>
     /// Задача определить что происходит

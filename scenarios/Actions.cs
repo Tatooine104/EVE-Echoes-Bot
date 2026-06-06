@@ -72,6 +72,7 @@ public static partial class ScenarioFactory
     }
 
 
+    // TODO: Дописать логику перезапуска планетарки
     /// <summary>
     /// Выполняет взаимодействие с интерфейсом планетарной добычи внутри станции.
     /// </summary>
@@ -98,45 +99,8 @@ public static partial class ScenarioFactory
         // Фиксируем время успешного завершения цикла
         bot._planetassembly = DateTime.UtcNow;
         Logger.Log($"[{bot.Settings.Name}] Цикл планетарной добычи успешно обработан.", LogType.Info);
-        
+
         return NodeStatus.Success;
     }
 
-
-/*
-
-    /// <summary>
-    /// Проверяет, нужно ли выполнять ТОЛЬКО перезапуск таймеров планетарки (без обслуживания ПОСа).
-    /// </summary>
-    private static Task<NodeStatus> CheckIfOnlyPlanetResetTimeAsync(ActiveBotAccount bot, CancellationToken _)
-    {
-        // Должны быть в доке + включена планетарка + выключен ПОС
-        if (bot._inSpace || !bot.PlanetMining || bot.POS)
-        {
-            return Task.FromResult(NodeStatus.Failure);
-        }
-
-        // Проверяем время (нет даты или прошло более 8 часов)
-        bool isTime = !bot._planetassembly.HasValue || (DateTime.UtcNow - bot._planetassembly.Value).TotalHours >= 8;
-
-        return Task.FromResult(isTime ? NodeStatus.Success : NodeStatus.Failure);
-    }
-
-    /// <summary>
-    /// Проверяет, нужно ли выполнять полный цикл: перезапуск планетарки + обслуживание ПОСа.
-    /// </summary>
-    private static Task<NodeStatus> CheckIfFullPlanetAndPosTimeAsync(ActiveBotAccount bot, CancellationToken _)
-    {
-        // Должны быть в доке + включена планетарка + включен ПОС
-        if (bot._inSpace || !bot.PlanetMining || !bot.POS)
-        {
-            return Task.FromResult(NodeStatus.Failure);
-        }
-
-        // Проверяем время
-        bool isTime = !bot._planetassembly.HasValue || (DateTime.UtcNow - bot._planetassembly.Value).TotalHours >= 8;
-
-        return Task.FromResult(isTime ? NodeStatus.Success : NodeStatus.Failure);
-    }
-    */
 }
