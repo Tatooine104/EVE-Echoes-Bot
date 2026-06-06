@@ -45,6 +45,8 @@ namespace EVEEchoesBot.resources;
         CharMenu =   500070,
         Fitting  =  1850240,
         XButton  = 12300065
+        // EyeIcon = 
+        // ? = ?
 
     }
 
@@ -54,17 +56,20 @@ namespace EVEEchoesBot.resources;
 
 public enum GameRegions : long
 {
-    /// <summary>Пример: Область локального чата (X=5, Y=5, W=640, H=780)</summary>
+    /// <summary>Область локального чата (X=5, Y=5, W=640, H=780)</summary>
     LocalChat     = 5L | (5L   << 16) | (640L << 32) | (780L << 48),
 
-    /// <summary>Пример: Область иконки локального чата (X=5, Y=650, W=100, H=120)</summary>
+    /// <summary>Область иконки локального чата (X=5, Y=650, W=100, H=120)</summary>
     LocalChatIcon = 5L | (650L << 16) | (100L << 32) | (120L << 48),
 
-    /// <summary>Пример: Область лейбов чатов (X=1, Y=5, W=150, H=750)</summary>
+    /// <summary>Область лейбов чатов (X=1, Y=5, W=150, H=750)</summary>
     ChatsLabels  = 1L | (5L << 16) | (150L << 32) | (750L << 48),
 
-    /// <summary>Пример: Область обзора локального чата (X=10, Y=80, W=400, H=600)</summary>
+    /// <summary>Область обзора локального чата (X=10, Y=80, W=400, H=600)</summary>
     //LocalChatArea = 10L | (80L << 16) | (400L << 32) | (600L << 48)
+
+    /// <summary>Область кнопок "Control" / "Undock" (X=1070, Y=185, W=210, H=100)</summary>
+    ControlUndock = 1070L | (185L << 16) | (210L << 32) | (100L << 48),
 
     SystemName = 110L | (20L  << 16) | (140L << 32) | (35L << 48),
     ShipName   = 6L   | (215L << 16) | (300L << 32) | (50L << 48)

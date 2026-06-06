@@ -72,6 +72,8 @@ static partial class Program
 
     public static CancellationToken GetGlobalToken() => _cts.Token;
 
+    public record ControlPropertyValueDto(string Value);
+
     #endregion
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
@@ -222,7 +224,22 @@ static partial class Program
         }));
 
         // Маршрут для обработки кликов по кнопкам Управления
-        app.MapPost("/api/control/{id:int}/{actionName}", (int id, string actionName) => {
+        app.MapPost("/api/control/{id:int}/{actionName}", async (int id, string actionName, ControlPropertyValueDto? dto) => {
+            // 1. Обработка ручной установки системы (только если dto пришел)
+            if (dto != null && actionName.Equals("setSystem", StringComparison.OrdinalIgnoreCase))
+            {
+                bool success = manager.SetAccountSystem(id, dto.Value);
+                return Microsoft.AspNetCore.Http.Results.Ok();
+            }
+            
+            // 2. Обработка ручной установки корабля (только если dto пришел)
+            if (dto != null && actionName.Equals("setShip", StringComparison.OrdinalIgnoreCase))
+            {
+                bool success = manager.SetAccountShip(id, dto.Value);
+                return Microsoft.AspNetCore.Http.Results.Ok();
+            }
+
+            // 3. Фолбек для всех остальных ваших команд (start, stop и т.д.) - теперь они не упадут с 400 ошибкой
             manager.HandleCommand(id, actionName);
             return Microsoft.AspNetCore.Http.Results.Ok();
         });
@@ -283,14 +300,11 @@ static partial class Program
         return app;
     }
 
+    #endregion
 
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
-
-#endregion
-
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-
-#region InitSystray
+    #region InitSystray
 
     private static void InitSystray()
     {
@@ -328,9 +342,9 @@ static partial class Program
         AppDomain.CurrentDomain.ProcessExit += (s, e) => notifyIcon.Visible = false;
     }
 
-#endregion
+    #endregion
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region Required Files Check
 

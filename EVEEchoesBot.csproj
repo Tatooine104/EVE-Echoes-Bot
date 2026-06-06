@@ -11,7 +11,7 @@
     <DebugType>none</DebugType>
 
     <!-- 1. ГЛАВНАЯ ТОЧКА УПРАВЛЕНИЯ ВЕРСИЕЙ -->
-    <Version>0.01.003</Version>
+    <Version>0.01.004</Version>
 
     <!-- 2. Имя EXE собирается автоматически -->
     <AssemblyName>EVE%20Echoes%20Bot%20v.$(Version)</AssemblyName>

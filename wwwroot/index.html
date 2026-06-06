@@ -79,7 +79,9 @@
     </div>
 
     <script>
+
         let userIsScrolling = false;
+        let isPollingPaused = false;
 
         // Отслеживаем скролл пользователя, чтобы автопрокрутка логов не сбивала обзор
         const logContainer = document.getElementById('log-container');
@@ -103,7 +105,155 @@
             return "00:00:00";
         }
 
+        // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+        // Функция, которая отрисовывает карточки эмуляторов в #stats-container
+        function updateStatsUI(accounts) {
+            const container = document.getElementById('stats-container');
+            container.innerHTML = ''; 
+
+            accounts.forEach(account => {
+                // Защита на случай, если extendedState пришел с маленькой или большой буквы
+                const ext = account.extendedState || account.ExtendedState || {};
+                
+                const card = document.createElement('div');
+                card.className = 'account-card'; 
+                
+                // Берем EVESystem и EVEShip из вложенного объекта extendedState
+                const system = ext.evesystem || ext.EVESystem || 'Кликните для ввода';
+                const ship = ext.eveship || ext.EVEShip || 'Кликните для ввода';
+
+                card.innerHTML = `
+                    <h3>Эмулятор: ${account.name || account.Name || 'Без имени'} (ID: ${account.id ?? account.Id})</h3>
+                    <p>Статус: <span>${account.state || account.State || 'Данные отсутствуют'}</span></p>
+                    <p>В работе: <span>${formatRuntime(account.runtime, ext.runtimeSeconds || ext.RuntimeSeconds)}</span></p>
+                    
+                    <p>Система: 
+                        <span class="editable-field" style="border-bottom: 1px dashed #007bff; cursor: pointer; color: #007bff;" 
+                            onclick="editProperty(${account.id ?? account.Id}, 'System', this)">
+                            ${system}
+                        </span>
+                    </p>
+                    <p>Корабль: 
+                        <span class="editable-field" style="border-bottom: 1px dashed #007bff; cursor: pointer; color: #007bff;" 
+                            onclick="editProperty(${account.id ?? account.Id}, 'Ship', this)">
+                            ${ship}
+                        </span>
+                    </p>
+                `;
+                
+                container.appendChild(card);
+            });
+        }
+
+
+        // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+        // Функция вызова всплывающего окна для ввода Системы или Корабля
+        async function editProperty(accountId, propertyName, element) {
+            // 1. Предполагаем, что у вас есть переменная интервала поллинга (например, pollingInterval)
+            // Если она называется иначе, временно остановите ваш таймер здесь
+            if (typeof pollingInterval !== 'undefined' && pollingInterval !== null) {
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+            }
+
+            const currentValue = element.innerText.trim();
+            const label = propertyName === 'System' ? 'звездную систему' : 'название корабля';
+            
+            // 2. Показываем стандартное окно ввода
+            const newValue = prompt(`Введите ${label}:`, currentValue === 'Кликните для ввода' ? '' : currentValue);
+
+            // Если нажали "Отмена" или ввели пустоту — ничего не делаем
+            if (newValue === null || newValue.trim() === "") {
+                // Перезапускаем ваш поллинг (подставьте вашу функцию запуска, если она есть)
+                if (typeof startPolling === 'function') startPolling();
+                return;
+            }
+
+            const cleanValue = newValue.trim();
+            const actionName = propertyName === 'System' ? 'setSystem' : 'setShip';
+
+            try {
+                // 3. Отправляем POST-запрос на бэкенд по вашему шаблону маршрута
+                const response = await fetch(`/api/control/${accountId}/${actionName}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ value: cleanValue })
+                });
+
+                if (response.ok) {
+                    element.innerText = cleanValue; // Мгновенно обновляем текст в UI
+                } else {
+                    alert('Не удалось обновить данные на сервере');
+                }
+            } catch (error) {
+                console.error('Ошибка сети при отправке данных:', error);
+            } finally {
+                // 4. В любом случае возвращаем автообновление страницы
+                if (typeof startPolling === 'function') startPolling();
+            }
+        }
+
+        // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+        // Функция вызова всплывающего окна для ввода Системы или Корабля
+        async function editProperty(accountId, propertyName, element) {
+            console.log(`[UI] Клик зафиксирован! Аккаунт: ${accountId}, Свойство: ${propertyName}`);
+            
+            // 1. Замораживаем автообновление
+            isPollingPaused = true;
+
+            // Получаем текущий текст
+            const currentValue = element.innerText.trim();
+            const label = propertyName === 'System' ? 'звездную систему' : 'название корабля';
+            
+            // 2. Показываем стандартное окно ввода
+            const newValue = prompt(`Введите ${label}:`, currentValue === 'Кликните для ввода' ? '' : currentValue);
+
+            // Если нажали "Отмена" или ввели пустоту — снимаем паузу и выходим
+            if (newValue === null || newValue.trim() === "") {
+                console.log("[UI] Ввод отменен пользователем");
+                isPollingPaused = false;
+                return;
+            }
+
+            const cleanValue = newValue.trim();
+            const actionName = propertyName === 'System' ? 'setSystem' : 'setShip';
+            console.log(`[UI] Отправка на бэкенд: ${actionName} -> ${cleanValue}`);
+
+            try {
+                // 3. Отправляем POST-запрос с JSON телом
+                const response = await fetch(`/api/control/${accountId}/${actionName}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ value: cleanValue })
+                });
+
+                if (response.ok) {
+                    console.log("[UI] Бэкенд успешно сохранил значение");
+                    element.innerText = cleanValue; // Мгновенно обновляем текст на экране
+                } else {
+                    console.error(`[UI] Ошибка сервера: ${response.status}`);
+                    alert('Не удалось обновить данные на сервере');
+                }
+            } catch (error) {
+                console.error('[UI] Ошибка сети при отправке данных:', error);
+            } finally {
+                // 4. Обязательно снимаем паузу опроса
+                isPollingPaused = false;
+            }
+        }
+
+        // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
         async function updateDashboard() {
+            // Если поднята пауза (пользователь вводит данные) — пропускаем этот тик
+            if (isPollingPaused) return;
             try {
                 const response = await fetch('/api/state');
                 if (!response.ok) return;
@@ -215,6 +365,8 @@
             }
         }
 
+        // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
         // Отправка команд управления на бэкенд
         async function sendCmd(id, action) {
             try {
@@ -224,6 +376,8 @@
                 console.error("Ошибка отправки команды:", err);
             }
         }
+
+        // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
         // Функция полного выключения всей экосистемы бота
         async function shutdownSystem() {
@@ -245,9 +399,55 @@
             }
         }
 
+        // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
         // Запуск цикла обновления (раз в 1000 мс)
         setInterval(updateDashboard, 1000);
         updateDashboard();
+
+        // Автономный перехватчик кликов с динамическим поиском строк "Система" и "Корабль"
+        document.addEventListener('click', function (event) {
+            // 1. Проверяем, кликнули ли мы по элементу, содержащему текст "Система" или "Корабль"
+            // Или по его дочернему элементу (например, по значению)
+            let targetElement = event.target;
+            let textContent = targetElement.innerText || "";
+            let parentContent = targetElement.parentElement ? targetElement.parentElement.innerText : "";
+            
+            const hasSystem = textContent.includes("Система") || textContent.includes("System") || parentContent.includes("Система") || parentContent.includes("System");
+            const hasShip = textContent.includes("Корабль") || textContent.includes("Ship") || parentContent.includes("Корабль") || parentContent.includes("Ship");
+            
+            if (!hasSystem && !hasShip) return; // Кликнули вообще мимо нужных строк
+
+            console.log("[GLOBAL] Клик по строке параметров перехвачен!");
+            
+            // Определяем, какое именно свойство редактируем
+            const propertyName = hasSystem ? 'System' : 'Ship';
+
+            // 2. Ищем контейнер карточки, чтобы вытащить ID аккаунта
+            const card = targetElement.closest('.panel') || targetElement.closest('div') || targetElement.parentElement;
+            let accountId = 0;
+            if (card) {
+                const idMatch = card.innerText.match(/(?:ID|ID:|\s)\s*(\d+)/i);
+                if (idMatch && idMatch[1]) accountId = parseInt(idMatch[1], 10);
+            }
+
+            // Если кликнули по текстовому узлу, выделим конкретно ту часть, где лежит значение
+            // Для prompt нам нужен сам узел, куда мы запишем результат
+            let valueElement = targetElement;
+            if (targetElement.tagName === 'P' || targetElement.tagName === 'DIV') {
+                // Если кликнули по всему параграфу, попробуем найти внутри тег span или использовать сам элемент
+                const span = targetElement.querySelector('span');
+                if (span) valueElement = span;
+            }
+
+            // 3. Вызываем нашу функцию ввода
+            if (typeof editProperty === 'function') {
+                editProperty(accountId, propertyName, valueElement);
+            } else {
+                alert("Ошибка: Функция editProperty отсутствует в памяти. Перезагрузите страницу через Ctrl+F5.");
+            }
+        });
+
     </script>
 </body>
 </html>

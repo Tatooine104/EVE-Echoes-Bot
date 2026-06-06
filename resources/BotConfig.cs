@@ -161,6 +161,32 @@ public class AccountStateDto
 
 public class BotAccountManager
     {
+
+        public bool SetAccountSystem(int id, string systemName)
+        {
+            var bots = Program.GetActiveBots();
+            // Проверяем, что индекс (id) входит в границы списка ботов
+            if (id >= 0 && id < bots.Count)
+            {
+                bots[id].UpdateSystemManually(systemName);
+                return true;
+            }
+            return false;
+        }
+
+        public bool SetAccountShip(int id, string shipName)
+        {
+            var bots = Program.GetActiveBots();
+            // Проверяем, что индекс (id) входит в границы списка ботов
+            if (id >= 0 && id < bots.Count)
+            {
+                bots[id].UpdateShipManually(shipName);
+                return true;
+            }
+            return false;
+        }
+
+
         /// <summary>
         /// Формирует актуальный снимок состояния всех ботов для отправки в веб-интерфейс.
         /// </summary>

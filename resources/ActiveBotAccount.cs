@@ -414,6 +414,28 @@ public partial class ActiveBotAccount
 
     #endregion
 
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    public void UpdateSystemManually(string systemName)
+    {
+        lock (_taskLock)
+        {
+            _eveSystem = systemName;
+        }
+        Logger.Log($"[Аккаунт {Settings?.Name ?? "ID_" + CurrentTask}] Система изменена вручную на: {systemName}", LogType.Info);
+    }
+
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    public void UpdateShipManually(string shipName)
+    {
+        lock (_taskLock)
+        {
+            _eveShip = shipName;
+        }
+        Logger.Log($"[Аккаунт {Settings?.Name ?? "ID_" + CurrentTask}] Корабль изменен вручную на: {shipName}", LogType.Info);
+    }
+
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
