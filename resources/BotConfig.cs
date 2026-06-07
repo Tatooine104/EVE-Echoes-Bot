@@ -6,18 +6,12 @@ using System.Text;
 
 namespace EVEEchoesBot.resources;
 
-// [v] Проверить все методы и добавить новый метод Logger.Log()
-// [v] TODO 2026.05.30 Сделать вызов окна ввода при создании дефолтного конфига 
-// [v] TODO 2026.05.30 Привести все тексты логгера к единому стилю  
-// [v] TODO 2026.05.30 Добавить класс сохранения статистики по ботам (отдельно для каждого акка stat_accountname.json)
-// [v] TODO 2026.05.30 Перенести EVESystem и EVEShip в файл статистики. 
-
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
 #region BotConfig
 
 /// <summary>
-/// Главный корневой класс глобальной конфигурации бота, считываемый из файла appsettings.json.
+/// Главный корневой класс глобальной конфигурации бота, считываемый из файла.
 /// </summary>
 public class BotConfig
 {
@@ -146,110 +140,110 @@ public class AccountStateDto
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
-    // Облегченный контейнер для передачи данных на веб-страницу
-    public class BotWebResponseDto
-    {
-        public int Id { get; set; }
-        public string Name { get; set; } = "";
-        public string State { get; set; } = "Stopped";
-        public string Runtime { get; set; } = "00 д. 00 ч. 00 м. 00 с.";
+// Облегченный контейнер для передачи данных на веб-страницу
+public class BotWebResponseDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
+    public string State { get; set; } = "Stopped";
+    public string Runtime { get; set; } = "00 д. 00 ч. 00 м. 00 с.";
 
-        public string EmulatorTitle { get; set; } = "";
+    public string EmulatorTitle { get; set; } = "";
 
-        // Вшиваем ваш реальный стейт аккаунта для средней части экрана
-        public AccountStateDto? ExtendedState { get; set; }
-    }
+    // Вшиваем ваш реальный стейт аккаунта для средней части экрана
+    public AccountStateDto? ExtendedState { get; set; }
+}
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
 public class BotAccountManager
+{
+
+    public bool SetAccountSystem(int id, string systemName)
     {
-
-        public bool SetAccountSystem(int id, string systemName)
+        var bots = Program.GetActiveBots();
+        // Проверяем, что индекс (id) входит в границы списка ботов
+        if (id >= 0 && id < bots.Count)
         {
-            var bots = Program.GetActiveBots();
-            // Проверяем, что индекс (id) входит в границы списка ботов
-            if (id >= 0 && id < bots.Count)
-            {
-                bots[id].UpdateSystemManually(systemName);
-                return true;
-            }
-            return false;
+            bots[id].UpdateSystemManually(systemName);
+            return true;
         }
+        return false;
+    }
 
-        public bool SetAccountShip(int id, string shipName)
+    public bool SetAccountShip(int id, string shipName)
+    {
+        var bots = Program.GetActiveBots();
+        // Проверяем, что индекс (id) входит в границы списка ботов
+        if (id >= 0 && id < bots.Count)
         {
-            var bots = Program.GetActiveBots();
-            // Проверяем, что индекс (id) входит в границы списка ботов
-            if (id >= 0 && id < bots.Count)
-            {
-                bots[id].UpdateShipManually(shipName);
-                return true;
-            }
-            return false;
+            bots[id].UpdateShipManually(shipName);
+            return true;
         }
+        return false;
+    }
 
 
-        /// <summary>
-        /// Формирует актуальный снимок состояния всех ботов для отправки в веб-интерфейс.
-        /// </summary>
-        public List<BotWebResponseDto> GetAccountsState()
-        {
-            var bots = Program.GetActiveBots();
+    /// <summary>
+    /// Формирует актуальный снимок состояния всех ботов для отправки в веб-интерфейс.
+    /// </summary>
+    public List<BotWebResponseDto> GetAccountsState()
+    {
+        var bots = Program.GetActiveBots();
 
-            return [.. bots.Select((bot, index) => {
-                var extended = new AccountStateDto
-                {
-                    AccountName = bot.Settings?.Name ?? $"Account_{index + 1}",
-                    CurrentTask = bot.CurrentTask.ToString(),
-                    RuntimeSeconds = bot.RuntimeSeconds, // <-- ДОБАВЬТЕ ЭТУ СТРОКУ СЮДА!
-                    EVESystem = bot._eveSystem,
-                    EVEShip = bot._eveShip,
-                    InSpace = bot._inSpace,
-                    CurrentTarget = bot._currenttarget?.ToString(),
-                    IsInMiningZone = bot._isinzone,
-                    IsWarping = bot._iswarping,
-                    HasTarget = bot._hastarget,
-                    WeaponryActive = bot._weaponryactive
-                };
-
-                return new BotWebResponseDto
-                {
-                    Id = index,
-                    Name = extended.AccountName,
-                    State = bot.State.ToString(),
-                    Runtime = bot.GetRuntimeString(),
-                    EmulatorTitle = bot.Settings?.WindowTitle ?? $"LDPlayer-{index + 1}", // <-- ЗАПОЛНЯЕМ ИЗ КОНФИГА БОТА
-                    ExtendedState = extended
-                };
-            })];
-        }
-
-
-        /// <summary>
-        /// Маршрутизирует команды управления от кнопок браузера к конкретному боту.
-        /// </summary>
-        public void HandleCommand(int id, string action)
-        {
-            var bots = Program.GetActiveBots();
-            if (id < 0 || id >= bots.Count) return;
-
-            var targetBot = bots[id];
-
-            switch (action.ToLower())
+        return [.. bots.Select((bot, index) => {
+            var extended = new AccountStateDto
             {
-                case "start":
-                    targetBot.Start(Program.GetGlobalToken());
-                    break;
-                case "pause":
-                    targetBot.Pause();
-                    break;
-                case "stop":
-                    targetBot.Stop();
-                    break;
-            }
+                AccountName = bot.Settings?.Name ?? $"Account_{index + 1}",
+                CurrentTask = bot.CurrentTask.ToString(),
+                RuntimeSeconds = bot.RuntimeSeconds,
+                EVESystem = bot._eveSystem,
+                EVEShip = bot._eveShip,
+                InSpace = bot._inSpace,
+                CurrentTarget = bot._currenttarget?.ToString(),
+                IsInMiningZone = bot._isinzone,
+                IsWarping = bot._iswarping,
+                HasTarget = bot._hastarget,
+                WeaponryActive = bot._weaponryactive
+            };
+
+            return new BotWebResponseDto
+            {
+                Id = index,
+                Name = extended.AccountName,
+                State = bot.State.ToString(),
+                Runtime = bot.GetRuntimeString(),
+                EmulatorTitle = bot.Settings?.WindowTitle ?? $"LDPlayer-{index + 1}", // <-- ЗАПОЛНЯЕМ ИЗ КОНФИГА БОТА
+                ExtendedState = extended
+            };
+        })];
+    }
+
+
+    /// <summary>
+    /// Маршрутизирует команды управления от кнопок браузера к конкретному боту.
+    /// </summary>
+    public void HandleCommand(int id, string action)
+    {
+        var bots = Program.GetActiveBots();
+        if (id < 0 || id >= bots.Count) return;
+
+        var targetBot = bots[id];
+
+        switch (action.ToLower())
+        {
+            case "start":
+                targetBot.Start(Program.GetGlobalToken());
+                break;
+            case "pause":
+                targetBot.Pause();
+                break;
+            case "stop":
+                targetBot.Stop();
+                break;
         }
     }
+}
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
@@ -262,7 +256,7 @@ public class BotAccountManager
 public static class ConfigManager
 {
     /// <summary>
-    /// Имя и путь к файлу глобальной конфигурации приложения. По умолчанию: "config.json".
+    /// Имя и путь к файлу глобальной конфигурации приложения. По умолчанию: "config.json" .
     /// </summary>
     private const string ConfigPath = "config.json";
 
@@ -280,210 +274,143 @@ public static class ConfigManager
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
-#region BotConfig Load
+    #region BotConfig Load
 
-/// <summary>
-/// Загружает глобальную конфигурацию бота из JSON-файла.
-/// Если файл отсутствует на диске, автоматически генерирует, сериализует и сохраняет конфигурацию по умолчанию.
-/// В случае повреждения структуры файла возвращает инициализированный пустой объект для предотвращения падения приложения.
-/// </summary>
-/// <returns>Полностью заполненный объект конфигурации <see cref="BotConfig"/>.</returns>
-public static BotConfig Load()
-{
-    // Если файл конфигурации отсутствует, создаем и сохраняем дефолтный шаблон для удобства оператора
-    if (!File.Exists(ConfigPath))
+    /// <summary>
+    /// Загружает глобальную конфигурацию бота из JSON-файла.
+    /// Если файл отсутствует на диске, автоматически генерирует, сериализует и сохраняет конфигурацию по умолчанию.
+    /// В случае повреждения структуры файла возвращает инициализированный пустой объект для предотвращения падения приложения.
+    /// </summary>
+    /// <returns>Полностью заполненный объект конфигурации <see cref="BotConfig"/>.</returns>
+    public static BotConfig Load()
     {
-        BotConfig defaultConfig = CreateDefaultConfig();
-        Save(defaultConfig);
-
-        Logger.Log($"Создан файл конфигурации по умолчанию по пути '{ConfigPath}'.", LogType.Info);
-        return defaultConfig;
-    }
-
-    try
-    {
-        string json = File.ReadAllText(ConfigPath);
-        BotConfig? config = JsonSerializer.Deserialize<BotConfig>(json, _options);
-
-        if (config == null)
+        // Если файл конфигурации отсутствует, создаем и сохраняем дефолтный шаблон для удобства оператора
+        if (!File.Exists(ConfigPath))
         {
-            Logger.Log("Файл конфигурации пуст или поврежден. Инициализирован новый объект.", LogType.Warning);
+            BotConfig defaultConfig = CreateDefaultConfig();
+            Save(defaultConfig);
+
+            Logger.Log($"Создан файл конфигурации по умолчанию по пути '{ConfigPath}'.", LogType.Info);
+            return defaultConfig;
+        }
+
+        try
+        {
+            string json = File.ReadAllText(ConfigPath);
+            BotConfig? config = JsonSerializer.Deserialize<BotConfig>(json, _options);
+
+            if (config == null)
+            {
+                Logger.Log("Файл конфигурации пуст или поврежден. Инициализирован новый объект.", LogType.Warning);
+                return new BotConfig();
+            }
+
+            return config;
+        }
+        catch (Exception ex)
+        {
+            // Маршрутизируем сбой через вашу штатную систему логирования бота (message, type)
+            Logger.Log($"Не удалось прочитать или десериализовать файл конфигурации: {ex.Message}", LogType.Error);
             return new BotConfig();
         }
-
-        return config;
     }
-    catch (Exception ex)
-    {
-        // Маршрутизируем сбой через вашу штатную систему логирования бота (message, type)
-        Logger.Log($"Не удалось прочитать или десериализовать файл конфигурации: {ex.Message}", LogType.Error);
-        return new BotConfig();
-    }
-}
 
-#endregion
-
+    #endregion
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
-#region CreateDefaultConfig
+    #region CreateDefaultConfig
 
-/// <summary>
-/// Генерирует базовую структуру конфигурации для первой сессии работы приложения.
-/// Разворачивает интерактивное CLI-меню опроса оператора в консоли, выполняет автоматический сбор
-/// заголовков активных окон Windows и собирает готовый объект настроек по умолчанию.
-/// </summary>
-/// <returns>Полностью заполненный дефолтный объект конфигурации <see cref="BotConfig"/>.</returns>
-private static BotConfig CreateDefaultConfig()
-{
-    // Очищаем накопившийся буфер потока ввода консоли, чтобы избежать ложных срабатываний
-    while (Console.KeyAvailable)
+    /// <summary>
+    /// Генерирует базовую дефолтную структуру конфигурации для первого запуска приложения,
+    /// если файл настроек отсутствует на диске. Позволяет системе безопасно инициализироваться
+    /// и запустить веб-интерфейс для дальнейшей настройки.
+    /// </summary>
+    /// <returns>Базовый объект конфигурации <see cref="BotConfig"/> с демонстрационным шаблоном.</returns>
+    private static BotConfig CreateDefaultConfig()
     {
-        Console.ReadKey(true);
-    }
+        // Пытаемся автоматически найти хотя бы одно окно эмулятора для подстановки в шаблон
+        string defaultWindowTitle = "Задайте окно в веб-интерфейсе";
 
-    Console.ResetColor();
-    Console.WriteLine();
-    Console.ForegroundColor = ConsoleColor.Cyan;
-    Console.WriteLine("=== ПЕРВЫЙ ЗАПУСК: ИНТЕРАКТИВНАЯ НАСТРОЙКА БОТА ===");
-    Console.ResetColor();
-
-    // 1. Интерактивный запрос уникального имени персонажа
-    string name = string.Empty;
-    while (string.IsNullOrWhiteSpace(name))
-    {
-        Console.Write("Введите имя вашего персонажа (для логов): ");
-        name = Console.ReadLine()?.Trim() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(name))
+        try
         {
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine("⚠️ Имя не может быть пустым!");
-            Console.ResetColor();
-        }
-    }
+            var activeWindow = WindowEnumerator.GetVisibleWindowTitles()
+                .FirstOrDefault(t => !t.Equals("Program Manager", StringComparison.OrdinalIgnoreCase) &&
+                                    !t.Equals("Settings", StringComparison.OrdinalIgnoreCase) &&
+                                    !t.Contains(AppDomain.CurrentDomain.FriendlyName));
 
-    Console.WriteLine("\nСканирую запущенные окна эмуляторов...");
-
-    // 2. Получаем список всех видимых окон и отсекаем системные утилиты ОС и сам процесс бота
-    var allWindows = WindowEnumerator.GetVisibleWindowTitles()
-        .Where(t => !t.Equals("Program Manager", StringComparison.OrdinalIgnoreCase) &&
-                    !t.Equals("Settings", StringComparison.OrdinalIgnoreCase) &&
-                    !t.Contains(AppDomain.CurrentDomain.FriendlyName))
-        .Distinct()
-        .ToList();
-
-    string windowTitle = string.Empty;
-
-    if (allWindows.Count == 0)
-    {
-        // ФОЛБЕК-СИСТЕМА: Если окон автоматически не найдено, переключаем терминал на ручной ввод заголовка
-        Console.ForegroundColor = ConsoleColor.Yellow;
-        Console.WriteLine("⚠️ Не удалось автоматически найти активные окна.");
-        Console.ResetColor();
-
-        while (string.IsNullOrWhiteSpace(windowTitle))
-        {
-            Console.Write("Введите название окна эмулятора вручную: ");
-            windowTitle = Console.ReadLine()?.Trim() ?? string.Empty;
-        }
-    }
-    else
-    {
-        // Выводим красивый структурированный нумерованный список обнаруженных окон BlueStacks/LDPlayer
-        Console.ForegroundColor = ConsoleColor.Gray;
-        Console.WriteLine("Найденные открытые окна:");
-        for (int i = 0; i < allWindows.Count; i++)
-        {
-            Console.WriteLine($"  [{i + 1}] {allWindows[i]}");
-        }
-        Console.ResetColor();
-
-        int selectedIndex = -1;
-        while (selectedIndex < 0 || selectedIndex >= allWindows.Count)
-        {
-            Console.Write($"Выберите номер вашего эмулятора (1-{allWindows.Count}): ");
-            string input = Console.ReadLine() ?? string.Empty;
-
-            if (int.TryParse(input, out int num) && num >= 1 && num <= allWindows.Count)
+            if (!string.IsNullOrWhiteSpace(activeWindow))
             {
-                selectedIndex = num - 1;
-                windowTitle = allWindows[selectedIndex];
-            }
-            else
-            {
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("⚠️ Неверный выбор! Введите число из списка.");
-                Console.ResetColor();
+                defaultWindowTitle = activeWindow;
             }
         }
-    }
+        catch (Exception ex)
+        {
+            // Логируем ошибку сканирования окон в системный лог, не ломая запуск приложения
+            Logger.Log($"[System] Не удалось выполнить пред-сканирование окон Windows: {ex.Message}", LogType.Warning);
+        }
 
-    Console.ForegroundColor = ConsoleColor.Green;
-    Console.WriteLine($"\n✅ Профиль настроен! Персонаж: '{name}', Окно: '{windowTitle}'");
-    Console.ResetColor();
-    Console.WriteLine();
-
-    // Возвращаем объект конфигурации с использованием современных коллекционных выражений C# 12+
-    return new BotConfig
-    {
-        Accounts =
-        [
-            new AccSettings
-            {
-                Name = name,
-                WindowTitle = windowTitle,
-                Emulator = "BlueStacks",
-                Script = "LocalWatcher",
-                PlanetMining = false,
-                POS = false,
-                AdbPort = 5565,
-                Size = new TargetSize
+        // Возвращаем чистый дефолтный шаблон. Пользователь настроит его через браузер.
+        return new BotConfig
+        {
+            Accounts =
+            [
+                new AccSettings
                 {
-                    TargetWidth = 1280,
-                    TargetHeight = 720
+                    Name = "Новый Персонаж",
+                    WindowTitle = defaultWindowTitle,
+                    Emulator = "LDPlayer", // Популярный дефолт для EVE Echoes
+                    Script = "LocalWatcher",
+                    PlanetMining = false,
+                    POS = false,
+                    AdbPort = 5565, // Стандартный первый порт ADB
+                    Size = new TargetSize
+                    {
+                        TargetWidth = 1280,
+                        TargetHeight = 720
+                    }
                 }
-            }
-        ]
-    };
-}
+            ]
+        };
+    }
 
-#endregion
+    #endregion
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
-#region Save
+    #region Save
 
-/// <summary>
-/// Синхронизирует текущее состояние объекта конфигурации бота с диском, выполняя запись в JSON-формате.
-/// Предотвращает попытки сохранения неинициализированных данных (null) и маршрутизирует ошибки записи через общую систему отчетов.
-/// </summary>
-/// <param name="config">Объект глобальной конфигурации <see cref="BotConfig"/> для сериализации и записи.</param>
-public static void Save(BotConfig config)
-{
-    if (config == null)
+    /// <summary>
+    /// Синхронизирует текущее состояние объекта конфигурации бота с диском, выполняя запись в JSON-формате.
+    /// Предотвращает попытки сохранения неинициализированных данных (null) и маршрутизирует ошибки записи через общую систему отчетов.
+    /// </summary>
+    /// <param name="config">Объект глобальной конфигурации <see cref="BotConfig"/> для сериализации и записи.</param>
+    public static void Save(BotConfig config)
     {
-        Logger.Log("Попытка сохранения пустого объекта конфигурации. Действие отменено.", LogType.Warning);
-        return;
+        if (config == null)
+        {
+            Logger.Log("Попытка сохранения пустого объекта конфигурации. Действие отменено.", LogType.Warning);
+            return;
+        }
+
+        try
+        {
+            string json = JsonSerializer.Serialize(config, _options);
+            File.WriteAllText(ConfigPath, json);
+
+    #if DEBUG
+            // Выводим аналитическую информацию об успешном сохранении файлов конфигураций только в режиме отладки
+            Logger.Log($"Конфигурация успешно сохранена в файл '{ConfigPath}'.", LogType.Test);
+    #endif
+        }
+        catch (Exception ex)
+        {
+            // Переведено на вашу единую систему логирования ошибок для записи сбоев ввода-вывода (IO) в CSV-отчет
+            Logger.Log($"Не удалось сохранить конфигурацию в файл '{ConfigPath}': {ex.Message}", LogType.Error);
+        }
     }
 
-    try
-    {
-        string json = JsonSerializer.Serialize(config, _options);
-        File.WriteAllText(ConfigPath, json);
-
-#if DEBUG
-        // Выводим аналитическую информацию об успешном сохранении файлов конфигураций только в режиме отладки
-        Logger.Log($"Конфигурация успешно сохранена в файл '{ConfigPath}'.", LogType.Test);
-#endif
-    }
-    catch (Exception ex)
-    {
-        // Переведено на вашу единую систему логирования ошибок для записи сбоев ввода-вывода (IO) в CSV-отчет
-        Logger.Log($"Не удалось сохранить конфигурацию в файл '{ConfigPath}': {ex.Message}", LogType.Error);
-    }
-}
-
-#endregion
+    #endregion
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 

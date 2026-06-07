@@ -234,7 +234,6 @@ public static class Tools
 
     #endregion
 
-
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region ClampRegion
@@ -261,7 +260,6 @@ public static class Tools
     }
 
     #endregion
-
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
@@ -459,7 +457,6 @@ public static class Tools
 
     #endregion
 
-
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region ResizeWindow
@@ -517,7 +514,6 @@ public static class Tools
     }
 
     #endregion
-
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 

@@ -282,13 +282,13 @@ internal static partial class WinAPI
 
     /// <summary>Константа сообщения Windows: Нажатие левой кнопки мыши (Down).</summary>
     internal const uint WM_LBUTTONDOWN = 0x0201;
-    
+
     /// <summary>Константа сообщения Windows: Отпускание левой кнопки мыши (Up).</summary>
     internal const uint WM_LBUTTONUP = 0x0202;
 
     /// <summary>Флаг интерфейса DWM для запроса точных физических границ окна без учета размытий рамок Aero в Windows 10/11.</summary>
     internal const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
-    
+
     /// <summary>Флаг функции PrintWindow для принудительного рендеринга сложного контента игровых эмуляторов (DirectX/OpenGL/Vulkan).</summary>
     internal const uint PW_RENDERFULLCONTENT = 2;
 
@@ -298,7 +298,7 @@ internal static partial class WinAPI
 
     /// <summary>
     /// Автоматически находит дочернее окно ввода или рендеринга графики внутри главного окна эмулятора.
-    /// Выполняет каскадный поиск по известным классам ("SubWin", "Form", "RenderWindow"), а в случае неудачи 
+    /// Выполняет каскадный поиск по известным классам ("SubWin", "Form", "RenderWindow"), а в случае неудачи
     /// сканирует все дочерние окна на наличие сигнатур ("Render", "View", "Sub", "Qt") в именах системных классов.
     /// </summary>
     /// <param name="mainHWnd">Дескриптор (Handle) главного окна эмулятора.</param>
@@ -319,7 +319,7 @@ internal static partial class WinAPI
 
         // 2. Фолбек-система: динамическое сканирование всех дочерних окон через итератор
         IntPtr currentChild = FindWindowEx(mainHWnd, IntPtr.Zero, null, null);
-        
+
         // Инициализируем StringBuilder начальным объемом, чтобы capacity не был равен по умолчанию 16
         System.Text.StringBuilder className = new(256);
 
@@ -330,10 +330,10 @@ internal static partial class WinAPI
             string name = className.ToString();
 
             // Проверяем наличие ключевых сигнатур графических ядер (BlueStacks, LDPlayer, Nox и др.)
-            if (!string.IsNullOrEmpty(name) && 
-                (name.Contains("Render", StringComparison.OrdinalIgnoreCase) || 
-                name.Contains("View", StringComparison.OrdinalIgnoreCase) || 
-                name.Contains("Sub", StringComparison.OrdinalIgnoreCase) || 
+            if (!string.IsNullOrEmpty(name) &&
+                (name.Contains("Render", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("View", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("Sub", StringComparison.OrdinalIgnoreCase) ||
                 name.Contains("Qt", StringComparison.OrdinalIgnoreCase)))
             {
                 return currentChild;
