@@ -218,6 +218,16 @@ static partial class Program
         // --- МАРШРУТЫ API ДЛЯ УПРАВЛЕНИЯ НАШИМ БОТОМ ---
         var manager = app.Services.GetRequiredService<BotAccountManager>();
 
+        // Разрешаем Kestrel раздавать физическую папку DebugScreenshots по виртуальному пути /DebugScreenshots
+        string externalDebugDir = Path.GetFullPath(Path.Combine(Program.TemplatesDir, "..", "DebugScreenshots"));
+        Directory.CreateDirectory(externalDebugDir); // Защита от падения, если папки еще нет
+
+        app.UseStaticFiles(new StaticFileOptions
+        {
+            FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(externalDebugDir),
+            RequestPath = "/DebugScreenshots"
+        });
+
         // Маршрут получения состояния (Простой и надежный)
         app.MapGet("/api/state", () => Microsoft.AspNetCore.Http.Results.Json(new {
             Accounts = manager.GetAccountsState(),
@@ -243,6 +253,114 @@ static partial class Program
             // 3. Фолбек для всех остальных ваших команд (start, stop и т.д.) - теперь они не упадут с 400 ошибкой
             manager.HandleCommand(id, actionName);
             return Microsoft.AspNetCore.Http.Results.Ok();
+        });
+
+        // POST /api/debug/{id:int}/screenshot — Сделать живой снимок экрана эмулятора
+        app.MapPost("/api/debug/{id:int}/screenshot", async (int id, BotAccountManager manager) =>
+        {
+            var bot = manager.GetAccountById(id);
+            if (bot == null) return Results.NotFound(new { message = "Аккаунт не найден" });
+            if (bot.Hwnd == IntPtr.Zero) return Results.BadRequest(new { message = "Окно эмулятора не привязано" });
+
+            try
+            {
+                using OpenCvSharp.Mat? screenshot = Tools.CaptureWindow(bot.Hwnd);
+                if (screenshot?.Empty() is not false) return Results.BadRequest(new { message = "Не удалось захватить кадр" });
+
+                // Путь строго в физическую папку DebugScreenshots на уровне шаблонов
+                string debugDir = Path.GetFullPath(Path.Combine(Program.TemplatesDir, "..", "DebugScreenshots"));
+                Directory.CreateDirectory(debugDir);
+
+                // Имя строго по вашему стандарту: debug_screenshot_<аккаунт>.png
+                string fileName = $"debug_screenshot_{bot.Settings.Name}.png";
+                string fullPath = Path.Combine(debugDir, fileName);
+
+                OpenCvSharp.Cv2.ImWrite(fullPath, screenshot);
+
+                // Отдаем виртуальный путь для браузера
+                return Results.Ok(new { url = $"/DebugScreenshots/{fileName}?t={DateTime.UtcNow.Ticks}" });
+            }
+            catch (Exception ex) { return Results.Problem($"Ошибка: {ex.Message}"); }
+        });
+
+        // GET /api/debug/enums/regions — Получить список всех регионов OpenCV
+        app.MapGet("/api/debug/enums/regions", () => 
+        {
+            // Извлекаем имена из вашего Enum GameRegions
+            string[] regions = Enum.GetNames<GameRegions>();
+            return Results.Ok(regions);
+        });
+
+        // GET /api/debug/enums/ui — Получить список всех элементов кликов GameUi
+        app.MapGet("/api/debug/enums/ui", () => 
+        {
+            // Извлекаем имена из вашего Enum GameUi
+            string[] uiElements = Enum.GetNames<GameUi>();
+            return Results.Ok(uiElements);
+        });
+
+
+        // GET /api/debug/{id:int}/region/{regionName} — Вырезать и посмотреть конкретный регион экрана
+        app.MapGet("/api/debug/{id:int}/region/{regionName}", async (int id, string regionName, BotAccountManager manager) =>
+        {
+            var bot = manager.GetAccountById(id);
+            if (bot == null) return Results.NotFound(new { message = "Аккаунт не найден" });
+            if (bot.Hwnd == IntPtr.Zero) return Results.BadRequest(new { message = "Окно эмулятора не привязано" });
+
+            if (!Enum.TryParse(regionName, true, out GameRegions targetRegion))
+                return Results.BadRequest(new { message = $"Регион '{regionName}' не найден" });
+
+            try
+            {
+                using OpenCvSharp.Mat? screenshot = Tools.CaptureWindow(bot.Hwnd);
+                if (screenshot?.Empty() is not false) return Results.BadRequest(new { message = "Не удалось захватить кадр" });
+
+                OpenCvSharp.Rect rect = targetRegion.GetOpenCvRect();
+                OpenCvSharp.Rect safeRect = Tools.ClampRegion(rect, screenshot.Width, screenshot.Height);
+                if (safeRect.Width <= 0 || safeRect.Height <= 0) return Results.BadRequest(new { message = "Регион за границами" });
+
+                using OpenCvSharp.Mat cropped = new(screenshot, safeRect);
+
+                string debugDir = Path.GetFullPath(Path.Combine(Program.TemplatesDir, "..", "DebugScreenshots"));
+                Directory.CreateDirectory(debugDir);
+
+                // Имя строго по вашему стандарту: debug_screenshot_<имя региона>.png
+                string fileName = $"debug_screenshot_{regionName}.png";
+                string fullPath = Path.Combine(debugDir, fileName);
+
+                OpenCvSharp.Cv2.ImWrite(fullPath, cropped);
+
+                return Results.Ok(new { url = $"/DebugScreenshots/{fileName}?t={DateTime.UtcNow.Ticks}" });
+            }
+            catch (Exception ex) { return Results.Problem($"Ошибка: {ex.Message}"); }
+        });
+
+        // POST /api/debug/{id:int}/click/{elementName} — Отправить клик по выбранному элементу GameUi
+        app.MapPost("/api/debug/{id:int}/click/{elementName}", async (int id, string elementName, BotAccountManager manager) =>
+        {
+            var bot = manager.GetAccountById(id);
+            if (bot == null) return Results.NotFound(new { message = "Аккаунт не найден" });
+
+            // Пытаемся безопасно распарсить строку в ваш Enum GameUi
+            if (!Enum.TryParse(elementName, true, out GameUi targetElement))
+            {
+                return Results.BadRequest(new { message = $"Элемент '{elementName}' не найден в перечислении GameUi" });
+            }
+
+            try
+            {
+                Logger.Log($"[Web Debug] Ручной вызов клика по элементу '{targetElement}' для бота {bot.Settings.Name}...", LogType.Warning);
+
+                // Используем наш асинхронный метод расширения по стандарту проекта
+                // Так как это веб-дебаг, передаем CancellationToken.None или глобальный токен
+                await bot.ClickToAsync(targetElement);
+
+                return Results.Ok(new { message = $"Клик по элементу '{targetElement}' успешно отправлен" });
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem($"Ошибка отправки клика: {ex.Message}");
+            }
         });
 
         // Маршрут для полной и безопасной остановки всей системы из браузера
@@ -622,7 +740,6 @@ static partial class Program
         }
     }
 
-
     #endregion
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
@@ -677,46 +794,3 @@ static partial class Program
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
-#region MEMO
-
-/*
-
-### АРХИТЕКТУРНОЕ МЕМО: EVEEchoesBot (Ветка: Work)
-
-#### 1. Общая архитектура и масштабы
-- **Платформа:** .NET 9+, C#, Windows Forms (WinExe).
-- **Паттерн логики:** Дерево поведения (Behavior Tree) вместо устаревшего FSM. 
-- **Декомпозиция:** Логические узлы полностью избавлены от спагетти-кода и лямбда-выражений. Логика принятия решений (BT) строго отделена от реализации самих игровых действий.
-
-#### 2. Веб-интерфейс и Хостинг
-- **Технология:** ASP.NET Core Minimal APIs, встроенный веб-сервер Kestrel.
-- **Сетевой адрес:** Строго `http://localhost:5000` (ListenLocalhost).
-- **Режим запуска:** Асинхронный фоновый поток (`Task.Run -> app.RunAsync()`) для бесконфликтной работы с `Application.Run()` в WinForms.
-- **Пути и статика:** Динамический расчет `projectRoot` (с обходом папки `bin` на 3 уровня вверх). `WebRootPath` жестко привязан к физической папке `wwwroot` для раздачи статики (`index.html`) через `UseDefaultFiles()` и `UseStaticFiles()`. Включен CORS (`AllowAll`).
-
-#### 3. API Эндпоинты
-- **`GET /api/state`** — Секундный опрос (polling) из JS. Возвращает агрегированный стейт аккаунтов из `BotAccountManager.GetAccountsState()` и последние строки логов из `Logger.GetLastLogs()`.
-- **`POST /api/control/{id:int}/{actionName}`** — Отправка команд управления конкретному боту на лету через `manager.HandleCommand()`.
-- **`POST /api/system/shutdown`** — Корректное глушение системы: вызывает `_cts.Cancel()` для остановки воркеров и `Application.Exit()` для закрытия цикла WinForms (что запускает авто-очистку `adb.exe`).
-
-#### 4. Ключевые компоненты бэкенда
-- **`BotAccountManager` (Singleton в DI):** Точка координации всех ботов, обработчик веб-команд.
-- **`ScenarioFactory` (static partial):** Расширяемая фабрика сборки BT. Физически разделена через `partial` на изолированные файлы под каждый сценарий и его атомарные действия (`ScenarioFactory.LocalWatcher.cs`, `ScenarioFactory.LowMiner.cs` и файлы действий `*.Actions.cs`). Поддерживает фолбек `BuildDefaultFallbackTree()`.
-- **`ActiveBotAccount` (partial):** Основной класс аккаунта. Хранит стейт (`_inSpace`, `_currenttarget`, `AccountTask CurrentTask`) и флаги (`_iswarping`, `_hastarget`, `_weaponryactive`, `IsInMiningZone`, `PlanetMining`, `POS`). Хранит дату последней планетарки `DateTime? _planetassembly`. Содержит методы-заглушки (stubs) взаимодействия с игрой.
-- **`AccountStateDto`:** Объект для сериализации стейта в JSON под `lock (_taskLock)` для передачи в веб-интерфейс.
-- **`RunLoopAsync`:** Рабочий цикл с адаптивными тиками (1 сек в бою/активности, 5 - в простое).
-- **`OcrService`:** Локальный OCR (`TesseractOCR`), параллельный движок `"eng+rus"`, чтение через `TesseractOCR.Pix.Image.LoadFromMemory`.
-
-#### 5. Динамическое управление и Глобальные обертки
-- **Горячая смена:** Метод `SwitchScenario(string newScenarioName)` меняет корень `_behaviorTree` на лету. Команды переключения поступают из UI через маршрут `/api/control/`.
-- **Глобальные надстройки (Над-дерево):** Метод `CreateTree` автоматически оборачивает любое выбранное ядро сценария в глобальный `SelectorNode` приоритетов. Это позволяет внедрять сквозную автоматизацию (например, планетарку), не вмешиваясь в код конкретных сценариев.
-
-#### 6. Текущий статус сценариев
-- **Глобальный модуль планетарки:** Полностью реализован (основная логика поведения). Работает как сквозное поведение. Запускается строго на станции (`!_inSpace`) раз в 8 часов, если активен флаг `PlanetMining`. Обладает адаптивной логикой: при `POS = true` выполняет удаленный сбор на структуру, при `POS = false` выполняет только перезапуск таймеров в интерфейсе (заглушка). Безопасен при нахождении корабля в космосе.
-- **«Глаз» (LocalWatcher):** Дерево очищено от спагетти-кода. Макросы сканирования вырезаны в пользу упрощенной логики. Интегрированы `AccountTask.CheckSecurity`, диагностика интерфейса через `LookAround` и `CheckYourOwnState`.
-- **«Шахтер» (LowMiner):** Полностью переписан на декларативное дерево поведения. Избавился от дублирования кода безопасности за счет интеграции универсального метода проверки локала `EvaluateSystemSecurityAsync()`. Логика полностью декомпозирована на переиспользуемые методы (Проверка трюма -> Андок -> Навигация -> Варп -> Цикл лазеров -> Возврат). Компиляция успешна.
-
-
-*/
-
-#endregion

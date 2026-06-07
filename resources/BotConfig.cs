@@ -183,6 +183,22 @@ public class BotAccountManager
         return false;
     }
 
+    /// <summary>
+    /// Возвращает активный аккаунт бота по его числовому идентификатору (индексу).
+    /// </summary>
+    public ActiveBotAccount? GetAccountById(int id)
+    {
+        var botsList = Program.GetActiveBots();
+
+        if (id >= 0 && id < botsList.Count)
+        {
+            return botsList[id];
+        }
+
+        return null; // Теперь компилятор знает, что возвращение null здесь легально
+    }
+
+
 
     /// <summary>
     /// Формирует актуальный снимок состояния всех ботов для отправки в веб-интерфейс.

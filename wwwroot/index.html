@@ -38,38 +38,78 @@
 </head>
 <body>
 
-    <div class="container">
-        <div class="panel">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                <h2 style="margin: 0; color: #fd5050;">EVE Echoes Bot <span class="text-blue">Панель управления</span></h2>
-                <button onclick="shutdownSystem()" class="btn btn-stop" style="background-color: #991b1b; padding: 8px 16px; font-weight: bold; font-size: 0.825rem;">
-                    🛑 Выключить бота
-                </button>
-            </div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Эмулятор</th>
-                        <th>Аккаунт</th>
-                        <th>Текущая задача</th>
-                        <th>Состояние</th>
-                        <th>Действия</th>
-                        <th>В работе</th>
-                    </tr>
-                </thead>
-                <tbody id="accounts-table">
-                    <!-- Заполняется из JS -->
-                </tbody>
-            </table>
+<div class="container">
+    <!-- 1. ПАНЕЛЬ ТАБЛИЦЫ УПРАВЛЕНИЯ -->
+    <div class="panel">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <h2 style="margin: 0; color: #fd5050;">EVE Echoes Bot <span class="text-blue">Панель управления</span></h2>
+            <button onclick="shutdownSystem()" class="btn btn-stop" style="background-color: #991b1b; padding: 8px 16px; font-weight: bold; font-size: 0.825rem;">
+                🛑 Выключить бота
+            </button>
         </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Эмулятор</th>
+                    <th>Аккаунт</th>
+                    <th>Текущая задача</th>
+                    <th>Состояние</th>
+                    <th>Действия</th>
+                    <th>В работе</th>
+                </tr>
+            </thead>
+            <tbody id="accounts-table">
+                <!-- Заполняется из JS -->
+            </tbody>
+        </table>
 
+    </div>
+        <!-- 2. ПАНЕЛЬ СТАТИСТИКИ ЭМУЛЯТОРОВ -->
         <div class="panel">
             <h2 class="text-green">Статистика запущенных эмуляторов</h2>
             <div id="stats-container" class="stats-grid">
-                <!-- Заполняется из JS -->
+                <!-- Сюда JS будет вставлять карточки -->
             </div>
         </div>
 
+        <!-- 3. ИЗОЛИРОВАННАЯ ПАНЕЛЬ ИНСТРУМЕНТОВ ОТЛАДКИ -->
+        <div class="panel" id="global-debug-panel" style="display: none;">
+            <h2 style="color: #60a5fa; margin-bottom: 16px;">🛠️ Инструменты отладки</h2>
+            
+            <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
+                <button id="btn-debug-screen" style="background: #1e3a8a; color: #60a5fa; border: 1px solid #3b82f6; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 0.825rem;">
+                    📸 Скриншот
+                </button>
+
+                <div style="display: flex; border: 1px solid #d97706; border-radius: 4px; overflow: hidden;">
+                    <!-- Идентификатор: globalRegionSelect -->
+                    <select id="globalRegionSelect" style="background: #1f2937; color: #fff; border: none; padding: 8px; outline: none; font-size: 0.85rem;">
+                        <!-- Заполняется автоматически -->
+                    </select>
+                    <button id="btn-debug-region" style="background: #78350f; color: #fbbf24; border: none; padding: 8px 16px; cursor: pointer; font-weight: bold; font-size: 0.825rem;">👁️ Регион</button>
+                </div>
+
+                <div style="display: flex; border: 1px solid #b91c1c; border-radius: 4px; overflow: hidden;">
+                    <!-- Идентификатор: globalUiSelect -->
+                    <select id="globalUiSelect" style="background: #1f2937; color: #fff; border: none; padding: 8px; outline: none; font-size: 0.85rem;">
+                        <!-- Заполняется автоматически -->
+                    </select>
+                    <button id="btn-debug-click" style="background: #991b1b; color: #f87171; border: none; padding: 8px 16px; cursor: pointer; font-weight: bold; font-size: 0.825rem;">🎯 Клик в</button>
+                </div>
+            </div>
+
+            <!-- Идентификатор окна превью: globalPreviewBox -->
+            <div id="globalPreviewBox" style="display: none; background: #111827; padding: 12px; border-radius: 6px; border: 1px solid #4b5563; margin-top: 16px; max-width: 650px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <!-- Идентификаторы: globalPreviewTitle и globalDebugImg -->
+                    <span id="globalPreviewTitle" style="background: #4b5563; color: #fff; padding: 4px 8px; border-radius: 3px; font-size: 0.75rem; font-weight: bold;">Кадр</span>
+                    <span onclick="document.getElementById('globalPreviewBox').style.display='none'" style="color: #9ca3af; cursor: pointer; font-weight: bold; font-size: 1.3rem; line-height: 1;">&times;</span>
+                </div>
+                <img id="globalDebugImg" src="" style="width: 100%; max-height: 380px; object-fit: contain; border-radius: 4px; border: 1px solid #374151;">
+            </div>
+        </div>
+
+        <!-- 4. ПАНЕЛЬ ЛОГОВ ПРИЛОЖЕНИЯ -->
         <div class="panel">
             <h2 class="text-amber">Лог приложения</h2>
             <div id="log-container" class="log-box">
@@ -122,30 +162,74 @@
                 // Берем EVESystem и EVEShip из вложенного объекта extendedState
                 const system = ext.evesystem || ext.EVESystem || 'Кликните для ввода';
                 const ship = ext.eveship || ext.EVEShip || 'Кликните для ввода';
+                const botId = account.id ?? account.Id ?? 0;
 
                 card.innerHTML = `
-                    <h3>Эмулятор: ${account.name || account.Name || 'Без имени'} (ID: ${account.id ?? account.Id})</h3>
+                    <h3>Эмулятор: ${account.name || account.Name || 'Без имени'} (ID: ${botId})</h3>
                     <p>Статус: <span>${account.state || account.State || 'Данные отсутствуют'}</span></p>
                     <p>В работе: <span>${formatRuntime(account.runtime, ext.runtimeSeconds || ext.RuntimeSeconds)}</span></p>
                     
                     <p>Система: 
                         <span class="editable-field" style="border-bottom: 1px dashed #007bff; cursor: pointer; color: #007bff;" 
-                            onclick="editProperty(${account.id ?? account.Id}, 'System', this)">
+                            onclick="editProperty(${botId}, 'System', this)">
                             ${system}
                         </span>
                     </p>
                     <p>Корабль: 
                         <span class="editable-field" style="border-bottom: 1px dashed #007bff; cursor: pointer; color: #007bff;" 
-                            onclick="editProperty(${account.id ?? account.Id}, 'Ship', this)">
+                            onclick="editProperty(${botId}, 'Ship', this)">
                             ${ship}
                         </span>
                     </p>
+
+                    <!-- ИНСТРУМЕНТЫ ОТЛАДКИ ОКНА -->
+                    <div class="debug-toolbar" style="margin-top: 14px; padding-top: 12px; border-top: 1px solid #374151; font-size: 0.825rem;">
+                        <p style="margin: 0 0 8px 0; font-size: 0.75rem; text-transform: uppercase; color: #9ca3af; letter-spacing: 0.05em;">Отладка:</p>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px;">
+                            
+                            <!-- Кнопка скриншота -->
+                            <button onclick="makeDebugScreenshot(${botId})" style="background: #1e3a8a; color: #60a5fa; border: 1px solid #3b82f6; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 0.8rem;">
+                                📸 Скриншот
+                            </button>
+
+                            <!-- Выбор и нарезка региона OpenCV -->
+                            <div style="display: flex; border: 1px solid #d97706; border-radius: 4px; overflow: hidden;">
+                                <select id="regionSelect_${botId}" style="background: #1f2937; color: #fff; border: none; padding: 4px; font-size: 0.8rem; outline: none;">
+                                    <option value="LocalChat">LocalChat</option>
+                                    <option value="MainMenu">MainMenu</option>
+                                    <option value="FastMenu">FastMenu</option>
+                                    <option value="PlanetInterface">PlanetInterface</option>
+                                </select>
+                                <button onclick="viewDebugRegion(${botId})" style="background: #78350f; color: #fbbf24; border: none; padding: 4px 8px; cursor: pointer; font-weight: bold; font-size: 0.8rem;">👁️ Регион</button>
+                            </div>
+
+                            <!-- Выбор и симуляция клика GameUi -->
+                            <div style="display: flex; border: 1px solid #b91c1c; border-radius: 4px; overflow: hidden;">
+                                <select id="uiSelect_${botId}" style="background: #1f2937; color: #fff; border: none; padding: 4px; font-size: 0.8rem; outline: none;">
+                                    <option value="CharMenu">CharMenu</option>
+                                    <option value="XButton">XButton</option>
+                                    <option value="ChatsInterface">ChatsInterface</option>
+                                    <option value="FirstPlanet">FirstPlanet</option>
+                                    <option value="PlanetTimer">PlanetTimer</option>
+                                </select>
+                                <button onclick="sendDebugClick(${botId})" style="background: #991b1b; color: #f87171; border: none; padding: 4px 8px; cursor: pointer; font-weight: bold; font-size: 0.8rem;">🎯 Клик в</button>
+                            </div>
+                        </div>
+
+                        <!-- Окно предпросмотра кадров отладки -->
+                        <div id="previewBox_${botId}" style="display: none; background: #111827; padding: 8px; border-radius: 4px; border: 1px solid #4b5563; margin-top: 8px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                <span id="previewTitle_${botId}" style="background: #4b5563; color: #fff; padding: 2px 6px; border-radius: 3px; font-size: 0.7rem; font-weight: bold;">Кадр</span>
+                                <span onclick="closePreview(${botId})" style="color: #9ca3af; cursor: pointer; font-weight: bold; font-size: 1.1rem; line-height: 1;">&times;</span>
+                            </div>
+                            <img id="debugImg_${botId}" src="" style="width: 100%; max-height: 260px; object-fit: contain; border-radius: 2px; border: 1px solid #374151;">
+                        </div>
+                    </div>
                 `;
                 
                 container.appendChild(card);
             });
         }
-
 
         // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
@@ -336,17 +420,17 @@
                             </div>
                             <div class="stat-row">
                                 <span>Система:</span>
-                                <span style="color: #f3f4f6; font-weight: bold;">${eveSystem}</span>
+                                <span style="color: #f3f4f6; font-weight: bold; cursor: pointer; border-bottom: 1px dashed #3b82f6;" onclick="editProperty(${botId}, 'System', this)">${eveSystem}</span>
                             </div>
                             <div class="stat-row">
                                 <span>Корабль:</span>
-                                <span style="color: #9ca3af;">${eveShip}</span>
+                                <span style="color: #9ca3af; cursor: pointer; border-bottom: 1px dashed #3b82f6;" onclick="editProperty(${botId}, 'Ship', this)">${eveShip}</span>
                             </div>
                             <div class="stat-row">
                                 <span>Цель:</span>
                                 <span style="color: #fbbf24; font-size: 0.8rem; font-weight: 500;">${currentTarget}</span>
                             </div>
-                            <div class="stat-row" style="margin-top: 6px; border-top: 1px dashed #374151; padding-top: 4px;">
+                            <div class="stat-row" style="margin-top: 6px; border-top: 1px dashed #374151; padding-top: 4px; margin-bottom: 10px;">
                                 <span>Фиксаций угроз:</span>
                                 <span style="color: #f87171; font-weight: bold;">${triggers}</span>
                             </div>
@@ -358,6 +442,27 @@
                 logContainer.innerHTML = logs.map(log => `<div class="log-line">${log}</div>`).join('');
                 if (!userIsScrolling) {
                     logContainer.scrollTop = logContainer.scrollHeight;
+                }
+
+                // ========================================================
+                // 4. ИНИЦИАЛИЗАЦИЯ И ПРИВЯЗКА ГЛОБАЛЬНОЙ ПАНЕЛИ ОТЛАДКИ
+                // ========================================================
+                if (accounts && accounts.length > 0) {
+                    const firstBot = accounts[0];
+                    const firstBotId = firstBot.id !== undefined ? firstBot.id : (firstBot.Id !== undefined ? firstBot.Id : 0);
+
+                    const debugPanel = document.getElementById('global-debug-panel');
+                    if (debugPanel) {
+                        // Если панель скрыта — отображаем её на экране один раз
+                        if (debugPanel.style.display === 'none') {
+                            debugPanel.style.display = 'block';
+                        }
+
+                        // Каждую секунду обновляем привязку событий к актуальному ID первого эмулятора
+                        document.getElementById('btn-debug-screen').onclick = () => makeDebugScreenshot(firstBotId);
+                        document.getElementById('btn-debug-region').onclick = () => viewDebugRegion(firstBotId);
+                        document.getElementById('btn-debug-click').onclick = () => sendDebugClick(firstBotId);
+                    }
                 }
 
             } catch (err) {
@@ -407,9 +512,13 @@
 
         // Автономный перехватчик кликов с динамическим поиском строк "Система" и "Корабль"
         document.addEventListener('click', function (event) {
-            // 1. Проверяем, кликнули ли мы по элементу, содержащему текст "Система" или "Корабль"
-            // Или по его дочернему элементу (например, по значению)
             let targetElement = event.target;
+
+            // ИСПРАВЛЕНО: Если клик произошел внутри панели дебага — мгновенно выходим и ничего не перехватываем!
+            if (targetElement.closest('#global-debug-panel')) {
+                return; 
+            }
+
             let textContent = targetElement.innerText || "";
             let parentContent = targetElement.parentElement ? targetElement.parentElement.innerText : "";
             
@@ -423,30 +532,135 @@
             // Определяем, какое именно свойство редактируем
             const propertyName = hasSystem ? 'System' : 'Ship';
 
-            // 2. Ищем контейнер карточки, чтобы вытащить ID аккаунта
-            const card = targetElement.closest('.panel') || targetElement.closest('div') || targetElement.parentElement;
+            // Ищем контейнер карточки, чтобы вытащить ID аккаунта
+            const card = targetElement.closest('.stat-card') || targetElement.closest('.account-card');
             let accountId = 0;
             if (card) {
                 const idMatch = card.innerText.match(/(?:ID|ID:|\s)\s*(\d+)/i);
                 if (idMatch && idMatch[1]) accountId = parseInt(idMatch[1], 10);
             }
 
-            // Если кликнули по текстовому узлу, выделим конкретно ту часть, где лежит значение
-            // Для prompt нам нужен сам узел, куда мы запишем результат
             let valueElement = targetElement;
             if (targetElement.tagName === 'P' || targetElement.tagName === 'DIV') {
-                // Если кликнули по всему параграфу, попробуем найти внутри тег span или использовать сам элемент
                 const span = targetElement.querySelector('span');
                 if (span) valueElement = span;
             }
 
-            // 3. Вызываем нашу функцию ввода
+            // Вызываем функцию ввода
             if (typeof editProperty === 'function') {
                 editProperty(accountId, propertyName, valueElement);
             } else {
                 alert("Ошибка: Функция editProperty отсутствует в памяти. Перезагрузите страницу через Ctrl+F5.");
             }
         });
+
+
+        // Функция 1: Скриншот
+        async function makeDebugScreenshot(botId) {
+            try {
+                let response = await fetch(`/api/debug/${botId}/screenshot`, { method: 'POST' });
+                let data = await response.json();
+                if (response.ok) {
+                    showDebugImage(botId, 'Скриншот экрана', data.url);
+                } else {
+                    alert("Ошибка захвата: " + data.message);
+                }
+            } catch (err) { 
+                console.error("Сбой API скриншота:", err); 
+            }
+        }
+
+        // Функция 2: Нарезка региона
+        async function viewDebugRegion(botId) {
+            // Исправлено: берем точное имя id селектора регионов
+            const selectEl = document.getElementById('globalRegionSelect');
+            if (!selectEl) return console.error("Элемент globalRegionSelect не найден в DOM");
+            
+            let regionName = selectEl.value;
+            try {
+                let response = await fetch(`/api/debug/${botId}/region/${regionName}`);
+                let data = await response.json();
+                if (response.ok) {
+                    showDebugImage(botId, `Регион: ${regionName}`, data.url);
+                } else {
+                    alert("Ошибка региона: " + data.message);
+                }
+            } catch (err) { 
+                console.error("Сбой API региона:", err); 
+            }
+        }
+
+        // Функция 3: Имитация ручного клика ADB
+        async function sendDebugClick(botId) {
+            // Исправлено: берем точное имя id селектора кликов
+            const selectEl = document.getElementById('globalUiSelect');
+            if (!selectEl) return console.error("Элемент globalUiSelect не найден в DOM");
+
+            let elementName = selectEl.value;
+            try {
+                let response = await fetch(`/api/debug/${botId}/click/${elementName}`, { method: 'POST' });
+                let data = await response.json();
+                if (response.ok) {
+                    console.log(`[Debug] Клик по '${elementName}' успешно выполнен.`);
+                } else {
+                    alert("Ошибка клика: " + data.message);
+                }
+            } catch (err) { 
+                console.error("Сбой API клика:", err); 
+            }
+        }
+
+        // Вспомогательная функция: вывод кадра в блок предпросмотра
+        function showDebugImage(botId, title, imgUrl) {
+            // Исправлено: убрали интерполяцию `${botId}`, используем глобальные статичные ID панели
+            document.getElementById('globalPreviewTitle').innerText = title;
+            let img = document.getElementById('globalDebugImg');
+            img.src = imgUrl;
+            document.getElementById('globalPreviewBox').style.display = 'block';
+        }
+
+
+        // Вспомогательная функция: Закрытие окна предпросмотра кадра
+        function closePreview(botId) {
+            document.getElementById(`previewBox_${botId}`).style.display = 'none';
+        }
+
+        // Функция автоматического наполнения выпадающих списков из C# Enums
+        async function initializeDebugEnums() {
+            try {
+                // 1. Загружаем и заполняем регионы GameRegions
+                let resRegions = await fetch('/api/debug/enums/regions');
+                if (resRegions.ok) {
+                    let regions = await resRegions.json();
+                    regions.sort(); // Сортируем по алфавиту для удобства поиска
+                    
+                    const regionSelect = document.getElementById('globalRegionSelect');
+                    if (regionSelect) {
+                        regionSelect.innerHTML = regions.map(name => `<option value="${name}">${name}</option>`).join('');
+                    }
+                }
+
+                // 2. Загружаем и заполняем элементы кликов GameUi
+                let resUi = await fetch('/api/debug/enums/ui');
+                if (resUi.ok) {
+                    let uiElements = await resUi.json();
+                    uiElements.sort(); // Сортируем по алфавиту
+                    
+                    const uiSelect = document.getElementById('globalUiSelect');
+                    if (uiSelect) {
+                        uiSelect.innerHTML = uiElements.map(name => `<option value="${name}">${name}</option>`).join('');
+                    }
+                }
+                
+                console.log("[Debug] Списки энумов GameRegions и GameUi успешно синхронизированы с бэкендом.");
+            } catch (err) {
+                console.error("Не удалось загрузить списки метаданных enums:", err);
+            }
+        }
+
+        // Запускаем инициализацию сразу при загрузке скрипта страницы
+        initializeDebugEnums();
+
 
     </script>
 </body>
