@@ -10,7 +10,7 @@ Obsidian.md
 
 # === Отладочные медиа-файлы и скриншоты OpenCV ===
 DebugScreenshots/
-debug_screenshot.png
+debug_screenshot*.png
 *_FOUND.png
 *_NOT_FOUND.png
 

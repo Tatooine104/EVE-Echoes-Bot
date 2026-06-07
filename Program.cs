@@ -632,28 +632,43 @@ static partial class Program
     /// <summary>
     /// Метод расширения (Extension Method) для класса <see cref="ActiveBotAccount"/>.
     /// Автоматически распаковывает двумерные координаты (X, Y) из перечисления <see cref="GameUi"/>,
-    /// после чего выполняет аппаратно-независимый клик через утилиту ADB, используя индивидуальный сетевой порт аккаунта [INDEX].
+    /// после чего выполняет асинхронный аппаратно-независимый клик через утилиту ADB [INDEX].
     /// </summary>
-    /// <param name="bot">Экземпляр активного аккаунта бота, для которого выполняется действие [INDEX].</param>
-    /// <param name="element">Элемент интерфейса игры EVE Echoes с упакованными координатами клика [INDEX].</param>
-    /// <param name="minSec">Минимальное время случайной задержки перед кликом (в секундах). По умолчанию: 1.</param>
-    /// <param name="maxSec">Максимальное время случайной задержки перед кликом (в секундах). По умолчанию: 3.</param>
-    /// <param name="offset">Радиус случайного разброса пикселей от центра клика для защиты от анти-кликеров. По умолчанию: 3.</param>
-    internal static void ClickTo(this ActiveBotAccount bot, GameUi element, int minSec = 1, int maxSec = 3, int offset = 3)
+    internal static async Task ClickToAsync(this ActiveBotAccount bot, GameUi element, int minSec = 1, int maxSec = 3, int offset = 3)
     {
         // Распаковываем двумерные координаты X и Y из упакованного Enum GameUi по вашей формуле
         int packed = (int)element;
         int x = packed / 10000;
         int y = packed % 10000;
 
-        // Вызываем обновленный ADB-кликер, передавая порт этого конкретного эмулятора/окна
-        Tools.SmartClick(x, y, minSec, maxSec, offset, adbPort: bot.Settings.AdbPort);
+        // Вызываем обновленный ADB-кликер (если SmartClick поддерживает async, используем await, 
+        // либо оборачиваем в Task.Run, чтобы не блокировать UI поток WinForms)
+        await Task.Run(() => Tools.SmartClick(x, y, minSec, maxSec, offset, adbPort: bot.Settings.AdbPort));
 
     #if DEBUG
         // Выводим информацию о кликах макроса только в режиме отладки (message, type)
         Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Отправлен клик по элементу '{element}' (X={x}, Y={y}).", LogType.Test);
     #endif
     }
+
+    /// <summary>
+    /// Метод расширения (Extension Method) для класса <see cref="ActiveBotAccount"/>.
+    /// Выполняет асинхронный аппаратно-независимый клик по динамическим координатам <see cref="OpenCvSharp.Point"/>,
+    /// полученным из OpenCV, уводя тяжелый процесс ADB в фоновый поток.
+    /// </summary>
+    internal static Task ClickPointAsync(this ActiveBotAccount bot, OpenCvSharp.Point point, CancellationToken token, int minSec = 1, int maxSec = 2, int offset = 2)
+    {
+        // Оптимизировано: убрали async/await и возвращаем Task напрямую
+        return Task.Run(() => Tools.SmartClick(
+            point.X,
+            point.Y,
+            minSec,
+            maxSec,
+            offset,
+            adbPort: bot.Settings.AdbPort
+        ), token);
+    }
+
 
     #endregion
 

@@ -712,10 +712,9 @@ public partial class ActiveBotAccount
             }
     #endif
 
-            int adbX = foundImg2.Value.X;
-            int adbY = foundImg2.Value.Y;
+            // ИСПРАВЛЕНО: Заменяем синхронный вызов Tools.SmartClick на наш эталонный асинхронный метод расширения
+            await this.ClickPointAsync(foundImg2.Value, token, minSec: 1, maxSec: 2, offset: 2);
 
-            Tools.SmartClick(adbX, adbY, minSec: 1, maxSec: 2, offset: 2, adbPort: Settings.AdbPort);
             await Task.Delay(3500, token);
 
             using Mat? freshScreenshot = Tools.CaptureWindow(Hwnd);
@@ -813,167 +812,6 @@ public partial class ActiveBotAccount
         return SecurityCheckResult.Danger;
     }
 
-
-    #endregion
-
-    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-
-    #region AliChatWarning
-
-    /// <summary>
-    /// Асинхронно выполняет высокоточный макрос оповещения альянса или корпорации о появление угрозы в локале.
-    /// Осуществляет до двух попыток открытия интерфейса чатов, сканирует экран на наличие языковых вкладок (ENG Alliance/Corp),
-    /// совершает клик по найденной области через ADB с коррекцией рамок Windows и воспроизводит строгую цепочку кликов
-    /// для отправки быстрого сообщения "Scout" в боевой канал.
-    /// </summary>
-    /// <param name="token">Токен отмены операции <see cref="CancellationToken"/> для текущего рабочего потока.</param>
-    /// <returns>Асинхронная задача <see cref="Task"/>, управляющая выполнением макроса.</returns>
-    internal async Task RunAliChatWarningAsync(CancellationToken token)
-    {
-        Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Начало выполнения макроса оповещения альянса.", LogType.Test);
-
-        if (Hwnd == IntPtr.Zero)
-        {
-            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Целевое окно программы не найдено. Прерывание выполнения.", LogType.Error);
-            return;
-        }
-
-        string pathAli = Path.Combine(Program.TemplatesDir, "imgAliChatENG.png");
-        string pathCorp = Path.Combine(Program.TemplatesDir, "imgCorpChatENG.png");
-
-        if (!File.Exists(pathAli) || !File.Exists(pathCorp))
-        {
-            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Файлы шаблонов чата отсутствуют на диске. Прерывание выполнения.", LogType.Error);
-            return;
-        }
-
-        Rect searchRegion = GameRegions.ChatsLabels.GetOpenCvRect();
-        //Rect searchRegion = new(5, 220, 300, 500);
-        Point? foundChat = null;
-        bool isCorpChat = false;
-        Mat? screenshot = null;
-
-        // ========================================================
-        // ЭТАП 1: ЦИКЛ ОТКРЫТИЯ ИНТЕРФЕЙСА ЧАТА (ДО 2-Х ПОПЫТОК)
-        // ========================================================
-        for (int attempt = 1; attempt <= 2; attempt++)
-        {
-            this.ClickTo(GameUi.ChatsInterface);
-            await Task.Delay(attempt == 1 ? 3500 : 4000, token); // На второй попытке даем чуть больше времени на прогрузку
-
-            screenshot?.Dispose();
-            screenshot = Tools.CaptureWindow(Hwnd);
-
-            if (screenshot?.Empty() is not false || screenshot.Width <= 0 || screenshot.Height <= 0)
-            {
-                Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось выполнить повторный захват окна. Прерывание выполнения.", LogType.Error);
-                screenshot?.Dispose();
-                return;
-            }
-
-            Rect safeRegion = Tools.ClampRegion(searchRegion, screenshot.Width, screenshot.Height);
-            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Поиск маркеров языка интерфейса чата (Попытка {attempt}).", LogType.Test);
-
-            // Сначала ищем приоритетный канал чата альянса
-            foundChat = Tools.FindTemplateInRegion(screenshot, pathAli, safeRegion, 0.85);
-            isCorpChat = false;
-
-            // Если чат альянса не найден — переключаемся на поиск резервного чата корпорации
-            if (!foundChat.HasValue)
-            {
-                foundChat = Tools.FindTemplateInRegion(screenshot, pathCorp, safeRegion, 0.85);
-                isCorpChat = true;
-            }
-
-            // Если хоть какой-то боевой чат успешно обнаружен — прерываем цикл попыток открытия
-            if (foundChat.HasValue) break;
-
-            if (attempt == 1)
-            {
-                Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Интерфейс чата не открылся. Повторная попытка клика.", LogType.Warning);
-            }
-        }
-
-        // Если после двух транзакций маркеры вкладок так и не появились на экране
-        if (!foundChat.HasValue)
-        {
-            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Шаблоны чата не обнаружены после повторного клика. Проверьте координаты 'ChatsInterface' в 'GameUi'.", LogType.Error);
-    #if DEBUG
-            try
-            {
-                Rect safeRegion = Tools.ClampRegion(searchRegion, screenshot!.Width, screenshot.Height);
-                using Mat cropped = new(screenshot, safeRegion);
-                string debugDir = Path.GetFullPath(Path.Combine(Program.TemplatesDir, "..", "DebugScreenshots"));
-                Directory.CreateDirectory(debugDir);
-                Cv2.ImWrite(Path.Combine(debugDir, $"{Settings.Name}_imgAliChat_NOT_FOUND.png"), cropped);
-            }
-            catch (Exception ex) {
-                Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось сохранить отладочный кадр: {ex.Message}", LogType.Warning);
-            }
-    #endif
-            screenshot?.Dispose();
-            return;
-        }
-
-        // ========================================================
-        // ЭТАП 2: КЛИК ПО НАЙДЕННОМУ ЧАТУ
-        // ========================================================
-        try
-        {
-            string chatTypeStr = isCorpChat ? "корпорации" : "альянса";
-            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Обнаружен интерфейс {chatTypeStr} чата в точке (X={foundChat.Value.X}, Y={foundChat.Value.Y}).", LogType.Test);
-
-            // ЖЕСТКАЯ КОРРЕКЦИЯ ДЛЯ ЭМУЛЯТОРА: Вычитаем 25 пикселей из координаты Y,
-            // чтобы точно компенсировать рамку заголовка окна при отправке клика через ADB в Android
-            int adbX = foundChat.Value.X;
-            int adbY = foundChat.Value.Y - 25;
-
-            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Отправка фонового клика по скорректированным координатам (X={adbX}, Y={adbY}).", LogType.Test);
-
-            // Передаем скорректированные adbX и adbY в ваш оригинальный метод SmartClick
-            Tools.SmartClick(adbX, adbY, minSec: 1, maxSec: 3, offset: 3, adbPort: Settings.AdbPort);
-        }
-        catch (Exception ex)
-        {
-            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Критический сбой анализа экрана: {ex.Message}", LogType.Error);
-            screenshot?.Dispose();
-            return;
-        }
-        finally
-        {
-            screenshot?.Dispose(); // Гарантированно освобождаем неуправляемую память матрицы скриншота
-        }
-
-        await Task.Delay(2000, token);
-
-        // ========================================================
-        // ЭТАП 3: ОПТИМИЗИРОВАННАЯ ЦЕПОЧКА ОТПРАВКИ МАКРОСА В ИГРУ
-        // ========================================================
-        // Массив шагов интерфейса и индивидуальных пауз в мс после каждого нажатия
-        var macroSteps = new (GameUi Element, int DelayMs)[7]
-        {
-            (GameUi.ChatInputMenu, 1200), // Открываем меню ввода текста чата
-            (GameUi.ChatFastInput, 1200), // Открываем внутреннее меню быстрых сообщений
-            (GameUi.ChatInform,    1200), // Открываем вкладку данных автоматической разведки
-            (GameUi.ChatMessScout, 1200), // Выбираем предустановленное статус-сообщение "Scout"
-            (GameUi.WindowCenter,  1500), // Сворачиваем область экранного ввода
-            (GameUi.ChatButtSend,  2000), // Нажимаем кнопку "Отправить" в канал
-            (GameUi.WindowCenter,  0)     // Закрываем общий оверлей интерфейса чатов
-        };
-
-        // Деконструкция кортежа прямо в объявлении цикла foreach для строгого выполнения макроса
-        foreach (var (element, delayMs) in macroSteps)
-        {
-            this.ClickTo(element);
-            if (delayMs > 0)
-            {
-                await Task.Delay(delayMs, token);
-            }
-        }
-
-        Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Выполнение цепочки кликов оповещения альянса завершено.", LogType.Success);
-    }
-
     #endregion
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
@@ -1039,7 +877,8 @@ public partial class ActiveBotAccount
                             // Безопасно берем токен аккаунта. Если он null, берем глобальный токен приложения
                             CancellationToken token = _accountCts?.Token ?? Program.GetGlobalToken();
 
-                            await RunAliChatWarningAsync(token);
+                            // ИСПРАВЛЕНО: Вызываем статический метод из фабрики сценариев, передавая текущего бота (this)
+                            await ScenarioFactory.RunAliChatWarningAsync(this, token);
                         }
                         catch (Exception ex)
                         {

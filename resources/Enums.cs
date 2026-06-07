@@ -44,7 +44,10 @@ namespace EVEEchoesBot.resources;
 
         CharMenu =   500070,
         Fitting  =  1850240,
-        XButton  = 12300065
+        XButton  = 12300065,
+        FirstPlanet = 1300190,
+        PlanetTimer = 12000130,
+        ResList = 10600400
         // EyeIconClose = 
         // FastMenu1 = ?
         // FastMenu2 = ?
@@ -76,7 +79,13 @@ public enum GameRegions : long
     ControlUndock = 1070L | (185L << 16) | (210L << 32) | (100L << 48),
 
     SystemName = 110L | (20L  << 16) | (140L << 32) | (35L << 48),
-    ShipName   = 6L   | (215L << 16) | (300L << 32) | (50L << 48)
+    ShipName   = 6L   | (215L << 16) | (300L << 32) | (50L << 48),
+
+    FastMenu = 5L | (90L << 16) | (300L << 32) | (70L << 48),
+
+    MainMenu = 5L | (120L << 16) | (775L << 32) | (700L << 48),
+    PlanetList = 830L | (170L << 16) | (450L << 32) | (430L << 48)
+
 }
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
