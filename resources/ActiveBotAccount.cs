@@ -854,30 +854,22 @@ public partial class ActiveBotAccount
             }
 
             // ========================================================
-            // ОБРАБОТКА ИЗМЕНЕНИЯ СТАТУСА
+            // ОБРАБОТКА ИЗМЕНЕНИЯ СТАТУСА (УГРОЗА)
             // ========================================================
             if (value is false)
             {
-                // Пытаемся перевести систему в статус опасности.
-                // Вызов вернет true ТОЛЬКО ОДИН РАЗ — в секунду фиксации первой угрозы.
                 bool isFirstAlert = SystemSafetyManager.TrySetSystemDanger(EVESystem);
 
                 if (isFirstAlert)
                 {
                     Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] ВНИМАНИЕ! Первичная фиксация угрозы в системе. Запуск каскадной паники.", LogType.Warning);
 
-                    // ========================================================
                     // СТРОГО ОДНОКРАТНАЯ ОТПРАВКА УВЕДОМЛЕНИЯ В ЧАТ
-                    // ========================================================
-                    // Запускаем асинхронную отправку в фоне, чтобы не вешать текущий тик BT
                     Task.Run(async () =>
                     {
                         try
                         {
-                            // Безопасно берем токен аккаунта. Если он null, берем глобальный токен приложения
                             CancellationToken token = _accountCts?.Token ?? Program.GetGlobalToken();
-
-                            // ИСПРАВЛЕНО: Вызываем статический метод из фабрики сценариев, передавая текущего бота (this)
                             await ScenarioFactory.RunAliChatWarningAsync(this, token);
                         }
                         catch (Exception ex)
@@ -886,21 +878,21 @@ public partial class ActiveBotAccount
                         }
                     });
 
-                    // Рассылаем панику остальным окнам
+                    // Рассылаем панику остальным окнам в этой же системе
                     Task.Run(() =>
                     {
-                        List<ActiveBotAccount> botsToPanic;
-                        lock (Program.ActiveBotsLock)
-                        {
-                            botsToPanic = [.. Program._activeBots.Where(b => b != this && b.EVESystem == this.EVESystem)];
-                        }
+                        var botsToPanic = Program.GetActiveBots().Where(b => b != this && b.EVESystem == this.EVESystem).ToList();
 
                         foreach (var bot in botsToPanic)
                         {
                             try
                             {
-                                bot.ClearTasks();
-                                bot.ExecuteEmergencyResponse(isInitiator: false);
+                                // ИСПРАВЛЕНО: Другие окна паникуют (уходят в док) ТОЛЬКО если они реально в космосе!
+                                if (bot._inSpace)
+                                {
+                                    bot.ClearTasks();
+                                    bot.ExecuteEmergencyResponse(isInitiator: false);
+                                }
                             }
                             catch (Exception ex)
                             {
@@ -910,11 +902,17 @@ public partial class ActiveBotAccount
                     });
                 }
 
-                // Текущее окно уводим в док/на станцию
-                if (this.CurrentTask != AccountTask.GoToStation)
+                // ИСПРАВЛЕНО: Текущее окно уводим в док ТОЛЬКО если оно реально находится в космосе
+                if (this._inSpace && this.CurrentTask != AccountTask.GoToStation)
                 {
                     this.ClearTasks();
                     this.ExecuteEmergencyResponse(isInitiator: isFirstAlert);
+                }
+                else if (!this._inSpace)
+                {
+                    // Если мы на станции — просто переводим задачу в ожидание/мониторинг, не запуская эвакуацию
+                    this.CurrentTask = AccountTask.CheckSecurity;
+                    Log($"[{Settings.Name}] Корабль уже находится в безопасности (в доке станции). Эвакуация не требуется.", LogType.Info);
                 }
             }
             else if (value is true)
@@ -942,43 +940,58 @@ public partial class ActiveBotAccount
     /// <param name="isInitiator">Если <c>true</c> — данный аккаунт является первоисточником обнаружения врага и должен отправить варнинг в чат.</param>
     public void ExecuteEmergencyResponse(bool isInitiator)
     {
-        List<string> emergencyTasks = [];
-
-        // 1. Если корабль находится в космосе, наполняем экстренный список согласно его сценарию
+        // 1. Если корабль находится в космосе, немедленно меняем его глобальную задачу
         if (_inSpace)
         {
             switch (Settings.Script?.ToLower())
             {
                 case "localwatcher":
-                    // Наблюдателю отварп не нужен, он остается в космосе (например, в клоке)
-                    Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] [Сценарий: localwatcher] Корабль остается на позиции наблюдения.", LogType.Info);
+                    // Наблюдателю отварп не нужен, он контролирует локал из безопасности
+                    Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Наблюдатель остается на позиции.", LogType.Info);
+                    this.CurrentTask = AccountTask.CheckSecurity;
                     break;
 
-                // Сюда в будущем добавятся новые сценарии (mining, combat и т.д.)
+                case "lowminer":
+                    // ОПТИМИЗИРОВАНО: Переводим шахтера в режим экстренного возврата на станцию
+                    Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] 🚨 Сценарий lowminer активирует экстренную эвакуацию корабля!", LogType.Warning);
+                    this.ClearTasks(); // Очищаем текущие шахтерские подзадачи тика
+                    this.CurrentTask = AccountTask.GoToStation; // Переключаем корень дерева на эвакуацию
+                    break;
 
                 default:
-                    // Поведение по умолчанию для нереализованных скриптов — пока ничего не делаем
+                    // Фолбек безопасности для любых других скриптов
+                    Log($"[{Settings.Name}] Неизвестный скрипт в космосе при угрозе. Принудительный отварп в док.", LogType.Warning);
+                    this.ClearTasks();
+                    this.CurrentTask = AccountTask.GoToStation;
                     break;
             }
         }
         else
         {
+            // Если мы уже на станции, просто продолжаем сканировать окружение
+            this.CurrentTask = AccountTask.CheckSecurity;
             Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Корабль в безопасности (станция/цитадель). Эвакуация не требуется.", LogType.Info);
         }
 
-        // 2. Строго ПОСЛЕ задач физической эвакуации добавляем шаг оповещения альянса (если это инициатор)
+        // 2. Оповещение альянса через макрос чата (выполняется асинхронно в фоне)
         if (isInitiator)
         {
-            emergencyTasks.Add("SendAliChatWarning");
-            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Этот аккаунт обнаружил угрозу. Задача оповещения добавлена в очередь.", LogType.Warning);
-        }
-
-        // 3. Отправляем собранные экстренные задачи в начало пустой очереди с флагом высокого приоритета
-        if (emergencyTasks.Count > 0)
-        {
-            this.EnqueueTasks(emergencyTasks, addToFront: true);
+            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Этот аккаунт — инициатор паники. Запуск макроса чата...", LogType.Warning);
+            Task.Run(async () =>
+            {
+                try
+                {
+                    CancellationToken token = _accountCts?.Token ?? Program.GetGlobalToken();
+                    await ScenarioFactory.RunAliChatWarningAsync(this, token);
+                }
+                catch (Exception ex)
+                {
+                    Log($"Ошибка отправки сообщения в чат альянса: {ex.Message}", LogType.Error);
+                }
+            });
         }
     }
+
 
     #endregion
 
