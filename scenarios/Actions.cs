@@ -133,6 +133,8 @@ public static partial class ScenarioFactory
         await bot.ClickToAsync(GameUi.PlanetTimer);
         await Task.Delay(1500, token); // Ждем подтверждения от сервера игры
 
+        // TODO: Добавить еще клик на подтверждение
+
         // Если подключен ПОС, выполняем дополнительное действие сбора ресурсов
         if (bot.POS)
         {
@@ -213,6 +215,9 @@ public static partial class ScenarioFactory
         {
             await bot.ClickPointAsync(foundLaunchBtn.Value, token, minSec: 1, maxSec: 2, offset: 2);
             await Task.Delay(2000, token); // Ожидаем отправку ресурсов на ПОС
+
+            // TODO: Добавить клик на подтверждение
+
             return NodeStatus.Success;
         }
 
