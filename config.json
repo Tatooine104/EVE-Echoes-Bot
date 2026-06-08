@@ -4,8 +4,8 @@
       "Name": "Lana Muc",
       "WindowTitle": "BlueStacks_EVE.01",
       "Script": "LocalWatcher",
-      "PlanetMining": false,
-      "POS": false,
+      "PlanetMining": true,
+      "POS": true,
       "AdbPort":5565,
       "WindowSettings": {
         "TargetWidth": 1280,

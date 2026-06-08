@@ -57,6 +57,7 @@ public partial class ActiveBotAccount
         public IntPtr Hwnd { get; set; }
 
         public bool PlanetMining { get; set; }
+
         public bool POS { get; set; }
 
         /// <summary>

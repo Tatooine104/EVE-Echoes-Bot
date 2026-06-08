@@ -66,7 +66,6 @@ public static partial class ScenarioFactory
     #endregion
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-
     #region CheckIfPlanetMiningTimeAsync
 
     /// <summary>
@@ -74,19 +73,33 @@ public static partial class ScenarioFactory
     /// </summary>
     private static Task<NodeStatus> CheckIfPlanetMiningTimeAsync(ActiveBotAccount bot, CancellationToken _)
     {
-        // Должны быть в доке + включена планетарка (флаг POS сам по себе без планетарки игнорируется)
+        // 1. Считаем триггер времени и округляем прошедшие часы для лога
+        bool isTime = !bot._planetassembly.HasValue || (DateTime.UtcNow - bot._planetassembly.Value).TotalHours >= 8;
+
+        double hoursSinceLastAssembly = bot._planetassembly.HasValue
+            ? Math.Round((DateTime.UtcNow - bot._planetassembly.Value).TotalHours, 2)
+            : 99.0;
+
+        // 2. Выводим детальный диагностический лог для отладки условий на каждом тике дерева
+        Logger.Log(
+            $"[PLANET-CHECK] [{bot.Settings.Name}] " +
+            $"Флаг PlanetMining: {(bot.PlanetMining ? "ВКЛ" : "ВЫКЛ")} | " +
+            $"На станции (В доке): {(!bot._inSpace ? "ДА" : "НЕТ (В космосе)")} | " +
+            $"Прошло часов: {hoursSinceLastAssembly}/8.00 (Доступно по времени: {(isTime ? "ДА" : "НЕТ")})", 
+            LogType.Test
+        );
+
+        // 3. Финальная проверка условий для пропуска к макросу
         if (bot._inSpace || !bot.PlanetMining)
         {
             return Task.FromResult(NodeStatus.Failure);
         }
 
-        // Проверяем время (нет даты или прошло более 8 часов)
-        bool isTime = !bot._planetassembly.HasValue || (DateTime.UtcNow - bot._planetassembly.Value).TotalHours >= 8;
-
         return Task.FromResult(isTime ? NodeStatus.Success : NodeStatus.Failure);
     }
 
     #endregion
+
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
@@ -120,6 +133,8 @@ public static partial class ScenarioFactory
             return NodeStatus.Failure;
         }
 
+        await Task.Delay(2000, token);
+
         // 2. Адаптивная часть: мы внутри интерфейса, выполняем перезапуск таймеров и сбор
         Logger.Log($"[{bot.Settings.Name}] Интерфейс планетарки открыт. Выбор первой планеты...", LogType.Info);
 
@@ -133,7 +148,9 @@ public static partial class ScenarioFactory
         await bot.ClickToAsync(GameUi.PlanetTimer);
         await Task.Delay(1500, token); // Ждем подтверждения от сервера игры
 
-        // TODO: Добавить еще клик на подтверждение
+        // Клик по кнопке подтверждения
+        await bot.ClickToAsync(GameUi.ComfirmButton);
+        await Task.Delay(1500, token); // Ждем подтверждения от сервера игры
 
         // Если подключен ПОС, выполняем дополнительное действие сбора ресурсов
         if (bot.POS)
@@ -151,10 +168,10 @@ public static partial class ScenarioFactory
         // ЗАКРЫТИЕ ИНТЕРФЕЙСА: Возвращаем экран в исходное чистое состояние станции
         Logger.Log($"[{bot.Settings.Name}] Завершение макроса. Закрытие интерфейса планетарной добычи...", LogType.Info);
         await bot.ClickToAsync(GameUi.XButton);
-        await Task.Delay(1500, token);
+        await Task.Delay(3500, token);
 
         // Фиксируем время успешного завершения цикла (UTC-время)
-        bot._planetassembly = DateTime.UtcNow;
+        bot._planetassembly = DateTime.Now;
         Logger.Log($"[{bot.Settings.Name}] Цикл планетарной добычи успешно обработан.", LogType.Success);
 
         return NodeStatus.Success;
@@ -175,7 +192,8 @@ public static partial class ScenarioFactory
         Logger.Log($"[{bot.Settings.Name}] Поиск кнопки запуска сбора ресурсов на ПОС...", LogType.Info);
 
         string launchPathImg = Path.Combine(Program.TemplatesDir, "imgLaunchButton.png");
-        Rect interfaceRegion = GameRegions.PlanetList.GetOpenCvRect();
+        await Task.Delay(1500, token);
+        Rect interfaceRegion = GameRegions.ResourceList.GetOpenCvRect();
         Point? foundLaunchBtn = null;
 
         // Двухэтапный поиск: Попытка 1 (как есть), Попытка 2 (после скролла)
@@ -203,7 +221,7 @@ public static partial class ScenarioFactory
             if (searchAttempt == 1)
             {
                 Logger.Log($"[{bot.Settings.Name}] Кнопка запуска не видна. Выполняю прокрутку списка ресурсов вниз...", LogType.Warning);
-
+                await Task.Delay(1500, token);
                 // Прокручиваем интерфейс от точки ResList вверх (чтобы список ушел вниз) на 200 пикселей
                 await bot.ScrollDownAsync(GameUi.ResList, 200, token);
                 await Task.Delay(1500, token); // Ждем остановки анимации списка
@@ -216,7 +234,9 @@ public static partial class ScenarioFactory
             await bot.ClickPointAsync(foundLaunchBtn.Value, token, minSec: 1, maxSec: 2, offset: 2);
             await Task.Delay(2000, token); // Ожидаем отправку ресурсов на ПОС
 
-            // TODO: Добавить клик на подтверждение
+            // Клик по кнопке подтверждения
+            await bot.ClickToAsync(GameUi.ComfirmButton);
+            await Task.Delay(1500, token); // Ждем подтверждения от сервера игры
 
             return NodeStatus.Success;
         }

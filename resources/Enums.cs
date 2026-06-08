@@ -42,12 +42,13 @@ namespace EVEEchoesBot.resources;
         /// <summary>Финальная кнопка "Send" для отправки сформированного пакета данных в активный канал.</summary>
         ChatButtSend = 4450695,
 
-        CharMenu =   500070,
-        Fitting  =  1850240,
-        XButton  = 12300065,
-        FirstPlanet = 1300190,
-        PlanetTimer = 12000130,
-        ResList = 10600400
+        CharMenu =   500070, // Проверено
+        Fitting  =  1850240, // Проверено
+        XButton  = 12300065, // Проверено
+        FirstPlanet = 1300190, // Проверено
+        PlanetTimer = 11900145, // Проверено
+        ResList = 10600400,
+        ComfirmButton = 11650565 // Проверено
         // EyeIconClose = 
         // FastMenu1 = ?
         // FastMenu2 = ?
@@ -76,15 +77,16 @@ public enum GameRegions : long
     //LocalChatArea = 10L | (80L << 16) | (400L << 32) | (600L << 48)
 
     /// <summary>Область кнопок "Control" / "Undock" (X=1070, Y=185, W=210, H=100)</summary>
-    ControlUndock = 1070L | (185L << 16) | (210L << 32) | (100L << 48),
+    ControlUndock = 1070L | (230L << 16) | (210L << 32) | (70L << 48),
 
-    SystemName = 110L | (20L  << 16) | (140L << 32) | (35L << 48),
-    ShipName   = 6L   | (215L << 16) | (300L << 32) | (50L << 48),
+    SystemName = 110L | (50L  << 16) | (140L << 32) | (25L << 48),
+    ShipName   = 6L   | (235L << 16) | (300L << 32) | (50L << 48),
 
-    FastMenu = 5L | (90L << 16) | (300L << 32) | (70L << 48),
+    FastMenu = 5L | (120L << 16) | (300L << 32) | (80L << 48),
 
     MainMenu = 5L | (120L << 16) | (775L << 32) | (700L << 48),
-    PlanetList = 830L | (170L << 16) | (450L << 32) | (430L << 48)
+    PlanetList = 5L | (110L << 16) | (245L << 32) | (670L << 48),
+    ResourceList = 830L | (100L << 16) | (450L << 32) | (630L << 48)
 
 }
 

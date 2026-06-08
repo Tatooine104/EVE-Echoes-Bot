@@ -596,7 +596,7 @@ static partial class Program
                     Hwnd = hWnd
                 };
 
-                // Если данные не десериализовались, выставляем дефолт "Требуется ввод" — оператор заполнит это в веб-интерфейсе.
+                // Если данные не десериализовались, выставляем дефолт "Требуется ввод"
                 if (string.IsNullOrEmpty(bot._eveSystem) || bot._eveSystem == "???")
                 {
                     bot._eveSystem = "Требуется ввод";
@@ -605,6 +605,10 @@ static partial class Program
                 {
                     bot._eveShip = "Требуется ввод";
                 }
+
+                // ИСПРАВЛЕНО: Синхронизируем внутренние флаги стейта бота с его личным JSON-конфигом
+                bot.PlanetMining = accountSettings.PlanetMining;
+                bot.POS = accountSettings.POS;
 
                 // Бот просто добавляется в список инициализированных. Он ждет клика "Старт" на веб-странице.
                 _activeBots.Add(bot);
