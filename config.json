@@ -5,7 +5,7 @@
       "WindowTitle": "BlueStacks_EVE.01",
       "Script": "LocalWatcher",
       "PlanetMining": true,
-      "POS": true,
+      "POS": false,
       "AdbPort":5565,
       "WindowSettings": {
         "TargetWidth": 1280,

@@ -134,7 +134,11 @@ public class AccountStateDto
     /// <summary>Дата и время последнего  сбора планетарных ресурсов.</summary>
     public DateTime? PlanetAssembly { get; set;}
 
+    public bool? IsFullMain { get; set; }
+    public bool? IsFullOre { get; set; }
+
 }
+
 
 #endregion
 

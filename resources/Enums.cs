@@ -4,13 +4,13 @@ namespace EVEEchoesBot.resources;
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
-#region GameUi
+#region GameUI
 
     /// <summary>
     /// Перечисление элементов графического интерфейса игры EVE Echoes с упакованными координатами клика.
     /// Каждое значение сформировано по математическому правилу сжатия векторов: <c>ИмяЭлемента = (X * 10000) + Y</c> [INDEX].
     /// </summary>
-    public enum GameUi
+    public enum GameUI
     {
         // 1. Взаимодействие с окнами и базовым интерфейсом игры
 
@@ -48,12 +48,15 @@ namespace EVEEchoesBot.resources;
         FirstPlanet = 1300190, // Проверено
         PlanetTimer = 11900145, // Проверено
         ResList = 10600400,
-        ComfirmButton = 11650565 // Проверено
+        ComfirmButton = 11650565, // Проверено
         // EyeIconClose = 
-        // FastMenu1 = ?
+        FastMenu1 = 250115,
         // FastMenu2 = ?
         // FastMenu3 = ?
         // FastMenu4 = ?
+        CollapseStation = 2450105,
+        SelectAll = 9850645,
+        MoveTo = 1150150
         // ? = ?
 
     }
@@ -65,7 +68,7 @@ namespace EVEEchoesBot.resources;
 public enum GameRegions : long
 {
     /// <summary>Область локального чата (X=5, Y=5, W=640, H=780)</summary>
-    LocalChat     = 5L | (5L   << 16) | (640L << 32) | (780L << 48),
+    LocalChat     = 5L | (5L   << 16) | (650L << 32) | (800L << 48),
 
     /// <summary>Область иконки локального чата (X=5, Y=650, W=100, H=120)</summary>
     LocalChatIcon = 5L | (650L << 16) | (100L << 32) | (120L << 48),
@@ -82,7 +85,7 @@ public enum GameRegions : long
     SystemName = 110L | (50L  << 16) | (140L << 32) | (25L << 48),
     ShipName   = 6L   | (235L << 16) | (300L << 32) | (50L << 48),
 
-    FastMenu = 5L | (120L << 16) | (300L << 32) | (80L << 48),
+    FastMenu = 0L | (120L << 16) | (300L << 32) | (80L << 48),
 
     MainMenu = 5L | (120L << 16) | (775L << 32) | (700L << 48),
     PlanetList = 5L | (110L << 16) | (245L << 32) | (670L << 48),

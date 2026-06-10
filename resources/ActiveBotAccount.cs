@@ -102,6 +102,8 @@ public partial class ActiveBotAccount
         internal bool _iswarping = false;
         internal bool _hastarget = false;
         internal bool _weaponryactive = false;
+        internal bool? _isfullmain = false;
+        internal bool? _isfullore = false;
         internal DateTime? _planetassembly = null;
         internal long _triggerCount;
         #pragma warning disable IDE1006 // Отключаем проверку стиля именования
@@ -141,7 +143,7 @@ public partial class ActiveBotAccount
             Settings = settings;
 
             // 2. Формируем путь к файлу состояния для конкретного аккаунта
-            _statsFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, $"stats_{settings.Name}.json");
+            _statsFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, $"{settings.Name}_stats.json");
 
             // 3. Пытаемся загрузить сохраненную статистику из файла
             _ = TryLoadLastStatsAndQueue();
@@ -243,42 +245,17 @@ public partial class ActiveBotAccount
                     // Выполняем интерактивный опрос оператора с блокировкой системного потока ввода Console.In
                     lock (Console.In)
                     {
-                        // Проверяем и валидируем звездную систему персонажа
-                        if (string.IsNullOrEmpty(state.EVESystem) || state.EVESystem == "???")
-                        {
-                            Console.ResetColor();
-                            string sys = "";
-                            while (string.IsNullOrWhiteSpace(sys))
-                            {
-                                Console.Write($"[{state.AccountName}] Введите текущую звездную систему (например, Jita): ");
-                                sys = Console.ReadLine()?.Trim() ?? "";
-                            }
-                            _eveSystem = sys;
-                        }
-                        else
-                        {
-                            _eveSystem = state.EVESystem;
-                        }
+
+                        _eveSystem = state.EVESystem;
+
+                        _eveShip = state.EVEShip;
+
+                        _isfullmain = state.IsFullMain;
+
+                        _isfullore = state.IsFullOre;
 
                         // Загружаем дату последнего сбора планетарных ресурсов
                         _planetassembly = state.PlanetAssembly;
-
-                        // Проверяем и валидируем текущий корабль персонажа
-                        if (string.IsNullOrEmpty(state.EVEShip) || state.EVEShip == "???")
-                        {
-                            Console.ResetColor();
-                            string ship = "";
-                            while (string.IsNullOrWhiteSpace(ship))
-                            {
-                                Console.Write($"[{state.AccountName}] Введите название корабля (например, Covetor II): ");
-                                ship = Console.ReadLine()?.Trim() ?? "";
-                            }
-                            _eveShip = ship;
-                        }
-                        else
-                        {
-                            _eveShip = state.EVEShip;
-                        }
 
                         // Умная проверка локации (космос / станция) без ошибок компиляции и лишних вопросов к пользователю
                         if (state.InSpace.HasValue)
@@ -381,10 +358,12 @@ public partial class ActiveBotAccount
                     InSpace        = _inSpace,
                     IsWarping      = _iswarping,
                     IsInMiningZone = _isinzone,
-                    HasTarget     = _hastarget,
+                    HasTarget      = _hastarget,
                     WeaponryActive = _weaponryactive,
                     PlanetAssembly = _planetassembly,
-                    CurrentTarget  = _currenttarget?.ToString()
+                    CurrentTarget  = _currenttarget?.ToString(),
+                    IsFullMain     = _isfullmain,
+                    IsFullOre      = _isfullore
                 };
             }
 
@@ -517,7 +496,7 @@ public partial class ActiveBotAccount
     {
         Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Поток запущен. Начало работы по Дереву поведения: '{Settings.Script ?? "mining"}'.", LogType.Info);
 
-        var sessionStart = System.DateTime.UtcNow;
+        var sessionStart = System.DateTime.Now;
 
         // Включаем высокоточный секундомер времени работы для этого окна
         var sessionStopwatch = System.Diagnostics.Stopwatch.StartNew();
@@ -600,7 +579,7 @@ public partial class ActiveBotAccount
             {
                 SaveStats();
             }
-            int sessionSeconds = (int)(System.DateTime.UtcNow - sessionStart).TotalSeconds;
+            int sessionSeconds = (int)(System.DateTime.Now - sessionStart).TotalSeconds;
 
             Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Состояние сохранено. Поток поведения остановлен. Время работы в сессии (сек): {sessionSeconds}", LogType.Info);
         }
@@ -1040,7 +1019,7 @@ public partial class ActiveBotAccount
     #endregion
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-
+/*
     #region Check Cargo
 
     /// <summary>
@@ -1056,7 +1035,7 @@ public partial class ActiveBotAccount
     }
 
     #endregion
-
+*/
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region Unload Ore

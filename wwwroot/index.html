@@ -203,7 +203,7 @@
                                 <button onclick="viewDebugRegion(${botId})" style="background: #78350f; color: #fbbf24; border: none; padding: 4px 8px; cursor: pointer; font-weight: bold; font-size: 0.8rem;">👁️ Регион</button>
                             </div>
 
-                            <!-- Выбор и симуляция клика GameUi -->
+                            <!-- Выбор и симуляция клика GameUI -->
                             <div style="display: flex; border: 1px solid #b91c1c; border-radius: 4px; overflow: hidden;">
                                 <select id="uiSelect_${botId}" style="background: #1f2937; color: #fff; border: none; padding: 4px; font-size: 0.8rem; outline: none;">
                                     <option value="CharMenu">CharMenu</option>
@@ -640,7 +640,7 @@
                     }
                 }
 
-                // 2. Загружаем и заполняем элементы кликов GameUi
+                // 2. Загружаем и заполняем элементы кликов GameUI
                 let resUi = await fetch('/api/debug/enums/ui');
                 if (resUi.ok) {
                     let uiElements = await resUi.json();
@@ -652,7 +652,7 @@
                     }
                 }
                 
-                console.log("[Debug] Списки энумов GameRegions и GameUi успешно синхронизированы с бэкендом.");
+                console.log("[Debug] Списки энумов GameRegions и GameUI успешно синхронизированы с бэкендом.");
             } catch (err) {
                 console.error("Не удалось загрузить списки метаданных enums:", err);
             }

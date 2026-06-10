@@ -1,6 +1,9 @@
 using System.Threading;
 using System.Threading.Tasks;
 using EVEEchoesBot.resources;
+using OpenCvSharp;
+using Point = OpenCvSharp.Point;
+using Rect = OpenCvSharp.Rect;
 
 namespace EVEEchoesBot.scenarios;
 
@@ -28,7 +31,7 @@ public static partial class ScenarioFactory
                     // ВЕТКА ВЫГРУЗКИ: Выгружаем руду, если трюм полный
                     new SequenceNode("Unload Cargo Sequence",
                         new ActionNode("Is Cargo Full Check", CheckIsCargoFullAsync),
-                        new ActionNode("Unload Ore", ExecuteUnloadOreAsync)
+                        new ActionNode("Unload Ore", UnloadOreToHangarAsync)
                     ),
 
                     // ВЕТКА АНДОКА: Вылетаем, если трюм пуст и в системе безопасно
@@ -91,42 +94,178 @@ public static partial class ScenarioFactory
 
 
     /// <summary>
-    /// Проверяет, находится ли корабль внутри дока станции.
+    /// Проверяет, находится ли корабль внутри дока станции по наличию кнопки выхода из дока.
     /// </summary>
-    private static Task<NodeStatus> CheckIsDockedAsync(ActiveBotAccount bot, CancellationToken token)
+    public static async Task<NodeStatus> CheckIsDockedAsync(ActiveBotAccount bot, CancellationToken token)
     {
-        // Инвертируем флаг нахождения в космосе
-        return Task.FromResult(!bot._inSpace ? NodeStatus.Success : NodeStatus.Failure);
+        // Используем хелпер для захвата экрана и подготовки региона
+        var (screenshot, safeRegion) = await PrepareScreenshotRegionAsync(bot, GameRegions.ControlUndock, token);
+
+        if (screenshot == null)
+        {
+            return NodeStatus.Failure;
+        }
+
+        using (screenshot) // Гарантируем очистку unmanaged памяти OpenCV
+        {
+            string pathImg = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", "imgUndock1.png");
+
+            // Ищем шаблон кнопки "Undock" с точностью 85%
+            Point? foundPos = await Task.Run(() => Tools.FindTemplateInRegion(screenshot, pathImg, safeRegion, 0.85), token);
+
+            if (foundPos.HasValue)
+            {
+                // Кнопка выхода найдена -> корабль точно в доке
+                bot._inSpace = false;
+                return NodeStatus.Success;
+            }
+
+            // Кнопка не найдена -> корабль в космосе
+            bot._inSpace = true;
+            return NodeStatus.Failure;
+        }
     }
 
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
     /// <summary>
-    /// Проверяет, заполнен ли рудный трюм корабля.
+    /// Проверяет, заполнен ли рудный трюм корабля (Узел Дерева Поведения).
     /// </summary>
     private static async Task<NodeStatus> CheckIsCargoFullAsync(ActiveBotAccount bot, CancellationToken token)
     {
-        bool isFull = await bot.CheckIsCargoFullAsync(token);
-        return isFull ? NodeStatus.Success : NodeStatus.Failure;
+        // 1. Делаем первый снимок для первичного анализа
+        var (screenshot, safeRegion) = await PrepareScreenshotRegionAsync(bot, GameRegions.FastMenu, token);
+        if (screenshot == null) return NodeStatus.Failure;
+
+        using (screenshot)
+        {
+            string pathCargo = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", "imgCargoFold100.png");
+
+            // Ищем трюм синхронно в памяти
+            Point? foundCargo = Tools.FindTemplateInRegion(screenshot, pathCargo, safeRegion, 0.85);
+            if (foundCargo.HasValue) return NodeStatus.Success;
+
+            // 2. Если не нашли трюм, ищем флаг флота, который мог его перекрыть
+            string pathFleet = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", "imgFleetFlags.png");
+            Point? foundFleet = Tools.FindTemplateInRegion(screenshot, pathFleet, safeRegion, 0.85);
+
+            if (!foundFleet.HasValue) return NodeStatus.Failure; // Ни трюма, ни флага — значит не полон
+        }
+
+        // 3. Флаг нашли — сдвигаем панель влево на 50 пикселей от точки FastMenu1
+        await bot.ScrollLeftAsync(GameUI.FastMenu1, 50, token);
+        await Task.Delay(600, token); // Ждем завершения анимации свайпа
+
+        // 4. Повторный снимок для проверки трюма после сдвига
+        var (retryScreenshot, retryRegion) = await PrepareScreenshotRegionAsync(bot, GameRegions.FastMenu, token);
+        if (retryScreenshot == null) return NodeStatus.Failure;
+
+        using (retryScreenshot)
+        {
+            string pathCargo = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", "imgCargoFold100.png");
+            Point? foundCargo = Tools.FindTemplateInRegion(retryScreenshot, pathCargo, retryRegion, 0.85);
+
+            return foundCargo.HasValue ? NodeStatus.Success : NodeStatus.Failure;
+        }
     }
+
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     /// <summary>
     /// Проверяет, пуст ли рудный трюм корабля (необходим перед вылетом).
     /// </summary>
     private static async Task<NodeStatus> CheckIsCargoEmptyAsync(ActiveBotAccount bot, CancellationToken token)
     {
-        bool isFull = await bot.CheckIsCargoFullAsync(token);
-        return !isFull ? NodeStatus.Success : NodeStatus.Failure;
+        // Делаем снимок панели для анализа пустого трюма
+        var (screenshot, safeRegion) = await PrepareScreenshotRegionAsync(bot, GameRegions.FastMenu, token);
+        if (screenshot == null)
+        {
+            return NodeStatus.Failure;
+        }
+
+        using (screenshot) // Гарантируем очистку unmanaged памяти OpenCV
+        {
+            string pathCargoEmpty = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", "imgCargoHold0.png");
+
+            // Ищем шаблон пустого трюма синхронно в памяти
+            Point? foundCargoEmpty = Tools.FindTemplateInRegion(screenshot, pathCargoEmpty, safeRegion, 0.85);
+
+            if (foundCargoEmpty.HasValue)
+            {
+                // Шаблон нуля найден -> трюм пуст
+                return NodeStatus.Success;
+            }
+
+            // Шаблон не найден -> трюм не пуст (или меню перекрыто)
+            return NodeStatus.Failure;
+        }
     }
 
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
     /// <summary>
-    /// Выполняет разгрузку руды на склад текущей станции.
+    /// Выполняет разгрузку руды на склад текущей станции (Узел Дерева Поведения).
     /// </summary>
-    private static async Task<NodeStatus> ExecuteUnloadOreAsync(ActiveBotAccount bot, CancellationToken token)
+    private static async Task<NodeStatus> UnloadOreToHangarAsync(ActiveBotAccount bot, CancellationToken token)
     {
         Logger.Log($"[{bot.Settings.Name}] Трюм заполнен. Выгрузка руды на склад станции.", LogType.Info);
 
-        bool unloadSuccess = await bot.UnloadOreToHangarAsync(token);
-        return unloadSuccess ? NodeStatus.Success : NodeStatus.Failure;
+        // Шаг 1-2: Открываем меню и подготавливаем склад
+        var initialSteps = new (GameUI Element, int DelayMs)[]
+        {
+            (GameUI.FastMenu1, 800),
+            (GameUI.CollapseStation, 800)
+        };
+
+        foreach (var (element, delayMs) in initialSteps)
+        {
+            await bot.ClickToAsync(element);
+            await Task.Delay(delayMs, token);
+        }
+
+        // Шаг 3: Динамический поиск иконки рудного отсека imgOreHold.png в регионе LocalChat
+        var (screenshot, safeRegion) = await PrepareScreenshotRegionAsync(bot, GameRegions.LocalChat, token);
+        if (screenshot == null) return NodeStatus.Failure;
+
+        Point? foundOreHold;
+        using (screenshot)
+        {
+            string pathOreHold = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", "imgOreHold.png");
+            foundOreHold = Tools.FindTemplateInRegion(screenshot, pathOreHold, safeRegion, 0.85);
+        }
+
+        if (!foundOreHold.HasValue)
+        {
+            Logger.Log($"[{bot.Settings.Name}] Иконка рудного отсека (imgOreHold.png) не найдена.", LogType.Error);
+            return NodeStatus.Failure;
+        }
+
+        // Кликаем по найденной точке рудного отсека
+        await bot.ClickPointAsync(foundOreHold.Value, token, minSec: 1, maxSec: 3, offset: 3);
+        await Task.Delay(800, token);
+
+        // Шаг 4-6: Выделение, перенос в ангар и закрытие интерфейса
+        var finalSteps = new (GameUI Element, int DelayMs)[]
+        {
+            (GameUI.SelectAll, 600),
+            (GameUI.ItemHangar, 1500), 
+            (GameUI.XButton, 0)
+        };
+
+        foreach (var (element, delayMs) in finalSteps)
+        {
+            await bot.ClickToAsync(element);
+            if (delayMs > 0)
+            {
+                await Task.Delay(delayMs, token);
+            }
+        }
+
+        return NodeStatus.Success;
     }
+
+
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     /// <summary>
     /// Выполняет команду выхода из дока станции (андок) в космос.
@@ -139,6 +278,8 @@ public static partial class ScenarioFactory
         return undockSuccess ? NodeStatus.Success : NodeStatus.Failure;
     }
 
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
     /// <summary>
     /// Выполняет варп и стыковку (док) на домашнюю станцию для разгрузки.
     /// </summary>
@@ -150,6 +291,8 @@ public static partial class ScenarioFactory
         return success ? NodeStatus.Success : NodeStatus.Failure;
     }
 
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
     /// <summary>
     /// Проверяет, что корабль еще НЕ находится непосредственно в зоне добычи (на белте).
     /// </summary>
@@ -157,6 +300,8 @@ public static partial class ScenarioFactory
     {
         return Task.FromResult(!bot._isinzone ? NodeStatus.Success : NodeStatus.Failure);
     }
+
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     /// <summary>
     /// Проверяет, находится ли корабль в процессе варпа.
@@ -172,6 +317,8 @@ public static partial class ScenarioFactory
         return Task.FromResult(NodeStatus.Failure);
     }
 
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
     /// <summary>
     /// Проверяет, выбран ли уже астероидный пояс в качестве текущей цели движения.
     /// </summary>
@@ -179,6 +326,8 @@ public static partial class ScenarioFactory
     {
         return Task.FromResult(bot._currenttarget != null ? NodeStatus.Success : NodeStatus.Failure);
     }
+
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     /// <summary>
     /// Сканирует систему и выбирает доступный астероидный пояс для добычи.
@@ -199,6 +348,8 @@ public static partial class ScenarioFactory
         return NodeStatus.Failure;
     }
 
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
     /// <summary>
     /// Инициирует переход (варп) к выбранному астероидному поясу.
     /// </summary>
@@ -212,6 +363,8 @@ public static partial class ScenarioFactory
         return warpStarted ? NodeStatus.Success : NodeStatus.Failure;
     }
 
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
     /// <summary>
     /// Сбрасывает полетные данные и промежуточную цель варпа по прибытии в зону добычи.
     /// </summary>
@@ -221,6 +374,8 @@ public static partial class ScenarioFactory
         return Task.FromResult(NodeStatus.Success);
     }
 
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
     /// <summary>
     /// Проверяет, захвачен ли астероид в цель и активны ли буровые лазеры.
     /// </summary>
@@ -228,6 +383,8 @@ public static partial class ScenarioFactory
     {
         return Task.FromResult((bot._hastarget && bot._weaponryactive) ? NodeStatus.Success : NodeStatus.Failure);
     }
+
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     /// <summary>
     /// Пытается захватить доступный астероид в качестве мишени.
@@ -238,6 +395,8 @@ public static partial class ScenarioFactory
         return await bot.TryTargetAsteroidAsync(token) ? NodeStatus.Success : NodeStatus.Failure;
     }
 
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
     /// <summary>
     /// Активирует буровые лазеры на захваченную цель.
     /// </summary>
@@ -247,6 +406,8 @@ public static partial class ScenarioFactory
         return await bot.ActivateLasersAsync(token) ? NodeStatus.Success : NodeStatus.Failure;
     }
 
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
     /// <summary>
     /// Точка удержания тика дерева во время активного процесса добычи руды.
     /// </summary>
@@ -255,5 +416,7 @@ public static partial class ScenarioFactory
         // Просто успешно завершаем узел, отдавая управление наверх для нового полного цикла проверок
         return Task.FromResult(NodeStatus.Success);
     }
+
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
 }

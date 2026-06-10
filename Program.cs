@@ -278,7 +278,7 @@ static partial class Program
                 OpenCvSharp.Cv2.ImWrite(fullPath, screenshot);
 
                 // Отдаем виртуальный путь для браузера
-                return Results.Ok(new { url = $"/DebugScreenshots/{fileName}?t={DateTime.UtcNow.Ticks}" });
+                return Results.Ok(new { url = $"/DebugScreenshots/{fileName}?t={DateTime.Now.Ticks}" });
             }
             catch (Exception ex) { return Results.Problem($"Ошибка: {ex.Message}"); }
         });
@@ -291,11 +291,11 @@ static partial class Program
             return Results.Ok(regions);
         });
 
-        // GET /api/debug/enums/ui — Получить список всех элементов кликов GameUi
+        // GET /api/debug/enums/ui — Получить список всех элементов кликов GameUI
         app.MapGet("/api/debug/enums/ui", () => 
         {
-            // Извлекаем имена из вашего Enum GameUi
-            string[] uiElements = Enum.GetNames<GameUi>();
+            // Извлекаем имена из вашего Enum GameUI
+            string[] uiElements = Enum.GetNames<GameUI>();
             return Results.Ok(uiElements);
         });
 
@@ -330,21 +330,21 @@ static partial class Program
 
                 OpenCvSharp.Cv2.ImWrite(fullPath, cropped);
 
-                return Results.Ok(new { url = $"/DebugScreenshots/{fileName}?t={DateTime.UtcNow.Ticks}" });
+                return Results.Ok(new { url = $"/DebugScreenshots/{fileName}?t={DateTime.Now.Ticks}" });
             }
             catch (Exception ex) { return Results.Problem($"Ошибка: {ex.Message}"); }
         });
 
-        // POST /api/debug/{id:int}/click/{elementName} — Отправить клик по выбранному элементу GameUi
+        // POST /api/debug/{id:int}/click/{elementName} — Отправить клик по выбранному элементу GameUI
         app.MapPost("/api/debug/{id:int}/click/{elementName}", async (int id, string elementName, BotAccountManager manager) =>
         {
             var bot = manager.GetAccountById(id);
             if (bot == null) return Results.NotFound(new { message = "Аккаунт не найден" });
 
-            // Пытаемся безопасно распарсить строку в ваш Enum GameUi
-            if (!Enum.TryParse(elementName, true, out GameUi targetElement))
+            // Пытаемся безопасно распарсить строку в ваш Enum GameUI
+            if (!Enum.TryParse(elementName, true, out GameUI targetElement))
             {
-                return Results.BadRequest(new { message = $"Элемент '{elementName}' не найден в перечислении GameUi" });
+                return Results.BadRequest(new { message = $"Элемент '{elementName}' не найден в перечислении GameUI" });
             }
 
             try
@@ -752,12 +752,12 @@ static partial class Program
 
     /// <summary>
     /// Метод расширения (Extension Method) для класса <see cref="ActiveBotAccount"/>.
-    /// Автоматически распаковывает двумерные координаты (X, Y) из перечисления <see cref="GameUi"/>,
+    /// Автоматически распаковывает двумерные координаты (X, Y) из перечисления <see cref="GameUI"/>,
     /// после чего выполняет асинхронный аппаратно-независимый клик через утилиту ADB [INDEX].
     /// </summary>
-    internal static async Task ClickToAsync(this ActiveBotAccount bot, GameUi element, int minSec = 1, int maxSec = 3, int offset = 3)
+    internal static async Task ClickToAsync(this ActiveBotAccount bot, GameUI element, int minSec = 1, int maxSec = 3, int offset = 3)
     {
-        // Распаковываем двумерные координаты X и Y из упакованного Enum GameUi по вашей формуле
+        // Распаковываем двумерные координаты X и Y из упакованного Enum GameUI по вашей формуле
         int packed = (int)element;
         int x = packed / 10000;
         int y = packed % 10000;

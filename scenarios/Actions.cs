@@ -74,10 +74,10 @@ public static partial class ScenarioFactory
     private static Task<NodeStatus> CheckIfPlanetMiningTimeAsync(ActiveBotAccount bot, CancellationToken _)
     {
         // 1. Считаем триггер времени и округляем прошедшие часы для лога
-        bool isTime = !bot._planetassembly.HasValue || (DateTime.UtcNow - bot._planetassembly.Value).TotalHours >= 8;
+        bool isTime = !bot._planetassembly.HasValue || (DateTime.Now - bot._planetassembly.Value).TotalHours >= 8;
 
         double hoursSinceLastAssembly = bot._planetassembly.HasValue
-            ? Math.Round((DateTime.UtcNow - bot._planetassembly.Value).TotalHours, 2)
+            ? Math.Round((DateTime.Now - bot._planetassembly.Value).TotalHours, 2)
             : 99.0;
 
         // 2. Выводим детальный диагностический лог для отладки условий на каждом тике дерева
@@ -139,17 +139,17 @@ public static partial class ScenarioFactory
         Logger.Log($"[{bot.Settings.Name}] Интерфейс планетарки открыт. Выбор первой планеты...", LogType.Info);
 
         // Клик по первой планете в списке
-        await bot.ClickToAsync(GameUi.FirstPlanet);
+        await bot.ClickToAsync(GameUI.FirstPlanet);
         await Task.Delay(1200, token); // Ждем анимацию выбора планеты
 
         Logger.Log($"[{bot.Settings.Name}] Отправка команды на перезапуск таймера добычи...", LogType.Info);
 
         // Клик по кнопке перезапуска таймера
-        await bot.ClickToAsync(GameUi.PlanetTimer);
+        await bot.ClickToAsync(GameUI.PlanetTimer);
         await Task.Delay(1500, token); // Ждем подтверждения от сервера игры
 
         // Клик по кнопке подтверждения
-        await bot.ClickToAsync(GameUi.ComfirmButton);
+        await bot.ClickToAsync(GameUI.ComfirmButton);
         await Task.Delay(1500, token); // Ждем подтверждения от сервера игры
 
         // Если подключен ПОС, выполняем дополнительное действие сбора ресурсов
@@ -167,7 +167,7 @@ public static partial class ScenarioFactory
 
         // ЗАКРЫТИЕ ИНТЕРФЕЙСА: Возвращаем экран в исходное чистое состояние станции
         Logger.Log($"[{bot.Settings.Name}] Завершение макроса. Закрытие интерфейса планетарной добычи...", LogType.Info);
-        await bot.ClickToAsync(GameUi.XButton);
+        await bot.ClickToAsync(GameUI.XButton);
         await Task.Delay(3500, token);
 
         // Фиксируем время успешного завершения цикла (UTC-время)
@@ -223,7 +223,7 @@ public static partial class ScenarioFactory
                 Logger.Log($"[{bot.Settings.Name}] Кнопка запуска не видна. Выполняю прокрутку списка ресурсов вниз...", LogType.Warning);
                 await Task.Delay(1500, token);
                 // Прокручиваем интерфейс от точки ResList вверх (чтобы список ушел вниз) на 200 пикселей
-                await bot.ScrollDownAsync(GameUi.ResList, 200, token);
+                await bot.ScrollDownAsync(GameUI.ResList, 200, token);
                 await Task.Delay(1500, token); // Ждем остановки анимации списка
             }
         }
@@ -235,7 +235,7 @@ public static partial class ScenarioFactory
             await Task.Delay(2000, token); // Ожидаем отправку ресурсов на ПОС
 
             // Клик по кнопке подтверждения
-            await bot.ClickToAsync(GameUi.ComfirmButton);
+            await bot.ClickToAsync(GameUI.ComfirmButton);
             await Task.Delay(1500, token); // Ждем подтверждения от сервера игры
 
             return NodeStatus.Success;
@@ -255,9 +255,9 @@ public static partial class ScenarioFactory
     /// Метод расширения (Extension Method) для класса <see cref="ActiveBotAccount"/>.
     /// Выполняет асинхронный скролл (свайп) вниз от указанной точки интерфейса на заданное расстояние.
     /// </summary>
-    internal static Task ScrollDownAsync(this ActiveBotAccount bot, GameUi startElement, int distance, CancellationToken token)
+    internal static Task ScrollDownAsync(this ActiveBotAccount bot, GameUI startElement, int distance, CancellationToken token)
     {
-        // Распаковываем стартовые координаты из GameUi
+        // Распаковываем стартовые координаты из GameUI
         int packed = (int)startElement;
         int startX = packed / 10000;
         int startY = packed % 10000;
@@ -284,6 +284,48 @@ public static partial class ScenarioFactory
             catch (Exception ex)
             {
                 Logger.Log($"Сбой при отправке команды скролла через ADB: {ex.Message}", LogType.Error);
+            }
+        }, token);
+    }
+
+    #endregion
+
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region ScrollLeftAsync
+
+    /// <summary>
+    /// Метод расширения для класса <see cref="ActiveBotAccount"/>.
+    /// Выполняет асинхронный скролл (свайп) влево от указанной точки интерфейса на заданное расстояние.
+    /// </summary>
+    internal static Task ScrollLeftAsync(this ActiveBotAccount bot, GameUI startElement, int distance, CancellationToken token)
+    {
+        // Распаковываем стартовые координаты из GameUI (по вашей схеме 4 знаков)
+        int packed = (int)startElement;
+        int startX = packed / 10000;
+        int startY = packed % 10000;
+
+        // Рассчитываем конечную точку свайпа влево (уменьшаем X)
+        int endX = startX - distance;
+        int endY = startY;
+
+        string deviceTarget = $"127.0.0.1:{bot.Settings.AdbPort}";
+        string adbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "resources", "adb.exe");
+        string argsSwipe = $"-s {deviceTarget} shell input swipe {startX} {startY} {endX} {endY} 500"; 
+
+        return Task.Run(() =>
+        {
+            try
+            {
+                ProcessStartInfo psiSwipe = new(adbPath, argsSwipe) { CreateNoWindow = true, UseShellExecute = false };
+                Process.Start(psiSwipe)?.WaitForExit();
+#if DEBUG
+                Logger.Log($"[{bot.Settings.Name}] Отправлен свайп от {startElement} (X={startX}, Y={startY}) влево на {distance}px.", LogType.Test);
+#endif
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Сбой при отправке команды горизонтального скролла через ADB: {ex.Message}", LogType.Error);
             }
         }, token);
     }
@@ -363,7 +405,7 @@ public static partial class ScenarioFactory
         Logger.Log($"[{bot.Settings.Name}] Открытие главного меню игры (кликом по CharMenu)...", LogType.Info);
 
         // Используем наш эталонный метод расширения
-        await bot.ClickToAsync(GameUi.CharMenu);
+        await bot.ClickToAsync(GameUI.CharMenu);
 
         // Даем игре честную секунду на отрисовку меню поверх экрана
         await Task.Delay(1000, token);
@@ -475,7 +517,7 @@ public static partial class ScenarioFactory
         // ========================================================
         for (int attempt = 1; attempt <= 2; attempt++)
         {
-            await bot.ClickToAsync(GameUi.ChatsInterface);
+            await bot.ClickToAsync(GameUI.ChatsInterface);
             await Task.Delay(attempt == 1 ? 3500 : 4000, token);
 
             screenshot?.Dispose();
@@ -541,15 +583,15 @@ public static partial class ScenarioFactory
         // ========================================================
         // ЭТАП 3: ОПТИМИЗИРОВАННАЯ ЦЕПОЧКА ОТПРАВКИ МАКРОСА В ИГРУ
         // ========================================================
-        var macroSteps = new (GameUi Element, int DelayMs)[7]
+        var macroSteps = new (GameUI Element, int DelayMs)[7]
         {
-            (GameUi.ChatInputMenu, 1200),
-            (GameUi.ChatFastInput, 1200),
-            (GameUi.ChatInform,    1200),
-            (GameUi.ChatMessScout, 1200),
-            (GameUi.WindowCenter,  1500),
-            (GameUi.ChatButtSend,  2000),
-            (GameUi.WindowCenter,  0)
+            (GameUI.ChatInputMenu, 1200),
+            (GameUI.ChatFastInput, 1200),
+            (GameUI.ChatInform,    1200),
+            (GameUI.ChatMessScout, 1200),
+            (GameUI.WindowCenter,  1500),
+            (GameUI.ChatButtSend,  2000),
+            (GameUI.WindowCenter,  0)
         };
 
         foreach (var (element, delayMs) in macroSteps)
@@ -567,5 +609,48 @@ public static partial class ScenarioFactory
     }
 
     #endregion
+
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region PrepareScreenshotRegionAsync
+
+    /// <summary>
+    /// Универсальный метод захвата экрана и подготовки безопасной области поиска.
+    /// Возвращает кортеж (screenshot, safeRegion). Если захват не удался, возвращает (null, safeRegion с нулевыми размерами).
+    /// </summary>
+    private static async Task<(Mat? Screenshot, Rect SafeRegion)> PrepareScreenshotRegionAsync(ActiveBotAccount bot, GameRegions region, CancellationToken token)
+    {
+        if (bot.Hwnd == IntPtr.Zero)
+        {
+            Logger.Log($"[{bot.Settings.Name}] Окно целевой программы не найдено.", LogType.Error);
+            return (null, new Rect());
+        }
+
+        // Захватываем скриншот окна эмулятора
+        Mat? screenshot = await Task.Run(() => Tools.CaptureWindow(bot.Hwnd), token);
+        if (screenshot?.Empty() is not false || screenshot.Width <= 0 || screenshot.Height <= 0)
+        {
+            Logger.Log($"[{bot.Settings.Name}] Не удалось выполнить захват окна эмулятора.", LogType.Error);
+            screenshot?.Dispose();
+            return (null, new Rect());
+        }
+
+        // Получаем и корректируем регион под размеры окна
+        Rect searchRegion = region.GetOpenCvRect();
+        Rect safeRegion = Tools.ClampRegion(searchRegion, screenshot.Width, screenshot.Height);
+
+        if (safeRegion.Width <= 0 || safeRegion.Height <= 0)
+        {
+            Logger.Log($"[{bot.Settings.Name}] Область поиска [{region}] выходит за рамки окна.", LogType.Error);
+            screenshot.Dispose();
+            return (null, new Rect());
+        }
+
+        return (screenshot, safeRegion);
+    }
+
+    #endregion
+
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
 }
