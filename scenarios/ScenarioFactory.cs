@@ -1,11 +1,8 @@
-using System;
-using System.Threading.Tasks; // Добавили для Task.FromResult
+using System.Threading;
+using System.Threading.Tasks;
 using EVEEchoesBot.resources;
 
 namespace EVEEchoesBot.scenarios;
-
-// [v] TODO 2026.06.01 Реализовать сценарий "lowminer" 
-// [ ] TODO 2026.06.01 Реализовать проверку, перезапуск и запуск сбора планетарки на ПОС 
 
 /// <summary>
 /// Фабрика сценариев, отвечающая за сборку и инициализацию Деревьев поведения (Behavior Trees)
@@ -17,7 +14,7 @@ public static partial class ScenarioFactory
 
     public static BehaviorNode CreateTree(string scenarioName)
     {
-        // 1. Получаем базовое дерево сценария
+        // 1. Получаем базовое изолированное дерево сценария
         BehaviorNode coreScenarioTree = scenarioName?.ToLower() switch
         {
             "localwatcher" => BuildLocalWatcherTree(),
@@ -25,10 +22,12 @@ public static partial class ScenarioFactory
             _              => BuildDefaultFallbackTree()
         };
 
-        // 2. Собираем финальную структуру с единой автоматической веткой планетарки
+        // 2. Собираем финальную структуру с единой автоматической веткой планетарки.
+        // Передаем статические методы-делегаты, которые принимают (account, token) на каждом тике.
         return new SelectorNode($"Global Wrapper [{scenarioName}]",
 
-            // ГЛОБАЛЬНАЯ ВЕТКА: Сработает на станции раз в 8 часов, сделает всё через меню и закроется
+            // ГЛОБАЛЬНАЯ ВЕТКА: Сработает на станции раз в 8 часов, выполнит макрос и вернет FAILURE,
+            // чтобы дерево гарантированно перешло к выполнению основного coreScenarioTree.
             new SequenceNode("Global Planet Mining Branch",
                 new ActionNode("Check Planet Mining Conditions", CheckIfPlanetMiningTimeAsync),
                 new ActionNode("Execute Planet Mining Macro", ExecutePlanetMiningSequenceAsync)
@@ -48,8 +47,10 @@ public static partial class ScenarioFactory
     /// </summary>
     private static ActionNode BuildDefaultFallbackTree()
     {
+        // Приведение к единой сигнатуре (account, token)
         return new ActionNode("Default Fallback Action", (_, _) => Task.FromResult(NodeStatus.Success));
     }
 
     #endregion
 }
+

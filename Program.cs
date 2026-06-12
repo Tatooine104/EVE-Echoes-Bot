@@ -1,25 +1,32 @@
-﻿using OpenCvSharp;
-using static EVEEchoesBot.Program;
-using EVEEchoesBot;
-using static System.Diagnostics.Process;
+﻿using System;
+using System.IO;
+using System.Linq;
+using System.Collections.Generic;
 using System.Diagnostics;
+using OpenCvSharp;
 using EVEEchoesBot.resources;
+using Point = OpenCvSharp.Point;
+using Rect = OpenCvSharp.Rect;
 
 namespace EVEEchoesBot;
 
-// [v] TODO Проверить все методы и добавить новый метод Logger.Log() 
-// [v] TODO 2026.05.30 Привести все тексты логгера к единому стилю 
-// [v] TODO 2026.05.27 Заменить все SmartClick с координатами на вызовы по енуму 
-// [v] TODO 2026.05.30 Сделать переменную хранящую текущую версию программы и добавить вывод в лог 
-// [v] TODO 2026.06.01 Реализовать дерево поведения 
-// [v] TODO 2026.06.01 Навести порядок в файлах и красиво оформить код 
-
+// Используем partial, чтобы архитектурно разделять инициализацию, 
+// веб-сервер Kestrel и логику фонового движка по разным файлам.
 static partial class Program
 {
+    // Сюда мы сейчас перенесём наши потокобезопасные поля коллекции ботов
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
-    #region Constants & Fields
+#region Constants & Fields
+
+    // Выносим иконку на уровень класса, защищая её от проходов Garbage Collector
+    private static System.Windows.Forms.NotifyIcon? _notifyIcon;
+
+    // Глобальный семафор для синхронизации графических вызовов WinAPI (GDI/BitBlt).
+    // Гарантирует, что боты делают скриншоты строго по очереди (1 за раз), предотвращая дедлоки в видеокарте.
+    public static readonly System.Threading.SemaphoreSlim GdiSemaphore = new(1, 1);
+
 
     /// <summary>
     /// Глобальный источник токена отмены (CancellationTokenSource) для каскадного завершения всех асинхронных воркеров приложения.
@@ -34,13 +41,12 @@ static partial class Program
     /// <summary>
     /// Глобальный потокобезопасный список всех запущенных и активных в текущей сессии аккаунтов-воркеров.
     /// </summary>
-    public static readonly List<ActiveBotAccount> _activeBots = [];
+    private static readonly List<ActiveBotAccount> _activeBots = [];
 
     /// <summary>
     /// Объект блокировки для потокобезопасного доступа к списку активных ботов.
     /// </summary>
-    public static readonly System.Threading.Lock ActiveBotsLock = new(); // <-- ДОБАВИТЬ ЭТУ СТРОКУ
-
+    public static readonly System.Threading.Lock ActiveBotsLock = new();
 
     /// <summary>
     /// Ссылка на объект глобальной конфигурации приложения, содержащий параметры всех аккаунтов.
@@ -48,34 +54,76 @@ static partial class Program
     private static BotConfig? _config;
 
     /// <summary>
-    /// Глобальное свойство, возвращающее актуальный путь к папке с графическими шаблонами (Images).
-    /// Автоматически переключает контекст между релизной директорией и отладочной папкой исходного кода проекта.
+    /// Кэшированное значение пути к папке шаблонов, чтобы не терзать диск при каждом такте дерева.
     /// </summary>
-    public static string TemplatesDir
+    private static readonly string _cachedTemplatesDir;
+
+    /// <summary>
+    /// Статический конструктор для безопасной и однократной инициализации путей
+    /// </summary>
+    static Program()
     {
-        get
+        string releasePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images");
+
+        if (Directory.Exists(releasePath))
         {
-            // Настройка пути для RELEASE-сборки (папка images лежит непосредственно в корне исполняемого файла)
-            string releasePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images");
-
-            if (Directory.Exists(releasePath))
-            {
-                return releasePath;
-            }
-
-            // Настройка фолбека для DEBUG-режима (автоматический подъем на 3 уровня выше bin/Debug/ к исходникам)
-            return Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\..\..\Images"));
+            _cachedTemplatesDir = releasePath;
+        }
+        else
+        {
+            _cachedTemplatesDir = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\..\..\Images"));
         }
     }
 
-    public static List<ActiveBotAccount> GetActiveBots() => _activeBots;
+    /// <summary>
+    /// Глобальное свойство, возвращающее актуальный путь к папке с графическими шаблонами (Images).
+    /// Теперь работает мгновенно из оперативной памяти благодаря кэшированию.
+    /// </summary>
+    public static string TemplatesDir => _cachedTemplatesDir;
 
-    public static CancellationToken GetGlobalToken() => _cts.Token;
+    /// <summary>
+    /// ПОТОКОБЕЗОПАСНЫЙ метод получения списка ботов. Используется веб-контроллерами API и логикой паники.
+    /// Гарантирует отсутствие InvalidOperationException при конкурентном чтении/записи.
+    /// </summary>
+    public static IReadOnlyList<ActiveBotAccount> GetActiveBots()
+    {
+        lock (ActiveBotsLock)
+        {
+            // Возвращаем изолированную копию (снимок) списка в виде ReadOnly коллекции
+            return _activeBots.ToList();
+        }
+    }
 
-    // TODO: Выяснить что это?
+    /// <summary>
+    /// Потокобезопасное получение глобального токена отмены.
+    /// </summary>
+    public static CancellationToken GetGlobalToken()
+    {
+        lock (ActiveBotsLock)
+        {
+            return _cts.Token;
+        }
+    }
+
+    /// <summary>
+    /// Метод для безопасного сброса/пересоздания токена отмены (вызывается при перезапуске системы)
+    /// </summary>
+    public static void ResetGlobalToken()
+    {
+        lock (ActiveBotsLock)
+        {
+            if (_cts.IsCancellationRequested)
+            {
+                _cts.Dispose();
+                _cts = new();
+            }
+        }
+    }
+
     public record ControlPropertyValueDto(string Value);
 
     #endregion
+
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
@@ -94,10 +142,21 @@ static partial class Program
         Console.OutputEncoding = System.Text.Encoding.UTF8;
         Console.InputEncoding = System.Text.Encoding.UTF8;
 
+        // Глобальная ссылка на веб-приложение для возможности его остановки из любой точки
+        WebApplication? webApp = null;
+
         AppDomain.CurrentDomain.ProcessExit += (sender, e) =>
         {
             try
             {
+                // Корректно и без дедлоков тушим веб-сервер, если он был запущен
+                if (webApp != null)
+                {
+                    // Используем GetAwaiter().GetResult() вместо .Wait(), чтобы рантайм не заблокировал поток
+                    webApp.StopAsync().GetAwaiter().GetResult();
+                }
+
+                // Принудительно гасим ADB-демон
                 using var killProcess = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
                 {
                     FileName = "taskkill",
@@ -105,7 +164,7 @@ static partial class Program
                     CreateNoWindow = true,
                     UseShellExecute = false
                 });
-                killProcess?.WaitForExit(1000); // Даем ОС максимум 1 секунду на тушение демона
+                killProcess?.WaitForExit(3000); // Даем ОС до 3 секунд на гарантированное уничтожение ADB
             }
             catch { /* Подавляем ошибки при выходе */ }
         };
@@ -124,39 +183,32 @@ static partial class Program
         TaskScheduler.UnobservedTaskException += (sender, e) =>
         {
             Logger.Log($"КРИТИЧЕСКИЙ СБОЙ ЗАДАЧИ (UnobservedTaskException): {e.Exception?.Message}", LogType.Error);
-            e.SetObserved();
+            e.SetObserved(); // Помечаем ошибку как обработанную, чтобы не уронить процесс
         };
 
         // 3. Валидация необходимых графических файлов и шаблонов ДО старта всей системы
         if (!CheckRequiredFiles()) return;
-
         Logger.Log("Бот успешно запущен в фоновом режиме.", LogType.Warning);
 
-        // 4. Запуск фонового низкоуровневого потока для непрерывного отслеживания управляющей клавиши ESC
-        Thread inputThread = new(ListenForCancelKey) { IsBackground = true };
-        inputThread.Start();
+        // 4. Запуск фоновой асинхронной задачи мониторинга управляющих клавиш ESC / F10
+        // Используем неблокирующий сброс задачи в пул потоков через _ = Task.Run
+        _ = Task.Run(async () => await Program.ListenForCancelKeyAsync());
 
-        // КОРРЕКЦИЯ ДЛЯ ШАГА 2: Настраиваем и запускаем встроенный веб-сервер Kestrel
-        // Мы вынесем конфигурацию роутов в отдельный метод ниже, чтобы не захламлять Main
-        var webApp = StartWebServer(args);
+        // 5. Настраиваем и запускаем встроенный веб-сервер Kestrel (Неблокирующий запуск)
+        webApp = StartWebServer(args);
 
-        // КОРРЕКЦИЯ ДЛЯ ШАГА 1: Создаем иконку в трее вместо консольного окна
+
+        // 6. Создаем иконку в трее вместо консольного окна
         InitSystray();
 
-        // 5. Инициализация многопоточной экосистемы игровых воркеров
-        // ВНИМАНИЕ: По требованию №4 воркеры внутри StartMultiBotSystem() теперь 
-        // НЕ должны сразу вызывать свой метод .Start(), а просто создаваться в памяти!
+        // 7. Инициализация многопоточной экосистемы игровых воркеров
+        // Воркеры просто создаются в памяти под ActiveBotsLock и ждут команду Старт
         StartMultiBotSystem();
 
-        // 6. КОРРЕКЦИЯ ОЖИДАНИЯ: Вместо блокировки потока запускаем цикл Windows, 
-        // который держит приложение живым в трее и обрабатывает клики мыши
-        Application.Run();
+        // 8. Запускаем цикл Windows Forms, который держит приложение живым в трее и обрабатывает клики мыши
+        System.Windows.Forms.Application.Run();
 
-        // 7. Программа выходит из ожидания после закрытия через трей или ESC.
-        // Корректно тушим веб-сервер
-        webApp.StopAsync().Wait();
-
-        Thread.Sleep(1000);
+        Thread.Sleep(500);
         Logger.Log("Бот остановлен. Сессия завершена.", LogType.Warning);
     }
 
@@ -164,7 +216,7 @@ static partial class Program
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
-#region StartWebServer
+    #region StartWebServer
 
     private static Microsoft.AspNetCore.Builder.WebApplication StartWebServer(string[] args)
     {
@@ -336,12 +388,16 @@ static partial class Program
         });
 
         // POST /api/debug/{id:int}/click/{elementName} — Отправить клик по выбранному элементу GameUI
-        app.MapPost("/api/debug/{id:int}/click/{elementName}", async (int id, string elementName, BotAccountManager manager) =>
+        app.MapPost("/api/debug/{id:int}/click/{elementName}", async (
+            int id, 
+            string elementName, 
+            BotAccountManager manager, 
+            CancellationToken token) => // Кэстрел автоматически передаст сюда токен отмены HTTP-запроса
         {
             var bot = manager.GetAccountById(id);
             if (bot == null) return Results.NotFound(new { message = "Аккаунт не найден" });
 
-            // Пытаемся безопасно распарсить строку в ваш Enum GameUI
+            // Пытаемся безопасно распарсить строку в ваш Enum GameUI (C# 12+ target-typed switch / try-parse)
             if (!Enum.TryParse(elementName, true, out GameUI targetElement))
             {
                 return Results.BadRequest(new { message = $"Элемент '{elementName}' не найден в перечислении GameUI" });
@@ -351,17 +407,23 @@ static partial class Program
             {
                 Logger.Log($"[Web Debug] Ручной вызов клика по элементу '{targetElement}' для бота {bot.Settings.Name}...", LogType.Warning);
 
-                // Используем наш асинхронный метод расширения по стандарту проекта
-                // Так как это веб-дебаг, передаем CancellationToken.None или глобальный токен
-                await bot.ClickToAsync(targetElement);
+                // Передаем токен веб-запроса. Теперь, если пользователь прервет запрос на сайте, 
+                // задача в пуле потоков не будет выполняться вхолостую!
+                await bot.ClickToAsync(targetElement, token);
 
                 return Results.Ok(new { message = $"Клик по элементу '{targetElement}' успешно отправлен" });
+            }
+            catch (OperationCanceledException)
+            {
+                // Мягко обрабатываем отмену запроса, чтобы не засорять логи сервера "критическими ошибками"
+                return Results.StatusCode(499); // Client Closed Request
             }
             catch (Exception ex)
             {
                 return Results.Problem($"Ошибка отправки клика: {ex.Message}");
             }
         });
+
 
         // Маршрут для полной и безопасной остановки всей системы из браузера
         app.MapPost("/api/system/shutdown", () => {
@@ -431,7 +493,11 @@ static partial class Program
 
         // Кнопка быстрого перехода в панель
         contextMenu.Items.Add("Открыть веб-панель", null, (s, e) => {
-            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("http://localhost:5000") { UseShellExecute = true }); } catch { }
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("http://localhost:5000") { UseShellExecute = true }); 
+            }
+            catch { /* Подавляем ошибки, если в ОС нет дефолтного браузера */ }
         });
 
         contextMenu.Items.Add("-"); // Разделитель
@@ -440,26 +506,40 @@ static partial class Program
         contextMenu.Items.Add("Выход из бота", null, (s, e) => {
             Logger.Log("Запрошен выход из приложения через системный трей...", LogType.Warning);
 
-            // Активируем токен отмены для каскадного тушения всех воркеров
-            _cts.Cancel();
+            // Потокобезопасно активируем токен отмены для всех воркеров
+            lock (ActiveBotsLock)
+            {
+                _cts.Cancel();
+            }
 
-            // Закрываем цикл обработки сообщений Windows Forms, возвращая управление в конец Main
+            // Закрываем цикл обработки сообщений Windows Forms
             System.Windows.Forms.Application.Exit();
         });
 
-        // [ ] TODO 2026.06.03 Сделать тут ссылку на номер версии из параметров проекта (как в логере) 
-        var notifyIcon = new System.Windows.Forms.NotifyIcon
+        // ОПТИМИЗАЦИЯ: Автоматически вытягиваем версию из параметров проекта (Assembly Version)
+        var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+        string? version = assembly.GetName().Version?.ToString(3) ?? "0.0.1";
+
+        // Присваиваем объект статическому полю класса, гарантируя его выживание в памяти 24/7
+        _notifyIcon = new System.Windows.Forms.NotifyIcon
         {
-            // Берем иконку, которую вы вшили в .csproj
-            Icon = System.Drawing.Icon.ExtractAssociatedIcon(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? System.Drawing.SystemIcons.Application,
+            Icon = System.Drawing.Icon.ExtractAssociatedIcon(assembly.Location) ?? System.Drawing.SystemIcons.Application,
             ContextMenuStrip = contextMenu,
-            Text = "EVE Echoes Bot v.0.01.002",
+            Text = $"EVE Echoes Bot v.{version}",
             Visible = true
         };
 
-        // Защищаем иконку от сборщика мусора, привязывая её к домену приложения
-        AppDomain.CurrentDomain.ProcessExit += (s, e) => notifyIcon.Visible = false;
+        // При выходе гарантированно убираем иконку, чтобы она не "залипала" в панели Windows
+        AppDomain.CurrentDomain.ProcessExit += (s, e) => 
+        {
+            if (_notifyIcon != null)
+            {
+                _notifyIcon.Visible = false;
+                _notifyIcon.Dispose();
+            }
+        };
     }
+
 
     #endregion
 
@@ -631,39 +711,45 @@ static partial class Program
 #region Stop Bot
 
     /// <summary>
-    /// Асинхронно и потокобезопасно производит остановку всей мультисистемы ботов.
-    /// Использует атомарную операцию сравнения с обменом (Interlocked.CompareExchange) для защиты от повторного входа,
-    /// инициирует отмену глобального токена, предоставляет фоновым воркерам временной интервал (2000 мс)
-    /// для фиксации статов на диске и полностью очищает коллекцию активных аккаунтов.
+    /// Безопасная остановка мульти-бот системы.
+    /// Теперь возвращает Task вместо опасного void и защищен локами.
     /// </summary>
-    private static async void StopMultiBotSystem()
+    private static async Task StopMultiBotSystemAsync()
     {
-        // Защитный барьер: если значение _isStopping уже равно 1, метод сразу завершает работу без повторного входа.
-        // Если значение было 0, оно атомарно меняется на 1, и код идет дальше выполнять процедуру остановки.
+        // Защитный барьер: атомарно проверяем и выставляем флаг остановки
         if (System.Threading.Interlocked.CompareExchange(ref _isStopping, 1, 0) == 1)
         {
             return;
         }
 
-        // 1. Отправляем сигнал отмены всем параллельно работающим потокам воркеров
-        _cts.Cancel();
-        Logger.Log("Всем фоновым потокам отправлен сигнал остановки. Ожидание завершения...", LogType.Warning);
-
         try
         {
-            // 2. Даем потокам фиксированное время проснуться от Task.Delay, выполнить блок finally и вызвать SaveStats()
+            // 1. Потокобезопасно отправляем сигнал отмены всем воркерам
+            lock (ActiveBotsLock)
+            {
+                _cts.Cancel();
+            }
+
+            Logger.Log("Всем фоновым потокам отправлен сигнал остановки. Ожидание завершения...", LogType.Warning);
+
+            // 2. Даем потокам 2 секунды на корректное завершение тактов и вызов SaveStats() в finally
             await Task.Delay(2000);
+
+            // 3. Гарантированно и потокобезопасно очищаем список активных ботов
+            lock (ActiveBotsLock)
+            {
+                _activeBots.Clear();
+            }
+
+            Logger.Log("Список активных аккаунтов очищен. Система полностью остановлена.", LogType.Warning);
         }
-        catch
+        finally
         {
-            /* Игнорируем возможные системные ошибки прерывания таймера ожидания */
+            // СБРОС ФЛАГА: Возвращаем систему в рабочее состояние, чтобы её можно было запустить снова!
+            System.Threading.Interlocked.Exchange(ref _isStopping, 0);
         }
-
-        // 3. Только ТЕПЕРЬ, когда потоки гарантированно засыпают или уже закрылись, очищаем общий список
-        _activeBots.Clear();
-
-        Logger.Log("Список активных аккаунтов очищен. Система полностью остановлена.", LogType.Warning);
     }
+
 
 #endregion
 
@@ -678,71 +764,105 @@ static partial class Program
     /// <item><description><c>ConsoleKey.F10</c> — производит экстренный высокоточный сбор скриншотов со всех активных эмуляторов с фиксацией на диск, после чего глушит систему.</description></item>
     /// </list>
     /// </summary>
-    private static void ListenForCancelKey()
+    private static async Task ListenForCancelKeyAsync()
     {
-        while (!_cts.Token.IsCancellationRequested)
+        // Используем глобальный токен для контроля жизненного цикла самого потока опроса
+        CancellationToken globalToken = Program.GetGlobalToken();
+
+        while (!globalToken.IsCancellationRequested)
         {
-            // КОРРЕКЦИЯ ДЛЯ WinExe: Если консоль отсутствует или ввод перенаправлен,
-            // мы не опрашиваем клавиши, а просто держим поток живым до отмены через _cts
+            // КОРРЕКЦИЯ ДЛЯ WinExe: Если консоль отсутствует, засыпаем
             if (Console.IsInputRedirected)
             {
-                Thread.Sleep(500); // Увеличиваем задержку в фоне для экономии процессора
+                await Task.Delay(500, globalToken);
                 continue;
             }
 
-            if (Console.KeyAvailable)
+            try
             {
-                ConsoleKey pressedKey = Console.ReadKey(true).Key;
-
-                // СЦЕНАРИЙ 1: Нажата строго клавиша ESC — штатный плавный выход из игры
-                if (pressedKey == ConsoleKey.Escape)
+                if (Console.KeyAvailable)
                 {
-                    Logger.Log("Обнаружено нажатие [ESC]. Запуск остановки всех аккаунтов.", LogType.Warning);
-                    StopMultiBotSystem();
-                    break;
-                }
-                // СЦЕНАРИЙ 2: Нажата строго клавиша F10 — экстренный дамп экранов
-                else if (pressedKey == ConsoleKey.F10)
-                {
-                    Logger.Log("Обнаружено нажатие [F10]. Создание экстренных снимков экрана и запуск остановки.", LogType.Warning);
+                    ConsoleKey pressedKey = Console.ReadKey(true).Key;
 
-                    string debugDir = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "DebugScreenshots"));
-
-                    try
+                    // СЦЕНАРИЙ 1: Нажата строго клавиша ESC — штатный плавный выход
+                    if (pressedKey == ConsoleKey.Escape)
                     {
-                        Directory.CreateDirectory(debugDir);
+                        Logger.Log("Обнаружено нажатие [ESC]. Запуск остановки всех аккаунтов.", LogType.Warning);
 
-                        foreach (var bot in _activeBots.ToList())
+                        // Безопасный асинхронный вызов БЕЗ блокировки текущего потока (.GetResult)
+                        _ = Program.StopMultiBotSystemAsync();
+                        break; // Выходим из цикла опроса клавиш
+                    }
+
+                    // СЦЕНАРИЙ 2: Нажата строго клавиша F10 — экстренный дамп экранов
+                    if (pressedKey == ConsoleKey.F10)
+                    {
+                        Logger.Log("Обнаружено нажатие [F10]. Создание экстренных снимков экрана и запуск остановки.", LogType.Warning);
+
+                        string debugDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "DebugScreenshots");
+
+                        try
                         {
-                            if (bot.Hwnd == IntPtr.Zero) continue;
+                            Directory.CreateDirectory(debugDir);
 
-                            using OpenCvSharp.Mat? screenshot = Tools.CaptureWindow(bot.Hwnd);
+                            // Используем наш потокобезопасный метод получения снимка коллекции ботов
+                            var currentBots = Program.GetActiveBots();
 
-                            if (screenshot?.Empty() is false && screenshot.Width > 0 && screenshot.Height > 0)
+                            foreach (var bot in currentBots)
                             {
-                                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                                string fileName = $"{bot.Settings.Name}_F10_Emergency_{timestamp}.png";
-                                string fullPath = Path.Combine(debugDir, fileName);
+                                if (bot.Hwnd == IntPtr.Zero) continue;
 
-                                OpenCvSharp.Cv2.ImWrite(fullPath, screenshot);
-                                Logger.Log($"Снимок экрана для аккаунта '{bot.Settings.Name}' сохранен: {fileName}", LogType.Warning);
+                                Mat? screenshot = null;
+
+                                // Защищаем подсистему GDI WinAPI через наш семафор от конфликтов с тиками ботов
+                                await Program.GdiSemaphore.WaitAsync(globalToken);
+                                try
+                                {
+                                    screenshot = Tools.CaptureWindow(bot.Hwnd);
+                                }
+                                finally
+                                {
+                                    Program.GdiSemaphore.Release();
+                                }
+
+                                // Современная проверка на null/empty
+                                if (screenshot is { } snap && !snap.Empty() && snap.Width > 0 && snap.Height > 0)
+                                {
+                                    using var pin = snap; // Гарантируем очистку Mat
+                                    string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                                    string fileName = $"{bot.Settings.Name}_F10_Emergency_{timestamp}.png";
+                                    string fullPath = Path.Combine(debugDir, fileName);
+
+                                    Cv2.ImWrite(fullPath, pin);
+                                    Logger.Log($"Снимок экрана для аккаунта '{bot.Settings.Name}' сохранен: {fileName}", LogType.Warning);
+                                }
                             }
                         }
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.Log($"Не удалось выполнить экстренное сохранение снимков: {ex.Message}", LogType.Warning);
-                    }
+                        catch (Exception ex)
+                        {
+                            Logger.Log($"Не удалось выполнить экстренное сохранение снимков: {ex.Message}", LogType.Warning);
+                        }
 
-                    StopMultiBotSystem();
-                    break;
+                        // Запускаем остановку в фоне и выходим
+                        _ = Program.StopMultiBotSystemAsync();
+                        break;
+                    }
                 }
             }
+            catch (OperationCanceledException)
+            {
+                break; // Мягкий выход при отмене глобального токена
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Ошибка в потоке опроса клавиш управления: {ex.Message}", LogType.Error);
+            }
 
-            // Минимальный тайм-аут для разгрузки процессора
-            Thread.Sleep(100);
+            // Высокоэффективная асинхронная задержка для разгрузки процессора вместо Thread.Sleep
+            await Task.Delay(100, globalToken);
         }
     }
+
 
     #endregion
 
@@ -755,31 +875,51 @@ static partial class Program
     /// Автоматически распаковывает двумерные координаты (X, Y) из перечисления <see cref="GameUI"/>,
     /// после чего выполняет асинхронный аппаратно-независимый клик через утилиту ADB [INDEX].
     /// </summary>
-    internal static async Task ClickToAsync(this ActiveBotAccount bot, GameUI element, int minSec = 1, int maxSec = 3, int offset = 3)
+    internal static async Task ClickToAsync(
+        this ActiveBotAccount bot,
+        GameUI element,
+        CancellationToken token,
+        int minSec = 1,
+        int maxSec = 3,
+        int offset = 3)
     {
-        // Распаковываем двумерные координаты X и Y из упакованного Enum GameUI по вашей формуле
+
         int packed = (int)element;
         int x = packed / 10000;
         int y = packed % 10000;
 
-        // Вызываем обновленный ADB-кликер (если SmartClick поддерживает async, используем await, 
-        // либо оборачиваем в Task.Run, чтобы не блокировать UI поток WinForms)
-        await Task.Run(() => Tools.SmartClick(x, y, minSec, maxSec, offset, adbPort: bot.Settings.AdbPort));
+        token.ThrowIfCancellationRequested();
+
+        // Идеальная однострочная лямбда
+        await Task.Run(() => Tools.SmartClick(x, y, minSec, maxSec, offset, adbPort: bot.Settings.AdbPort), token);
 
     #if DEBUG
-        // Выводим информацию о кликах макроса только в режиме отладки (message, type)
         Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Отправлен клик по элементу '{element}' (X={x}, Y={y}).", LogType.Test);
     #endif
+
     }
+
+
+
 
     /// <summary>
     /// Метод расширения (Extension Method) для класса <see cref="ActiveBotAccount"/>.
     /// Выполняет асинхронный аппаратно-независимый клик по динамическим координатам <see cref="OpenCvSharp.Point"/>,
     /// полученным из OpenCV, уводя тяжелый процесс ADB в фоновый поток.
     /// </summary>
-    internal static Task ClickPointAsync(this ActiveBotAccount bot, OpenCvSharp.Point point, CancellationToken token, int minSec = 1, int maxSec = 2, int offset = 2)
+    internal static Task ClickPointAsync(
+        this ActiveBotAccount bot,
+        Point point, // Упростили написание типа благодаря using OpenCvSharp
+        CancellationToken token,
+        int minSec = 1,
+        int maxSec = 2,
+        int offset = 2)
     {
-        // Оптимизировано: убрали async/await и возвращаем Task напрямую
+        // МГНОВЕННАЯ РЕАКЦИЯ: Если пользователь отменил сценарий или нажал Стоп,
+        // метод выбросит OperationCanceledException сразу, не тратя время на выделение потока.
+        token.ThrowIfCancellationRequested();
+
+        // Возвращаем Task напрямую без async/await конечного автомата
         return Task.Run(() => Tools.SmartClick(
             point.X,
             point.Y,
@@ -789,6 +929,7 @@ static partial class Program
             adbPort: bot.Settings.AdbPort
         ), token);
     }
+
 
 
     #endregion

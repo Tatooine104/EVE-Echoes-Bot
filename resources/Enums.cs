@@ -48,7 +48,7 @@ namespace EVEEchoesBot.resources;
         FirstPlanet = 1300190, // Проверено
         PlanetTimer = 11900145, // Проверено
         ResList = 10600400,
-        ComfirmButton = 11650565, // Проверено
+        ConfirmButton = 11650565, // Проверено
         // EyeIconClose = 
         FastMenu1 = 250115,
         // FastMenu2 = ?
@@ -56,7 +56,8 @@ namespace EVEEchoesBot.resources;
         // FastMenu4 = ?
         CollapseStation = 2450105,
         SelectAll = 9850645,
-        MoveTo = 1150150
+        MoveTo = 1150150,
+        ItemHangar = 4000165
         // ? = ?
 
     }

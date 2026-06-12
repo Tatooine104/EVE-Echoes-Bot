@@ -1,8 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using static EVEEchoesBot.resources.Logger;
 using System.Runtime.InteropServices;
-using System.Text;
 
 namespace EVEEchoesBot.resources;
 
@@ -52,10 +50,11 @@ public class AccSettings
     public int AdbPort { get; set; }
 
     /// <summary>
-    /// Параметры целевого физического размера окна, маппируемые из JSON-блока "AccSettings".
+    /// Параметры целевого физического размера окна.
     /// </summary>
-    [JsonPropertyName("AccSettings")]
+    [JsonPropertyName("Size")] // Исправлено: маппим на корректное имя поля в JSON
     public TargetSize? Size { get; set; }
+
 }
 
 #endregion
@@ -98,7 +97,7 @@ public class AccountStateDto
     public string CurrentTask { get; set; } = "";
 
     /// <summary>Снапшот оставшейся очереди задач сценария для непрерывного возобновления работы.</summary>
-    public IList<string> TaskQueue { get; set; } = [];
+    public string[] TaskQueue { get; set; } = System.Array.Empty<string>(); // Оптимизировано: защищено от скрытых аллокаций
 
     /// <summary>Временная метка последней синхронизации данных с диском (локальное время ПК).</summary>
     public DateTime LastUpdate { get; set; }
@@ -150,10 +149,8 @@ public class BotWebResponseDto
     public int Id { get; set; }
     public string Name { get; set; } = "";
     public string State { get; set; } = "Stopped";
-    public string Runtime { get; set; } = "00 д. 00 ч. 00 м. 00 с.";
-
+    public string Runtime { get; set; } = ""; // UI сам подставит нули, если бот не запущен
     public string EmulatorTitle { get; set; } = "";
-
     // Вшиваем ваш реальный стейт аккаунта для средней части экрана
     public AccountStateDto? ExtendedState { get; set; }
 }
@@ -207,33 +204,43 @@ public class BotAccountManager
     /// <summary>
     /// Формирует актуальный снимок состояния всех ботов для отправки в веб-интерфейс.
     /// </summary>
+    /// <summary>
+    /// Формирует актуальный снимок состояния всех ботов для отправки в веб-интерфейс.
+    /// </summary>
     public List<BotWebResponseDto> GetAccountsState()
     {
         var bots = Program.GetActiveBots();
 
         return [.. bots.Select((bot, index) => {
-            var extended = new AccountStateDto
-            {
-                AccountName = bot.Settings?.Name ?? $"Account_{index + 1}",
-                CurrentTask = bot.CurrentTask.ToString(),
-                RuntimeSeconds = bot.RuntimeSeconds,
-                EVESystem = bot._eveSystem,
-                EVEShip = bot._eveShip,
-                InSpace = bot._inSpace,
-                CurrentTarget = bot._currenttarget?.ToString(),
-                IsInMiningZone = bot._isinzone,
-                IsWarping = bot._iswarping,
-                HasTarget = bot._hastarget,
-                WeaponryActive = bot._weaponryactive
-            };
+            AccountStateDto extended;
 
+            // Защищаем чтение состояния от конкурентной записи из RunLoopAsync
+            lock (Program.ActiveBotsLock)
+            {
+                extended = new AccountStateDto
+                {
+                    AccountName = bot.Settings?.Name ?? $"Account_{index + 1}",
+                    CurrentTask = bot.CurrentTask.ToString(),
+                    RuntimeSeconds = bot.RuntimeSeconds,
+                    EVESystem = bot._eveSystem,
+                    EVEShip = bot._eveShip,
+                    InSpace = bot._inSpace,
+                    CurrentTarget = bot._currenttarget?.ToString(),
+                    IsInMiningZone = bot._isinzone,
+                    IsWarping = bot._iswarping,
+                    HasTarget = bot._hastarget,
+                    WeaponryActive = bot._weaponryactive
+                };
+            }
+
+            // Теперь создаем и возвращаем верхний уровень DTO для веб-панели
             return new BotWebResponseDto
             {
                 Id = index,
                 Name = extended.AccountName,
                 State = bot.State.ToString(),
                 Runtime = bot.GetRuntimeString(),
-                EmulatorTitle = bot.Settings?.WindowTitle ?? $"LDPlayer-{index + 1}", // <-- ЗАПОЛНЯЕМ ИЗ КОНФИГА БОТА
+                EmulatorTitle = bot.Settings?.WindowTitle ?? $"LDPlayer-{index + 1}",
                 ExtendedState = extended
             };
         })];
@@ -253,6 +260,7 @@ public class BotAccountManager
         switch (action.ToLower())
         {
             case "start":
+                Program.ResetGlobalToken();
                 targetBot.Start(Program.GetGlobalToken());
                 break;
             case "pause":
@@ -278,7 +286,7 @@ public static class ConfigManager
     /// <summary>
     /// Имя и путь к файлу глобальной конфигурации приложения. По умолчанию: "config.json" .
     /// </summary>
-    private const string ConfigPath = "config.json";
+    const string ConfigPath = "config.json";
 
     /// <summary>
     /// Кэшированные настройки JSON-сериализации, оптимизированные для всего приложения.
@@ -316,7 +324,8 @@ public static class ConfigManager
 
         try
         {
-            string json = File.ReadAllText(ConfigPath);
+            // Гарантируем чтение кириллицы без повреждения символов
+            string json = File.ReadAllText(ConfigPath, System.Text.Encoding.UTF8);
             BotConfig? config = JsonSerializer.Deserialize<BotConfig>(json, _options);
 
             if (config == null)
@@ -354,10 +363,15 @@ public static class ConfigManager
 
         try
         {
-            var activeWindow = WindowEnumerator.GetVisibleWindowTitles()
-                .FirstOrDefault(t => !t.Equals("Program Manager", StringComparison.OrdinalIgnoreCase) &&
-                                    !t.Equals("Settings", StringComparison.OrdinalIgnoreCase) &&
-                                    !t.Contains(AppDomain.CurrentDomain.FriendlyName));
+            var titles = WindowEnumerator.GetVisibleWindowTitles();
+
+            // Ищем окно, имя которого содержит типичные названия эмуляторов
+            var activeWindow = titles.FirstOrDefault(t => t.Contains("LDPlayer", StringComparison.OrdinalIgnoreCase) ||
+                                                         t.Contains("BlueStacks", StringComparison.OrdinalIgnoreCase))
+                               ?? titles.FirstOrDefault(t => !string.IsNullOrWhiteSpace(t) &&
+                                                            !t.Equals("Program Manager", StringComparison.OrdinalIgnoreCase) &&
+                                                            !t.Contains(AppDomain.CurrentDomain.FriendlyName));
+
 
             if (!string.IsNullOrWhiteSpace(activeWindow))
             {
@@ -416,7 +430,13 @@ public static class ConfigManager
         try
         {
             string json = JsonSerializer.Serialize(config, _options);
-            File.WriteAllText(ConfigPath, json);
+
+            // Защищаем файл от одновременной записи из разных HTTP-потоков веб-панели
+            lock (Program.ActiveBotsLock)
+            {
+                // Для надежности используем явную UTF-8 кодировку, как и при чтении
+                File.WriteAllText(ConfigPath, json, System.Text.Encoding.UTF8);
+            }
 
     #if DEBUG
             // Выводим аналитическую информацию об успешном сохранении файлов конфигураций только в режиме отладки
@@ -482,19 +502,16 @@ public static partial class WindowEnumerator
         List<string> titles = [];
         char[] buffer = new char[256];
 
-        // Запуск нативного перечисления окон Windows верхнего уровня
-        EnumWindows((hWnd, lParam) =>
+        // Использование локальной функции вместо переменной-делегата
+        bool FilterWindow(IntPtr hWnd, IntPtr lParam)
         {
-            // Намеренно глушим предупреждение компилятора: явно показываем, что параметр lParam проигнорирован
             _ = lParam;
 
-            // Если окно физически отображается на экране
             if (IsWindowVisible(hWnd))
             {
                 int length = GetWindowText(hWnd, buffer, buffer.Length);
                 if (length > 0)
                 {
-                    // Извлекаем чистую строку из буфера символов без лишних пробелов по краям
                     string title = new string(buffer, 0, length).Trim();
                     if (!string.IsNullOrEmpty(title))
                     {
@@ -502,8 +519,11 @@ public static partial class WindowEnumerator
                     }
                 }
             }
-            return true; // Возвращаем true, чтобы продолжить итерацию по остальным окнам в ОС
-        }, IntPtr.Zero);
+            return true;
+        }
+
+        // Передаем имя локальной функции напрямую в метод API
+        EnumWindows(new(FilterWindow), IntPtr.Zero);
 
         return titles;
     }

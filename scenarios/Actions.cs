@@ -112,22 +112,22 @@ public static partial class ScenarioFactory
     {
         Logger.Log($"[{bot.Settings.Name}] Инициация входа в интерфейс планетарной добычи...", LogType.Info);
 
-        // СТРУКТУРА ПЕРЕХОДОВ: Быстрый путь (Иконка) ИЛИ Длинный путь (Меню -> Кнопка)
-        var navigationTree = new SelectorNode("Planet Interface Navigation",
+        // ========================================================
+        // ЭТАП 1: НАВИГАЦИЯ (Вход в интерфейс)
+        // ========================================================
+        NodeStatus navStatus = await TryClickPlanetShortcutAsync(bot, token);
 
-            // Путь 1: Пробуем кликнуть по иконке быстрого доступа на экране
-            new ActionNode("Try Shortcut Path", TryClickPlanetShortcutAsync),
-
-            // Путь 2: Если иконки нет, открываем меню и ищем кнопку там
-            new SequenceNode("Main Menu Fallback Path",
-                new ActionNode("Open Main Menu", OpenMainMenuAsync),
-                new ActionNode("Click Planet Button In Menu", ClickPlanetButtonInMenuAsync)
-            )
-        );
-
-        // Выполняем навигацию. Если оба пути вернули Failure — прерываем весь цикл
-        NodeStatus navStatus = await navigationTree.TickAsync(bot, token);
         if (navStatus == NodeStatus.Failure)
+        {
+            Logger.Log($"[{bot.Settings.Name}] Быстрый путь недоступен. Переход на резервный путь через меню.", LogType.Warning);
+            
+            if (await OpenMainMenuAsync(bot, token) == NodeStatus.Success)
+            {
+                navStatus = await ClickPlanetButtonInMenuAsync(bot, token);
+            }
+        }
+
+        if (navStatus != NodeStatus.Success)
         {
             Logger.Log($"[{bot.Settings.Name}] Критическая ошибка: Не удалось войти в интерфейс планетарки.", LogType.Error);
             return NodeStatus.Failure;
@@ -135,47 +135,49 @@ public static partial class ScenarioFactory
 
         await Task.Delay(2000, token);
 
-        // 2. Адаптивная часть: мы внутри интерфейса, выполняем перезапуск таймеров и сбор
-        Logger.Log($"[{bot.Settings.Name}] Интерфейс планетарки открыт. Выбор первой планеты...", LogType.Info);
+        // ========================================================
+        // ЭТАП 2: ОПТИМИЗИРОВАННАЯ СЕРИЯ КЛИКОВ (ЧЕРЕЗ ЦИКЛ)
+        // ========================================================
+        Logger.Log($"[{bot.Settings.Name}] Интерфейс открыт. Запуск циклической цепочки перезапуска...", LogType.Info);
 
-        // Клик по первой планете в списке
-        await bot.ClickToAsync(GameUI.FirstPlanet);
-        await Task.Delay(1200, token); // Ждем анимацию выбора планеты
+        // Описываем шаги: какой элемент нажать и сколько миллисекунд подождать ПОСЛЕ клика
+        // Используем синтаксис коллекций C# 12+ [ ... ]
+        ReadOnlySpan<(GameUI Element, int DelayMs, string LogMessage)> miningSteps = [
+            (GameUI.FirstPlanet,   1200, "Выбор первой планеты в списке..."),
+            (GameUI.PlanetTimer,   1500, "Отправка команды на перезапуск таймера..."),
+            (GameUI.ConfirmButton, 1500, "Ожидание и отправка подтверждения диалога...")
+        ];
 
-        Logger.Log($"[{bot.Settings.Name}] Отправка команды на перезапуск таймера добычи...", LogType.Info);
+        // Выполняем шаги в едином компактном цикле
+        foreach (var (element, delayMs, logMessage) in miningSteps)
+        {
+            Logger.Log($"[{bot.Settings.Name}] {logMessage}", LogType.Info);
 
-        // Клик по кнопке перезапуска таймера
-        await bot.ClickToAsync(GameUI.PlanetTimer);
-        await Task.Delay(1500, token); // Ждем подтверждения от сервера игры
+            await bot.ClickToAsync(element, token);
+            await Task.Delay(delayMs, token);
+        }
 
-        // Клик по кнопке подтверждения
-        await bot.ClickToAsync(GameUI.ComfirmButton);
-        await Task.Delay(1500, token); // Ждем подтверждения от сервера игры
-
-        // Если подключен ПОС, выполняем дополнительное действие сбора ресурсов
+        // ========================================================
+        // ЭТАП 3: ДОПОЛНИТЕЛЬНЫЕ МОДУЛИ И ЗАКРЫТИЕ
+        // ========================================================
         if (bot.POS)
         {
             Logger.Log($"[{bot.Settings.Name}] Обнаружена привязка к ПОС. Запуск подмодуля сбора...", LogType.Info);
-
-            // Вызываем вынесенный метод со всей логикой поиска и скролла
             await CollectPlanetToPosAsync(bot, token);
         }
-        else
-        {
-            Logger.Log($"[{bot.Settings.Name}] Режим без ПОС. Ресурсы остаются на планете.", LogType.Info);
-        }
 
-        // ЗАКРЫТИЕ ИНТЕРФЕЙСА: Возвращаем экран в исходное чистое состояние станции
         Logger.Log($"[{bot.Settings.Name}] Завершение макроса. Закрытие интерфейса планетарной добычи...", LogType.Info);
-        await bot.ClickToAsync(GameUI.XButton);
+
+        // Последний шаг закрытия окна выносим отдельно, так как после него идет фиксация стейта
+        await bot.ClickToAsync(GameUI.XButton, token);
         await Task.Delay(3500, token);
 
-        // Фиксируем время успешного завершения цикла (UTC-время)
         bot._planetassembly = DateTime.Now;
         Logger.Log($"[{bot.Settings.Name}] Цикл планетарной добычи успешно обработан.", LogType.Success);
 
         return NodeStatus.Success;
     }
+
 
     #endregion
 
@@ -192,56 +194,79 @@ public static partial class ScenarioFactory
         Logger.Log($"[{bot.Settings.Name}] Поиск кнопки запуска сбора ресурсов на ПОС...", LogType.Info);
 
         string launchPathImg = Path.Combine(Program.TemplatesDir, "imgLaunchButton.png");
-        await Task.Delay(1500, token);
         Rect interfaceRegion = GameRegions.ResourceList.GetOpenCvRect();
         Point? foundLaunchBtn = null;
 
-        // Двухэтапный поиск: Попытка 1 (как есть), Попытка 2 (после скролла)
-        for (int searchAttempt = 1; searchAttempt <= 2; searchAttempt++)
+        // Вспомогательная локальная функция (для DRY), чтобы не дублировать логику захвата и поиска OpenCV
+        async Task<Point?> CaptureAndFindButtonAsync()
         {
-            using (Mat? currentScreenshot = Tools.CaptureWindow(bot.Hwnd))
+            Mat? screenshot = null;
+            try
             {
-                if (currentScreenshot?.Empty() is not false)
+                // Защищаем GDI от многопоточного хаоса WinAPI
+                await _gdiSemaphore.WaitAsync(token);
+                try
                 {
-                    return NodeStatus.Failure;
+                    screenshot = await Task.Run(() => Tools.CaptureWindow(bot.Hwnd), token);
+                }
+                finally
+                {
+                    _gdiSemaphore.Release();
                 }
 
-                Rect safeInterfaceRegion = Tools.ClampRegion(interfaceRegion, currentScreenshot.Width, currentScreenshot.Height);
-                foundLaunchBtn = Tools.FindTemplateInRegion(currentScreenshot, launchPathImg, safeInterfaceRegion, 0.80);
-            }
+                if (screenshot?.Empty() ?? true) return null;
 
-            // Если нашли — мгновенно выходим из цикла прокрутки
-            if (foundLaunchBtn.HasValue)
-            {
-                Logger.Log($"[{bot.Settings.Name}] Кнопка запуска сбора найдена на попытке {searchAttempt}.", LogType.Info);
-                break;
-            }
+                Rect safeRegion = Tools.ClampRegion(interfaceRegion, screenshot.Width, screenshot.Height);
 
-            // Если на первой попытке не нашли — скроллим
-            if (searchAttempt == 1)
+                // Выносим тяжелый поиск OpenCV в фоновый пул
+                var currentScreenshot = screenshot;
+                return await Task.Run(() => Tools.FindTemplateInRegion(currentScreenshot, launchPathImg, safeRegion, 0.80), token);
+            }
+            finally
             {
-                Logger.Log($"[{bot.Settings.Name}] Кнопка запуска не видна. Выполняю прокрутку списка ресурсов вниз...", LogType.Warning);
-                await Task.Delay(1500, token);
-                // Прокручиваем интерфейс от точки ResList вверх (чтобы список ушел вниз) на 200 пикселей
-                await bot.ScrollDownAsync(GameUI.ResList, 200, token);
-                await Task.Delay(1500, token); // Ждем остановки анимации списка
+                screenshot?.Dispose(); // Гарантированная очистка Mat при каждом поиске
             }
         }
 
-        // Если в итоге нашли кнопку — кликаем по ней
+        // ========================================================
+        // ПОПЫТКА 1: Поиск кнопки "как есть" при открытии интерфейса
+        // ========================================================
+        await Task.Delay(1500, token);
+        foundLaunchBtn = await CaptureAndFindButtonAsync();
+
+        // ========================================================
+        // ПОПЫТКА 2: Если не нашли — выполняем скролл и ищем заново
+        // ========================================================
+        if (!foundLaunchBtn.HasValue)
+        {
+            Logger.Log($"[{bot.Settings.Name}] Кнопка запуска не видна на первом экране. Выполняю прокрутку вниз...", LogType.Warning);
+
+            await Task.Delay(500, token);
+            // Скроллим интерфейс (передаем token)
+            await bot.ScrollDownAsync(GameUI.ResList, 200, token);
+            await Task.Delay(1500, token); // Ожидаем завершения анимации скролла игры
+
+            foundLaunchBtn = await CaptureAndFindButtonAsync();
+        }
+
+        // ========================================================
+        // ЭТАП 3: ВЗАИМОДЕЙСТВИЕ С НАЙДЕННОЙ КНОПКОЙ
+        // ========================================================
         if (foundLaunchBtn.HasValue)
         {
-            await bot.ClickPointAsync(foundLaunchBtn.Value, token, minSec: 1, maxSec: 2, offset: 2);
-            await Task.Delay(2000, token); // Ожидаем отправку ресурсов на ПОС
+            Logger.Log($"[{bot.Settings.Name}] Кнопка запуска сбора успешно обнаружена.", LogType.Info);
 
-            // Клик по кнопке подтверждения
-            await bot.ClickToAsync(GameUI.ComfirmButton);
-            await Task.Delay(1500, token); // Ждем подтверждения от сервера игры
+            await bot.ClickPointAsync(foundLaunchBtn.Value, token, minSec: 1, maxSec: 2, offset: 2);
+            await Task.Delay(2000, token); // Ожидаем реакцию интерфейса
+
+            // Исправлено: Передан токен отмены
+            await bot.ClickToAsync(GameUI.ConfirmButton, token);
+            await Task.Delay(1500, token); 
 
             return NodeStatus.Success;
         }
 
-        Logger.Log($"[{bot.Settings.Name}] Ошибка: Кнопка 'imgLaunchButton.png' не найдена даже после скролла интерфейса.", LogType.Error);
+        Logger.Log($"[{bot.Settings.Name}] Ошибка: Кнопка 'imgLaunchButton.png' не найдена даже после скролла.", LogType.Error);
         return NodeStatus.Failure;
     }
 
@@ -311,7 +336,7 @@ public static partial class ScenarioFactory
 
         string deviceTarget = $"127.0.0.1:{bot.Settings.AdbPort}";
         string adbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "resources", "adb.exe");
-        string argsSwipe = $"-s {deviceTarget} shell input swipe {startX} {startY} {endX} {endY} 500"; 
+        string argsSwipe = $"-s {deviceTarget} shell input swipe {startX} {startY} {endX} {endY} 500";
 
         return Task.Run(() =>
         {
@@ -404,8 +429,8 @@ public static partial class ScenarioFactory
     {
         Logger.Log($"[{bot.Settings.Name}] Открытие главного меню игры (кликом по CharMenu)...", LogType.Info);
 
-        // Используем наш эталонный метод расширения
-        await bot.ClickToAsync(GameUI.CharMenu);
+        // Исправлено: Прокинули сквозной токен отмены в метод расширения клика
+        await bot.ClickToAsync(GameUI.CharMenu, token);
 
         // Даем игре честную секунду на отрисовку меню поверх экрана
         await Task.Delay(1000, token);
@@ -485,6 +510,17 @@ public static partial class ScenarioFactory
 
     #region RunAliChatWarningAsync
 
+    // Оптимизация памяти: выносим шаги макроса в статическое поле, чтобы не выделять память при каждом вызове
+    private static readonly (GameUI Element, int DelayMs)[] AllianceMacroSteps = [
+        (GameUI.ChatInputMenu, 1200),
+        (GameUI.ChatFastInput, 1200),
+        (GameUI.ChatInform,    1200),
+        (GameUI.ChatMessScout, 1200),
+        (GameUI.WindowCenter,  1500),
+        (GameUI.ChatButtSend,  2000),
+        (GameUI.WindowCenter,  0)
+    ];
+
     /// <summary>
     /// Асинхронно выполняет высокоточный макрос оповещения альянса или корпорации о появлении угрозы в локале.
     /// </summary>
@@ -512,69 +548,85 @@ public static partial class ScenarioFactory
         bool isCorpChat = false;
         Mat? screenshot = null;
 
-        // ========================================================
-        // ЭТАП 1: ЦИКЛ ОТКРЫТИЯ ИНТЕРФЕЙСА ЧАТА (ДО 2-Х ПОПЫТОК)
-        // ========================================================
-        for (int attempt = 1; attempt <= 2; attempt++)
+        try
         {
-            await bot.ClickToAsync(GameUI.ChatsInterface);
-            await Task.Delay(attempt == 1 ? 3500 : 4000, token);
-
-            screenshot?.Dispose();
-            screenshot = Tools.CaptureWindow(bot.Hwnd);
-
-            if (screenshot?.Empty() is not false || screenshot.Width <= 0 || screenshot.Height <= 0)
+            // ========================================================
+            // ЭТАП 1: ЦИКЛ ОТКРЫТИЯ ИНТЕРФЕЙСА ЧАТА (ДО 2-Х ПОПЫТОК)
+            // ========================================================
+            for (int attempt = 1; attempt <= 2; attempt++)
             {
-                Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Не удалось выполнить повторный захват окна. Прерывание выполнения.", LogType.Error);
+                await bot.ClickToAsync(GameUI.ChatsInterface, token);
+                await Task.Delay(attempt == 1 ? 3500 : 4000, token);
+
+                // Безопасно очищаем старый скриншот перед новым захватом
                 screenshot?.Dispose();
-                return NodeStatus.Failure;
+                screenshot = null;
+
+                // Защищаем GDI от многопоточных сбоев WinAPI через семафор
+                await _gdiSemaphore.WaitAsync(token);
+                try
+                {
+                    screenshot = await Task.Run(() => Tools.CaptureWindow(bot.Hwnd), token);
+                }
+                finally
+                {
+                    _gdiSemaphore.Release();
+                }
+
+                // Современная проверка на null/empty
+                if (screenshot?.Empty() ?? true)
+                {
+                    Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Не удалось выполнить повторный захват окна. Прерывание выполнения.", LogType.Error);
+                    return NodeStatus.Failure;
+                }
+
+                Rect safeRegion = Tools.ClampRegion(searchRegion, screenshot.Width, screenshot.Height);
+                Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Поиск маркеров языка интерфейса чата (Попытка {attempt}).", LogType.Test);
+
+                // Кэшируем локальные переменные для передачи в Task.Run (избегаем замыкания Mat)
+                var currentScreenshot = screenshot;
+                var currentRegion = safeRegion;
+
+                // Выносим тяжелый поиск OpenCV из вызывающего потока
+                foundChat = await Task.Run(() => Tools.FindTemplateInRegion(currentScreenshot, pathAli, currentRegion, 0.85), token);
+                isCorpChat = false;
+
+                if (!foundChat.HasValue)
+                {
+                    foundChat = await Task.Run(() => Tools.FindTemplateInRegion(currentScreenshot, pathCorp, currentRegion, 0.85), token);
+                    isCorpChat = true;
+                }
+
+                if (foundChat.HasValue) break;
+
+                if (attempt == 1)
+                {
+                    Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] ...Интерфейс чата не открылся. Повторная попытка клика.", LogType.Warning);
+                }
             }
-
-            Rect safeRegion = Tools.ClampRegion(searchRegion, screenshot.Width, screenshot.Height);
-            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Поиск маркеров языка интерфейса чата (Попытка {attempt}).", LogType.Test);
-
-            foundChat = Tools.FindTemplateInRegion(screenshot, pathAli, safeRegion, 0.85);
-            isCorpChat = false;
 
             if (!foundChat.HasValue)
             {
-                foundChat = Tools.FindTemplateInRegion(screenshot, pathCorp, safeRegion, 0.85);
-                isCorpChat = true;
+                Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Шаблоны чата не обнаружены после повторного клика.", LogType.Error);
+                return NodeStatus.Failure;
             }
 
-            if (foundChat.HasValue) break;
-
-            if (attempt == 1)
-            {
-                Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] ...Интерфейс чата не открылся. Повторная попытка клика.", LogType.Warning);
-            }
-        }
-
-        if (!foundChat.HasValue)
-        {
-            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Шаблоны чата не обнаружены после повторного клика.", LogType.Error);
-            screenshot?.Dispose();
-            return NodeStatus.Failure;
-        }
-
-        // ========================================================
-        // ЭТАП 2: КЛИК ПО НАЙДЕННОМУ ЧАТУ
-        // ========================================================
-        try
-        {
+            // ========================================================
+            // ЭТАП 2: КЛИК ПО НАЙДЕННОМУ ЧАТУ
+            // ========================================================
             string chatTypeStr = isCorpChat ? "корпорации" : "альянса";
             Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Обнаружен интерфейс {chatTypeStr} чата в точке (X={foundChat.Value.X}, Y={foundChat.Value.Y}).", LogType.Test);
 
             await bot.ClickPointAsync(foundChat.Value, token, minSec: 1, maxSec: 3, offset: 3);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Критический сбой анализа экрана: {ex.Message}", LogType.Error);
-            screenshot?.Dispose();
             return NodeStatus.Failure;
         }
         finally
         {
+            // ГАРАНТИРОВАННАЯ очистка памяти OpenCV при любом исходе макроса
             screenshot?.Dispose();
         }
 
@@ -583,20 +635,9 @@ public static partial class ScenarioFactory
         // ========================================================
         // ЭТАП 3: ОПТИМИЗИРОВАННАЯ ЦЕПОЧКА ОТПРАВКИ МАКРОСА В ИГРУ
         // ========================================================
-        var macroSteps = new (GameUI Element, int DelayMs)[7]
+        foreach (var (element, delayMs) in AllianceMacroSteps)
         {
-            (GameUI.ChatInputMenu, 1200),
-            (GameUI.ChatFastInput, 1200),
-            (GameUI.ChatInform,    1200),
-            (GameUI.ChatMessScout, 1200),
-            (GameUI.WindowCenter,  1500),
-            (GameUI.ChatButtSend,  2000),
-            (GameUI.WindowCenter,  0)
-        };
-
-        foreach (var (element, delayMs) in macroSteps)
-        {
-            await bot.ClickToAsync(element);
+            await bot.ClickToAsync(element, token);
 
             if (delayMs > 0)
             {
@@ -614,6 +655,11 @@ public static partial class ScenarioFactory
 
     #region PrepareScreenshotRegionAsync
 
+    /* Проверено */
+
+    // Глобальный или статический семафор на уровне сервиса захвата для синхронизации GDI вызовов
+    private static readonly System.Threading.SemaphoreSlim _gdiSemaphore = new(1, 1);
+
     /// <summary>
     /// Универсальный метод захвата экрана и подготовки безопасной области поиска.
     /// Возвращает кортеж (screenshot, safeRegion). Если захват не удался, возвращает (null, safeRegion с нулевыми размерами).
@@ -626,16 +672,39 @@ public static partial class ScenarioFactory
             return (null, new Rect());
         }
 
-        // Захватываем скриншот окна эмулятора
-        Mat? screenshot = await Task.Run(() => Tools.CaptureWindow(bot.Hwnd), token);
-        if (screenshot?.Empty() is not false || screenshot.Width <= 0 || screenshot.Height <= 0)
+        Mat? screenshot = null;
+
+        try
+        {
+            // 1. Защищаем GDI от многопоточного хаоса. Боты заходят за скриншотом строго по очереди.
+            // Ожидаем очередь с поддержкой токена отмены.
+            await _gdiSemaphore.WaitAsync(token);
+
+            // 2. Выполняем захват в фоновом потоке
+            screenshot = await Task.Run(() => Tools.CaptureWindow(bot.Hwnd), token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Если токен отменился во время ожидания семафора или выполнения Task.Run,
+            // гарантированно чистим screenshot, если он успел создаться под капотом.
+            screenshot?.Dispose();
+            throw;
+        }
+        finally
+        {
+            // Всегда освобождаем семафор для следующего бота
+            _gdiSemaphore.Release();
+        }
+
+        // Использование условного доступа ?. и явного сравнения с true
+        if (screenshot?.Empty() ?? true)
         {
             Logger.Log($"[{bot.Settings.Name}] Не удалось выполнить захват окна эмулятора.", LogType.Error);
             screenshot?.Dispose();
             return (null, new Rect());
         }
 
-        // Получаем и корректируем регион под размеры окна
+        // 4. Получаем и корректируем регион под размеры окна
         Rect searchRegion = region.GetOpenCvRect();
         Rect safeRegion = Tools.ClampRegion(searchRegion, screenshot.Width, screenshot.Height);
 
@@ -648,6 +717,7 @@ public static partial class ScenarioFactory
 
         return (screenshot, safeRegion);
     }
+
 
     #endregion
 

@@ -10,7 +10,13 @@ namespace EVEEchoesBot.scenarios;
 public static partial class ScenarioFactory
 {
 
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+    // Поле внутри класса ActiveBotAccount для отслеживания состояния вылета
+    public bool _isUndocking;
+
+
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region BuildMinerTree
 
     /// <summary>
     /// Собирает дерево поведения для сценария «Шахтер в лоу-секах» (LowMiner).
@@ -21,10 +27,26 @@ public static partial class ScenarioFactory
         return new SelectorNode("LowMiner Root",
 
             // =========================================================================
-            // БЛОК СТАНЦИИ: Нахождение в доке, выгрузка и безопасный выход
+            // ПРИОРИТЕТ №1: БЛОК ЭКСТРЕННОЙ ЭВАКУАЦИИ (Срабатывает мгновенно при угрозе)
+            // =========================================================================
+            new SequenceNode("Emergency Evacuation Branch",
+                // Проверяет, выставлена ли задача бегства (this.CurrentTask == AccountTask.GoToStation)
+                new ActionNode("Is Panic State Active", CheckIsPanicStateActiveAsync),
+                new SelectorNode("Panic Actions",
+                    // Если мы уже на станции — задача паники выполнена успешно
+                    new ActionNode("Is Already Safe Docked", CheckIsDockedAsync),
+                    // Если в космосе — берем разгон и варпаем на станцию (возвращает Running пока летим)
+                    new ActionNode("Execute Emergency Warp To Base", WarpToBaseAsync)
+                )
+            ),
+
+            // =========================================================================
+            // БЛОК СТАНЦИИ: Нахождение в доке и обслуживание
             // =========================================================================
             new SequenceNode("Station Hub Branch",
                 new ActionNode("Is Docked Check", CheckIsDockedAsync),
+                // Защита от спама: проверяем, что мы НЕ находимся в процессе андока прямо сейчас
+                new ActionNode("Is NOT Processing Undock", CheckIsNotUndockingAsync),
 
                 new SelectorNode("Station Actions",
 
@@ -37,14 +59,14 @@ public static partial class ScenarioFactory
                     // ВЕТКА АНДОКА: Вылетаем, если трюм пуст и в системе безопасно
                     new SequenceNode("Undock Monolithic Sequence",
                         new ActionNode("Check Cargo Empty Before Undock", CheckIsCargoEmptyAsync),
-                        new ActionNode("Check Safe Before Undock", EvaluateSystemSecurityAsync), // Переиспользуемый метод
-                        new ActionNode("Execute Undock", ExecuteUndockAsync)
+                        new ActionNode("Check Safe Before Undock", EvaluateSystemSecurityAsync),
+                        new ActionNode("Execute Undock", ExecuteUndockAsync) // Внутри ставит флаг _isUndocking = true
                     )
                 )
             ),
 
             // =========================================================================
-            // БЛОК КОСМОСА: Полеты, навигация, варп и процесс копки
+            // БЛОК КОСМОСА: Полеты, навигация и процесс копки
             // =========================================================================
             new SequenceNode("Space Operations Branch",
 
@@ -53,13 +75,12 @@ public static partial class ScenarioFactory
                     // ВОЗВРАТ НА БАЗУ: Если трюм заполнился во время добычи
                     new SequenceNode("Return Full Cargo To Base",
                         new ActionNode("Is Cargo Full In Space", CheckIsCargoFullAsync),
-                        new ActionNode("Warp To Base", WarpToBaseAsync)
+                        new ActionNode("Warp To Base", WarpToBaseAsync) // Возвращает Running пока летит
                     ),
 
                     // ПЕРЕЛЕТ НА БЕЛТ: Выбор астероидного пояса и прыжок к нему
                     new SequenceNode("Flight To Belt Sequence",
                         new ActionNode("Is NOT In Mining Zone", CheckIsNotInMiningZoneAsync),
-                        new ActionNode("Check If Already Warping", CheckIfAlreadyWarpingAsync),
 
                         // Выбор пояса (если еще не выбран)
                         new SelectorNode("Belt Selection Selector",
@@ -68,8 +89,8 @@ public static partial class ScenarioFactory
                         ),
 
                         // Проверка безопасности перед прыжком и сам варп
-                        new ActionNode("Check Safe Before Warp", EvaluateSystemSecurityAsync), // Переиспользуемый метод
-                        new ActionNode("Warp To Selected Belt", WarpToSelectedBeltAsync)
+                        new ActionNode("Check Safe Before Warp", EvaluateSystemSecurityAsync),
+                        new ActionNode("Warp To Selected Belt", WarpToSelectedBeltAsync) // Возвращает Running пока летит
                     ),
 
                     // АКТИВНАЯ ДОБЫЧА: Захват целей и удержание цикла работы лазеров
@@ -92,6 +113,12 @@ public static partial class ScenarioFactory
         );
     }
 
+
+    #endregion
+
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region CheckIsDockedAsync
 
     /// <summary>
     /// Проверяет, находится ли корабль внутри дока станции по наличию кнопки выхода из дока.
@@ -126,7 +153,11 @@ public static partial class ScenarioFactory
         }
     }
 
+    #endregion
+
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region CheckIsCargoFullAsync
 
     /// <summary>
     /// Проверяет, заполнен ли рудный трюм корабля (Узел Дерева Поведения).
@@ -169,7 +200,11 @@ public static partial class ScenarioFactory
         }
     }
 
+    #endregion
+
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region CheckIsCargoEmptyAsync
 
     /// <summary>
     /// Проверяет, пуст ли рудный трюм корабля (необходим перед вылетом).
@@ -201,7 +236,11 @@ public static partial class ScenarioFactory
         }
     }
 
+    #endregion
+
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region UnloadOreToHangarAsync
 
     /// <summary>
     /// Выполняет разгрузку руды на склад текущей станции (Узел Дерева Поведения).
@@ -210,29 +249,36 @@ public static partial class ScenarioFactory
     {
         Logger.Log($"[{bot.Settings.Name}] Трюм заполнен. Выгрузка руды на склад станции.", LogType.Info);
 
-        // Шаг 1-2: Открываем меню и подготавливаем склад
-        var initialSteps = new (GameUI Element, int DelayMs)[]
-        {
+        // ========================================================
+        // ШАГ 1-2: ОТКРЫТИЕ МЕНЮ И ПОДГОТОВКА СКЛАДА (Zero Allocation)
+        // ========================================================
+        ReadOnlySpan<(GameUI Element, int DelayMs)> initialSteps = [
             (GameUI.FastMenu1, 800),
             (GameUI.CollapseStation, 800)
-        };
+        ];
 
         foreach (var (element, delayMs) in initialSteps)
         {
-            await bot.ClickToAsync(element);
+            // Исправлено: передан обязательный токен
+            await bot.ClickToAsync(element, token);
             await Task.Delay(delayMs, token);
         }
 
-        // Шаг 3: Динамический поиск иконки рудного отсека imgOreHold.png в регионе LocalChat
+        // ========================================================
+        // ШАГ 3: ДИНАМИЧЕСКИЙ ПОИСК ИКОНКИ РУДНОГО ОТСЕКА
+        // ========================================================
         var (screenshot, safeRegion) = await PrepareScreenshotRegionAsync(bot, GameRegions.LocalChat, token);
         if (screenshot == null) return NodeStatus.Failure;
 
+        // Гарантируем очистку памяти OpenCV через упрощенный using declaration
+        using var screenshotScope = screenshot;
+
         Point? foundOreHold;
-        using (screenshot)
-        {
-            string pathOreHold = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", "imgOreHold.png");
-            foundOreHold = Tools.FindTemplateInRegion(screenshot, pathOreHold, safeRegion, 0.85);
-        }
+        string pathOreHold = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images", "imgOreHold.png");
+
+        // Выносим тяжелый поиск OpenCV в фоновый поток пула
+        var currentScreenshot = screenshot;
+        foundOreHold = await Task.Run(() => Tools.FindTemplateInRegion(currentScreenshot, pathOreHold, safeRegion, 0.85), token);
 
         if (!foundOreHold.HasValue)
         {
@@ -244,28 +290,35 @@ public static partial class ScenarioFactory
         await bot.ClickPointAsync(foundOreHold.Value, token, minSec: 1, maxSec: 3, offset: 3);
         await Task.Delay(800, token);
 
-        // Шаг 4-6: Выделение, перенос в ангар и закрытие интерфейса
-        var finalSteps = new (GameUI Element, int DelayMs)[]
-        {
+        // ========================================================
+        // ШАГ 4-6: ВЫДЕЛЕНИЕ, ПЕРЕНОС В АНГАР И ЗАКРЫТИЕ (Zero Allocation)
+        // ========================================================
+        ReadOnlySpan<(GameUI Element, int DelayMs)> finalSteps = [
             (GameUI.SelectAll, 600),
             (GameUI.ItemHangar, 1500), 
             (GameUI.XButton, 0)
-        };
+        ];
 
         foreach (var (element, delayMs) in finalSteps)
         {
-            await bot.ClickToAsync(element);
+            // Исправлено: передан обязательный токен
+            await bot.ClickToAsync(element, token);
             if (delayMs > 0)
             {
                 await Task.Delay(delayMs, token);
             }
         }
 
+        Logger.Log($"[{bot.Settings.Name}] Выгрузка руды успешно завершена.", LogType.Success);
         return NodeStatus.Success;
     }
 
 
+    #endregion
+
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region ExecuteUndockAsync
 
     /// <summary>
     /// Выполняет команду выхода из дока станции (андок) в космос.
@@ -278,7 +331,11 @@ public static partial class ScenarioFactory
         return undockSuccess ? NodeStatus.Success : NodeStatus.Failure;
     }
 
+    #endregion
+
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region WarpToBaseAsync
 
     /// <summary>
     /// Выполняет варп и стыковку (док) на домашнюю станцию для разгрузки.
@@ -291,7 +348,11 @@ public static partial class ScenarioFactory
         return success ? NodeStatus.Success : NodeStatus.Failure;
     }
 
+    #endregion
+
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region CheckIsNotInMiningZoneAsync
 
     /// <summary>
     /// Проверяет, что корабль еще НЕ находится непосредственно в зоне добычи (на белте).
@@ -301,7 +362,11 @@ public static partial class ScenarioFactory
         return Task.FromResult(!bot._isinzone ? NodeStatus.Success : NodeStatus.Failure);
     }
 
+    #endregion
+
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region CheckIfAlreadyWarpingAsync
 
     /// <summary>
     /// Проверяет, находится ли корабль в процессе варпа.
@@ -317,7 +382,11 @@ public static partial class ScenarioFactory
         return Task.FromResult(NodeStatus.Failure);
     }
 
+    #endregion
+
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region CheckIsBeltAlreadySelectedAsync
 
     /// <summary>
     /// Проверяет, выбран ли уже астероидный пояс в качестве текущей цели движения.
@@ -327,7 +396,11 @@ public static partial class ScenarioFactory
         return Task.FromResult(bot._currenttarget != null ? NodeStatus.Success : NodeStatus.Failure);
     }
 
+    #endregion
+
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region SelectAsteroidBeltAsync
 
     /// <summary>
     /// Сканирует систему и выбирает доступный астероидный пояс для добычи.
@@ -348,7 +421,11 @@ public static partial class ScenarioFactory
         return NodeStatus.Failure;
     }
 
+    #endregion
+
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region WarpToSelectedBeltAsync
 
     /// <summary>
     /// Инициирует переход (варп) к выбранному астероидному поясу.
@@ -363,7 +440,11 @@ public static partial class ScenarioFactory
         return warpStarted ? NodeStatus.Success : NodeStatus.Failure;
     }
 
+    #endregion
+
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region ClearFlightStateOnArrivalAsync
 
     /// <summary>
     /// Сбрасывает полетные данные и промежуточную цель варпа по прибытии в зону добычи.
@@ -374,7 +455,11 @@ public static partial class ScenarioFactory
         return Task.FromResult(NodeStatus.Success);
     }
 
+    #endregion
+
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region CheckIfMiningIsActiveAsync
 
     /// <summary>
     /// Проверяет, захвачен ли астероид в цель и активны ли буровые лазеры.
@@ -384,7 +469,11 @@ public static partial class ScenarioFactory
         return Task.FromResult((bot._hastarget && bot._weaponryactive) ? NodeStatus.Success : NodeStatus.Failure);
     }
 
+    #endregion
+
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region TargetAsteroidAsync
 
     /// <summary>
     /// Пытается захватить доступный астероид в качестве мишени.
@@ -395,7 +484,11 @@ public static partial class ScenarioFactory
         return await bot.TryTargetAsteroidAsync(token) ? NodeStatus.Success : NodeStatus.Failure;
     }
 
+    #endregion
+
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region ActivateLasersAsync
 
     /// <summary>
     /// Активирует буровые лазеры на захваченную цель.
@@ -406,7 +499,11 @@ public static partial class ScenarioFactory
         return await bot.ActivateLasersAsync(token) ? NodeStatus.Success : NodeStatus.Failure;
     }
 
+    #endregion
+
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region MiningMonitorStateAsync
 
     /// <summary>
     /// Точка удержания тика дерева во время активного процесса добычи руды.
@@ -418,5 +515,293 @@ public static partial class ScenarioFactory
     }
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #endregion
+
+    #region Undock 
+
+    /// <summary>
+    /// ДЕЙСТВИЕ: Производит отстыковку (андок) корабля от станции.
+    /// </summary>
+    public async Task<bool> UndockFromStationAsync(CancellationToken token)
+    {
+        await Task.Delay(200, token);
+        Logger.Log($"[ЗАГЛУШКА] {Settings.Name} запускает процедуру андока.", LogType.Test);
+
+        // Для теста переводим стейт корабля в космос
+        _inSpace = true;
+        return true;
+    }
+
+    #endregion
+
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region Warp And Dock
+
+    /// <summary>
+    /// ДЕЙСТВИЕ: Инициирует варп и автоматический док на домашнюю станцию/цитадель.
+    /// </summary>
+    public async Task<bool> WarpAndDockToHomeStationAsync(CancellationToken token)
+    {
+        // Симулируем задержку на сетевой запрос или клик по интерфейсу
+        await Task.Delay(100, token);
+        Logger.Log($"[ЗАГЛУШКА] {Settings.Name} выполняет команду: Варп и Док на домашнюю станцию.", LogType.Test);
+
+        // Для теста принудительно переводим стейт в док (космос = false)
+        _inSpace = false;
+        return true;
+    }
+
+    #endregion
+
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region Check Cargo
+
+    /// <summary>
+    /// ДЕЙСТВИЕ: Проверяет текущую заполненность рудного трюма корабля.
+    /// </summary>
+    public async Task<bool> CheckIsCargoFullAsync(CancellationToken token)
+    {
+        await Task.Delay(50, token);
+        Logger.Log($"[ЗАГЛУШКА] {Settings.Name} проверяет заполненность трюма.", LogType.Test);
+
+        // По умолчанию возвращаем false, чтобы бот не уходил в бесконечный цикл разгрузки на старте
+        return false;
+    }
+
+    #endregion
+
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region Unload Ore
+
+    /// <summary>
+    /// ДЕЙСТВИЕ: Переносит всю добытую руду из трюма корабля на склад станции.
+    /// </summary>
+    public async Task<bool> UnloadOreToHangarAsync(CancellationToken token)
+    {
+        await Task.Delay(500, token); // Выгрузка обычно занимает чуть больше времени
+        Logger.Log($"[ЗАГЛУШКА] {Settings.Name} успешно разгрузил руду на склад станции.", LogType.Test);
+        return true;
+    }
+
+    #endregion
+
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+
+    #region Select Belt
+
+    /// <summary>
+    /// ДЕЙСТВИЕ: Сканирует овервью или меню игры, выбирает подходящий пояс астероидов.
+    /// </summary>
+    /// <returns>Возвращает объект (строку) с названием пояса, либо null, если ничего не найдено.</returns>
+    public async Task<object?> ScanAndSelectAvailableBeltAsync(CancellationToken token)
+    {
+        await Task.Delay(150, token);
+        const string mockBeltName = "Asteroid Belt Cluster-Alpha";
+        Logger.Log($"[ЗАГЛУШКА] {Settings.Name} отсканировал локацию и выбрал: {mockBeltName}.", LogType.Test);
+        return mockBeltName;
+    }
+
+    #endregion
+
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region Warp To Belt
+
+    /// <summary>
+    /// ДЕЙСТВИЕ: Инициирует разгон и переход в варп на конкретно выбранный пояс астероидов.
+    /// </summary>
+    public async Task<bool> WarpToSpecificBeltAsync(object? targetBelt, CancellationToken token)
+    {
+        await Task.Delay(100, token);
+        string beltName = targetBelt?.ToString() ?? "Unknown Belt";
+        Logger.Log($"[ЗАГЛУШКА] {Settings.Name} отправлен в варп на точку: {beltName}.", LogType.Test);
+        return true;
+    }
+
+    #endregion
+
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region Try Target Asteroid
+
+    /// <summary>
+    /// ДЕЙСТВИЕ: Находит ближайший астероид в овервью космоса и берет его в захват (Lock Target).
+    /// </summary>
+    public async Task<bool> TryTargetAsteroidAsync(CancellationToken token)
+    {
+        await Task.Delay(100, token);
+        Logger.Log($"[ЗАГЛУШКА] {Settings.Name} захватил астероид в цель.", LogType.Test);
+        return true;
+    }
+
+    #endregion
+
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region Activate Lasers
+
+    /// <summary>
+    /// ДЕЙСТВИЕ: Включает буровые/шахтерские лазеры (модули) корабля для начала добычи.
+    /// </summary>
+    public async Task<bool> ActivateLasersAsync(CancellationToken token)
+    {
+        await Task.Delay(150, token); // Имитация задержки на клик по модулю
+        Logger.Log($"[ЗАГЛУШКА] {Settings.Name} отправил команду на активацию буровых лазеров.", LogType.Test);
+
+        // Здесь в будущем будет выставляться флаг _weaponryactive = true
+        return true;
+    }
+
+    #endregion
+
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region Legacy FSM Methods (Deprecated)
+
+    /// <summary>
+    /// Устаревший метод получения плоских списков задач. Оставлен для временной обратной совместимости.
+    /// </summary>
+    [Obsolete("Используйте метод CreateTree для получения полноценного дерева поведения.")]
+    public List<string> GetDefaultTasks(string scenarioName)
+    {
+        return scenarioName?.ToLower() switch
+        {
+            "localwatcher" => ["CheckSecurity"],
+            _ => ["CheckYourOwnState"]
+        };
+    }
+
+    #endregion
+
+    /// <summary>
+    /// Логика "Осмотрись": выполняет аппаратно-независимые клики для закрытия случайных поп-апов,
+    /// окон наград или рекламы, мешающих обзору OCR.
+    /// </summary>
+    internal async Task ExecuteLookAroundDiagnosticsAsync(CancellationToken token)
+    {
+        Log($"[{Settings.Name}] Запуск макроса 'Осмотрись': попытка восстановить интерфейс.", LogType.Info);
+
+        try
+        {
+            // 1. Нажимаем клавишу ESC через ADB, чтобы закрыть любые случайные окна
+            // (Параметр KEYCODE_ESCAPE в Android равен 111, либо используйте вашу обертку Tools)
+            // Tools.SendKeyEvent(111, Settings.AdbPort); 
+
+            // 2. Делаем небольшую паузу, чтобы интерфейс успел отреагировать
+            await Task.Delay(1500, token);
+
+            // 3. Делаем клик по «пустому» безопасному месту экрана, где обычно нет кнопок,
+            // чтобы сбросить фокус с возможных зависших элементов интерфейса
+            // Tools.SmartClick(100, 100, minSec: 0, maxSec: 1, offset: 0, adbPort: Settings.AdbPort);
+
+            // await Task.Delay(1000, token);
+        }
+        catch (Exception ex)
+        {
+            Log($"[{Settings.Name}] Ошибка при выполнении диагностики экрана: {ex.Message}", LogType.Error);
+        }
+    }
+
+    // private static async Task<NodeStatus> ExecuteUndockAsync(ActiveBotAccount bot, CancellationToken token)
+    // {
+    //     // Шаг 1: Инициация действия
+    //     if (!bot._isUndocking)
+    //     {
+    //         Logger.Log($"[{bot.Settings.Name}] Нажимаю кнопку Андока. Начинаю ожидание выхода в космос...", LogType.Info);
+    //         await bot.ClickToAsync(GameUI.UndockButton, token);
+
+    //         bot._isUndocking = true;
+    //         bot._actionTimeout = DateTime.Now.AddSeconds(30); // Жесткий таймаут защиты — 30 сек
+    //         return NodeStatus.Running;
+    //     }
+
+    //     // Шаг 2: Контроль на последующих тиках дерева
+    //     if (bot._inSpace)
+    //     {
+    //         Logger.Log($"[{bot.Settings.Name}] Корабль успешно вышел в космос! Андок завершен.", LogType.Success);
+    //         bot._isUndocking = false; // Сбрасываем флаг ожидания
+    //         return NodeStatus.Success; // Позволяет дереву перейти к космическим операциям
+    //     }
+
+    //     // Защита от бесконечного зависания в анимации (например, если игра вылетела)
+    //     if (DateTime.Now > bot._actionTimeout)
+    //     {
+    //         Logger.Log($"[{bot.Settings.Name}] Критическая ошибка: Превышен таймаут ожидания андока (30с).", LogType.Error);
+    //         bot._isUndocking = false;
+    //         return NodeStatus.Failure;
+    //     }
+
+    //     // Корабль все еще летит по трубе станции — возвращаем Running
+    //     return NodeStatus.Running;
+    // }
+
+    // private static async Task<NodeStatus> WarpToSelectedBeltAsync(ActiveBotAccount bot, CancellationToken token)
+    // {
+    //     // Шаг 1: Инициация прыжка
+    //     if (!bot._isWarping)
+    //     {
+    //         Logger.Log($"[{bot.Settings.Name}] Инициирую варп на выбранный астероидный пояс.", LogType.Info);
+    //         await bot.ClickToAsync(GameUI.WarpButton, token);
+
+    //         bot._isWarping = true;
+    //         bot._actionTimeout = DateTime.Now.AddSeconds(60); // Максимальное время полета
+    //         return NodeStatus.Running;
+    //     }
+
+    //     // Шаг 2: Контроль состояния (Этот блок вызывается каждую секунду из RunLoopAsync)
+    //     // Мы проверяем графический флаг, который выставляется в вашем модуле анализа экрана OpenCV
+    //     if (bot._isWarpingActiveGraphicFlag) 
+    //     {
+    //         // Пока на экране горит анимация варпа, дерево не идет дальше, 
+    //         // но RunLoopAsync проверяет этот узел каждую секунду и контролирует локал чат!
+    //         return NodeStatus.Running; 
+    //     }
+
+    //     // Шаг 3: Прибытие на место
+    //     Logger.Log($"[{bot.Settings.Name}] Корабль вышел из варпа на белте. Начинаем копку.", LogType.Success);
+    //     bot._isWarping = false;
+    //     bot.IsInMiningZone = true; // Выставляем флаг для дерева
+    //     return NodeStatus.Success;
+    // }
+
+
+    /// <summary>
+    /// Проверяет, находится ли бот в состоянии экстренной паники/эвакуации.
+    /// </summary>
+    private static Task<NodeStatus> CheckIsPanicStateActiveAsync(ActiveBotAccount bot, CancellationToken token)
+    {
+        if (token.IsCancellationRequested)
+        {
+            return Task.FromResult(NodeStatus.Failure);
+        }
+
+        // Если бэкенд выставил задачу бегства к станции — узел возвращает Success,
+        // заставляя дерево немедленно зайти в ветку экстренного отварпа.
+        bool isPanic = bot.CurrentTask == AccountTask.GoToStation;
+        
+        return Task.FromResult(isPanic ? NodeStatus.Success : NodeStatus.Failure);
+    }
+
+    /// <summary>
+    /// Проверяет, что бот в данный момент НЕ находится в процессе анимации андока (вылета со станции).
+    /// Защищает интерфейс эмулятора от бешеного спама кликами по кнопке вылета.
+    /// </summary>
+    private static Task<NodeStatus> CheckIsNotUndockingAsync(ActiveBotAccount bot, CancellationToken token)
+    {
+        if (token.IsCancellationRequested)
+        {
+            return Task.FromResult(NodeStatus.Failure);
+        }
+
+        // Если флаг _isUndocking равен true, значит кнопка уже нажата. 
+        // Возвращаем Failure, чтобы дерево не пошло дальше по ветке андока в этот тик.
+        return Task.FromResult(bot._isUndocking ? NodeStatus.Failure : NodeStatus.Success);
+    }
+
 
 }

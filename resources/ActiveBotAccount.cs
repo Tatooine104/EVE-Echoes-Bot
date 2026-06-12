@@ -120,7 +120,7 @@ public partial class ActiveBotAccount
         /// <summary>
         /// Корневой управляющий узел дерева поведения (Behavior Tree) текущего аккаунта.
         /// </summary>
-        private readonly BehaviorNode _behaviorTree;
+        private BehaviorNode _behaviorTree;
 
         /// <summary>
         /// Флаг для принудительного пропуска первого лога проверки безопасности при старте сессии.
@@ -161,7 +161,35 @@ public partial class ActiveBotAccount
         /// </summary>
         public void IncrementTrigger() => Interlocked.Increment(ref _triggerCount);
 
+        // Использование нового высокоэффективного типа Lock из C# 13 / .NET 9
+        private readonly System.Threading.Lock _scenarioLock = new();
+
+        // Упрощенное создание экземпляра через целевой тип new()
+        private CancellationTokenSource _delayCts = new();
+
+
     #endregion
+
+    public void SwitchScenario(string newScenarioName)
+    {
+        lock (_scenarioLock)
+        {
+            Log($"[{Settings.Name}] Запрос на горячую смену сценария на: '{newScenarioName}'", LogType.Info);
+
+            // 1. Запрашиваем у фабрики новое дерево поведения
+            // Передаем newScenarioName, если фолбек — соберет дефолтное дерево
+            var newTree = ScenarioFactory.CreateTree(newScenarioName);
+
+            // 2. Меняем ссылку на дерево под локом
+            _behaviorTree = newTree;
+            Settings.Script = newScenarioName;
+
+            // 3. МГНОВЕННО БУДИМ БОТА: прерываем текущий Task.Delay в цикле RunLoopAsync
+            // Это заставит цикл тут же начать новый тик с новым деревом
+            _delayCts.Cancel();
+        }
+    }
+
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
@@ -497,11 +525,9 @@ public partial class ActiveBotAccount
         Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Поток запущен. Начало работы по Дереву поведения: '{Settings.Script ?? "mining"}'.", LogType.Info);
 
         var sessionStart = System.DateTime.Now;
-
-        // Включаем высокоточный секундомер времени работы для этого окна
         var sessionStopwatch = System.Diagnostics.Stopwatch.StartNew();
 
-        // Фиксируем стартовое значение, которое мы уже успели загрузить из JSON прошлых сессий
+        // Фиксируем стартовое значение секунд из лога прошлых сессий
         long baseSeconds = (long)_accumulatedSeconds;
 
         try
@@ -510,53 +536,80 @@ public partial class ActiveBotAccount
             {
                 try
                 {
-
-                    // ДИНАМИЧЕСКИЙ РАСЧЕТ ВРЕМЕНИ ДЛЯ ВЕБ-ИНТЕРФЕЙСА (внутри RunLoopAsync)
-                    if (this.State == BotState.Running && _startTime != null)
+                    // ========================================================
+                    // 1. СИНХРОНИЗАЦИЯ ДАННЫХ ДЛЯ ВЕБ-ИНТЕРФЕЙСА
+                    // ========================================================
+                    lock (_taskLock)
                     {
-                        // Текущий аптайм = то, что накопили на прошлых паузах + разница с момента текущего старта
-                        TimeSpan currentUptime = _accumulatedTime + (DateTime.Now - _startTime.Value);
+                        if (this.State == BotState.Running && _startTime != null)
+                        {
+                            // Аптайм текущей сессии для DTO
+                            TimeSpan currentUptime = _accumulatedTime + (DateTime.Now - _startTime.Value);
+                            this.RuntimeSeconds = currentUptime.TotalSeconds;
+                        }
 
-                        // Передаем чистые секунды типа double в поле DTO
-                        this.RuntimeSeconds = currentUptime.TotalSeconds;
+                        // Накапливаем секунды с использованием double, чтобы избежать погрешностей деления
+                        _accumulatedSeconds = baseSeconds + sessionStopwatch.Elapsed.TotalSeconds;
                     }
 
-                    // ОБНОВЛЕНИЕ ВРЕМЕНИ: Прибавляем секунды текущей сессии к базовому времени из файла
-                    _accumulatedSeconds = baseSeconds + (sessionStopwatch.ElapsedMilliseconds / 1000);
+                    // ========================================================
+                    // 2. ВЫПОЛНЕНИЕ ТАКТА ДЕРЕВА ПОВЕДЕНИЯ
+                    // ========================================================
+                    // Кэшируем ссылку на случай, если веб-поток подменит её через SwitchScenario во время тика
+                    var currentTree = _behaviorTree;
+
+                    NodeStatus treeResult = await currentTree.TickAsync(this, token);
 
                     // ========================================================
-                    // ГЛАВНЫЙ И ЕДИНСТВЕННЫЙ ЭТАП: ТИК ДЕРЕВА ПОВЕДЕНИЯ
+                    // 3. РАСЧЕТ АДАПТИВНОГО ТАЙМИНГА И ОЖИДАНИЕ
                     // ========================================================
-                    // Дерево само выполнит нужные проверки (включая безопасность) и запустит 
-                    // соответствующие макросы, вернув статус выполнения (Success / Failure / Running)
-                    NodeStatus treeResult = await _behaviorTree.TickAsync(this, token);
-
-                    // ДИНАМИЧЕСКИЙ ТАЙМИНГ ТАКТОВ:
-                    // Если дерево находится в состоянии выполнения длительного макроса (Running), 
-                    // опрашиваем дерево чаще (каждую секунду), чтобы мгновенно среагировать на угрозу в локале.
-                    // Если дерево завершило такт (Success/Failure), делаем стандартную паузу в 5 секунд.
-                    int delaySeconds = (treeResult == NodeStatus.Running) ? 1 : 5;
+                    // Опрашиваем чаще (1с) если: макрос выполняется ИЛИ бот в космосе ИЛИ активны пушки
+                    bool isHighActivity = (treeResult == NodeStatus.Running) || this._inSpace || this._weaponryactive;
+                    int delaySeconds = isHighActivity ? 1 : 5;
 
     #if DEBUG
-                    // В режиме отладки логируем результат прохода дерева для контроля стабильности узлов
                     if (treeResult == NodeStatus.Running)
                     {
                         Log($"[{Settings.Name}] Дерево выполняет длительную операцию (Running). Следующий чек через {delaySeconds}с.", LogType.Test);
                     }
     #endif
+                    // Использование упрощенного using без фигурных скобок
+                    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(token, _delayCts.Token);
 
-                    // Адаптивная задержка между тактами принятия решений ботом
-                    await Task.Delay(TimeSpan.FromSeconds(delaySeconds), token);
+                    try
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(delaySeconds), linkedCts.Token);
+                    }
+                    catch (TaskCanceledException) when (token.IsCancellationRequested)
+                    {
+                        // Фильтр сработал: отмена пришла от глобального токена остановки приложения/бота.
+                        // Пробрасываем наверх во внешний цикл для чистого завершения RunLoopAsync.
+                        throw;
+                    }
+                    catch (TaskCanceledException)
+                    {
+                        // Сюда мы попадаем, ТОЛЬКО если token.IsCancellationRequested == false.
+                        // Значит, отмена пришла от локального _delayCts.Token (вызван SwitchScenario).
+                        Log($"[{Settings.Name}] Пауза прервана командой из UI. Переключение на новый сценарий...", LogType.Info);
+                    }
+                    finally
+                    {
+                        lock (_scenarioLock)
+                        {
+                            _delayCts.Dispose();
+                            _delayCts = new();
+                        }
+                    }
                 }
                 catch (TaskCanceledException)
                 {
-                    // Перехватываем отмену внутри цикла, чтобы управление перешло во внешний блок catch/finally
+                    // Пробрасываем во внешний блок для корректного завершения работы
                     throw;
                 }
                 catch (Exception ex)
                 {
                     Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Сбой в главном цикле обработки такта дерева: {ex.Message}", LogType.Error);
-                    await Task.Delay(5000, token);
+                    await Task.Delay(5000, token); // Защитная пауза при ошибках логики дерева
                 }
             }
         }
@@ -570,20 +623,22 @@ public partial class ActiveBotAccount
         }
         finally
         {
-            // Финальное обновление времени перед сохранением на диск
+            // ========================================================
+            // 4. ФИНАЛИЗАЦИЯ И ГАРАНТИРОВАННОЕ СОХРАНЕНИЕ СТАТИСТИКИ
+            // ========================================================
             sessionStopwatch.Stop();
-            _accumulatedSeconds = baseSeconds + (sessionStopwatch.ElapsedMilliseconds / 1000);
 
-            // ГАРАНТИРОВАННОЕ СОХРАНЕНИЕ: Выполнится всегда при закрытии или падении потока
             lock (_taskLock)
             {
+                _accumulatedSeconds = baseSeconds + (long)sessionStopwatch.Elapsed.TotalSeconds;
                 SaveStats();
             }
-            int sessionSeconds = (int)(System.DateTime.Now - sessionStart).TotalSeconds;
 
+            int sessionSeconds = (int)(System.DateTime.Now - sessionStart).TotalSeconds;
             Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Состояние сохранено. Поток поведения остановлен. Время работы в сессии (сек): {sessionSeconds}", LogType.Info);
         }
     }
+
 
     #endregion
 
@@ -863,31 +918,39 @@ public partial class ActiveBotAccount
                     {
                         var botsToPanic = Program.GetActiveBots().Where(b => b != this && b.EVESystem == this.EVESystem).ToList();
 
-                        foreach (var bot in botsToPanic)
+                    foreach (var bot in botsToPanic)
+                    {
+                        try
                         {
-                            try
+                            if (bot._inSpace && bot.CurrentTask != AccountTask.GoToStation)
                             {
-                                // ИСПРАВЛЕНО: Другие окна паникуют (уходят в док) ТОЛЬКО если они реально в космосе!
-                                if (bot._inSpace)
-                                {
-                                    bot.ClearTasks();
-                                    bot.ExecuteEmergencyResponse(isInitiator: false);
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                Log($"Ошибка паники для окна {bot.Settings.Name}: {ex.Message}", LogType.Error);
+                                bot.ClearTasks();
+
+                                // Запускаем эвакуацию соседа в пуле потоков без блокировки текущего цикла
+                                var globalToken = Program.GetGlobalToken();
+                                _ = Task.Run(async () => await bot.ExecuteEmergencyResponseAsync(isInitiator: false, globalToken));
                             }
                         }
+                        catch (Exception ex)
+                        {
+                            Log($"Ошибка паники для окна {bot.Settings.Name}: {ex.Message}", LogType.Error);
+                        }
+                    }
+
                     });
                 }
 
-                // ИСПРАВЛЕНО: Текущее окно уводим в док ТОЛЬКО если оно реально находится в космосе
                 if (this._inSpace && this.CurrentTask != AccountTask.GoToStation)
                 {
                     this.ClearTasks();
-                    this.ExecuteEmergencyResponse(isInitiator: isFirstAlert);
+
+                    // Вызываем асинхронный метод из синхронного контекста в режиме "выстрелил-и-забыл"
+                    // Используем глобальный токен из Program
+                    var globalToken = Program.GetGlobalToken();
+                    _ = Task.Run(async () => await this.ExecuteEmergencyResponseAsync(isInitiator: isFirstAlert, globalToken));
                 }
+
+
                 else if (!this._inSpace)
                 {
                     // Если мы на станции — просто переводим задачу в ожидание/мониторинг, не запуская эвакуацию
@@ -913,64 +976,88 @@ public partial class ActiveBotAccount
     #region ExecuteEmergencyResponse
 
     /// <summary>
-    /// Формирует и экстренно активирует пакет сценариев эвакуации при обнаружении угрозы в локальной системе.
-    /// На основе флага <paramref name="isInitiator"/> определяет необходимость отправки оповещения альянсу
-    /// и закидывает собранный список задач в самое начало очереди с наивысшим приоритетом.
+    /// Экстренная реакция на угрозу. Сначала спасает корабль, затем координирует союзников и пишет в чат.
     /// </summary>
-    /// <param name="isInitiator">Если <c>true</c> — данный аккаунт является первоисточником обнаружения врага и должен отправить варнинг в чат.</param>
-    public void ExecuteEmergencyResponse(bool isInitiator)
+    public async Task ExecuteEmergencyResponseAsync(
+        bool isInitiator,
+        CancellationToken token) // Убрали лишний параметр manager!
     {
-        // 1. Если корабль находится в космосе, немедленно меняем его глобальную задачу
-        if (_inSpace)
+        // ========================================================
+        // ПРАВИЛО 1: НЕМЕДЛЕННАЯ ЭВАКУАЦИЯ
+        // ========================================================
+        lock (_taskLock)
         {
-            switch (Settings.Script?.ToLower())
+            if (_inSpace && this.CurrentTask != AccountTask.GoToStation)
             {
-                case "localwatcher":
-                    // Наблюдателю отварп не нужен, он контролирует локал из безопасности
-                    Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Наблюдатель остается на позиции.", LogType.Info);
-                    this.CurrentTask = AccountTask.CheckSecurity;
-                    break;
+                switch (Settings.Script?.ToLower())
+                {
+                    case "lowminer":
+                        Log($"[{Settings.Name}|{EVESystem}] 🚨 УГРОЗА! Инициирована экстренная эвакуация на станцию!", LogType.Warning);
+                        this.ClearTasks();
+                        this.CurrentTask = AccountTask.GoToStation;
+                        break;
 
-                case "lowminer":
-                    // ОПТИМИЗИРОВАНО: Переводим шахтера в режим экстренного возврата на станцию
-                    Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] 🚨 Сценарий lowminer активирует экстренную эвакуацию корабля!", LogType.Warning);
-                    this.ClearTasks(); // Очищаем текущие шахтерские подзадачи тика
-                    this.CurrentTask = AccountTask.GoToStation; // Переключаем корень дерева на эвакуацию
-                    break;
+                    case "localwatcher":
+                        Log($"[{Settings.Name}|{EVESystem}] Наблюдатель зафиксировал угрозу, но остается на позиции в доке.", LogType.Info);
+                        this.CurrentTask = AccountTask.CheckSecurity;
+                        break;
 
-                default:
-                    // Фолбек безопасности для любых других скриптов
-                    Log($"[{Settings.Name}] Неизвестный скрипт в космосе при угрозе. Принудительный отварп в док.", LogType.Warning);
-                    this.ClearTasks();
-                    this.CurrentTask = AccountTask.GoToStation;
-                    break;
+                    default:
+                        this.ClearTasks();
+                        this.CurrentTask = AccountTask.GoToStation;
+                        break;
+                }
             }
         }
-        else
-        {
-            // Если мы уже на станции, просто продолжаем сканировать окружение
-            this.CurrentTask = AccountTask.CheckSecurity;
-            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Корабль в безопасности (станция/цитадель). Эвакуация не требуется.", LogType.Info);
-        }
 
-        // 2. Оповещение альянса через макрос чата (выполняется асинхронно в фоне)
+        await Task.Delay(500, token);
+
+        // ========================================================
+        // ПРАВИЛО 2: ОПОВЕЩЕНИЕ ВСЕХ СВОИХ БОТОВ В ЭТОЙ ЖЕ СИСТЕМЕ
+        // ========================================================
         if (isInitiator)
         {
-            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Этот аккаунт — инициатор паники. Запуск макроса чата...", LogType.Warning);
-            Task.Run(async () =>
+            Log($"[{Settings.Name}|{EVESystem}] Рассылка сигнала тревоги остальным ботам в системе...", LogType.Warning);
+
+            // ИСПРАВЛЕНО: Вызываем наш новый потокобезопасный метод из Program напрямую!
+            var companionBots = Program.GetActiveBots();
+
+            foreach (var companion in companionBots)
             {
-                try
+                if (companion != this &&
+                    companion.EVESystem == this.EVESystem &&
+                    companion.CurrentTask != AccountTask.GoToStation)
                 {
-                    CancellationToken token = _accountCts?.Token ?? Program.GetGlobalToken();
-                    await ScenarioFactory.RunAliChatWarningAsync(this, token);
+                    Log($"[{Settings.Name}] -> Отправка команды паники для {companion.Settings.Name}...", LogType.Info);
+
+                    _ = companion.ExecuteEmergencyResponseAsync(isInitiator: false, token);
                 }
-                catch (Exception ex)
-                {
-                    Log($"Ошибка отправки сообщения в чат альянса: {ex.Message}", LogType.Error);
-                }
-            });
+            }
+        }
+
+        // ========================================================
+        // ПРАВИЛО 3: ОТПРАВКА СООБЩЕНИЯ В ЧАТ (Только для инициатора)
+        // ========================================================
+        if (isInitiator)
+        {
+            Log($"[{Settings.Name}|{EVESystem}] Этот аккаунт — обнаружил угрозу первым. Запуск макроса чата альянса.", LogType.Warning);
+
+            try
+            {
+                await ScenarioFactory.RunAliChatWarningAsync(this, token);
+            }
+            catch (OperationCanceledException)
+            {
+                Log($"[{Settings.Name}] Макрос чата прерван отменой потока.", LogType.Warning);
+            }
+            catch (Exception ex)
+            {
+                Log($"Ошибка отправки сообщения в чат альянса: {ex.Message}", LogType.Error);
+            }
         }
     }
+
+
 
 
     #endregion
@@ -999,195 +1086,6 @@ public partial class ActiveBotAccount
     #endregion
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-
-    #region Warp And Dock
-
-    /// <summary>
-    /// ДЕЙСТВИЕ: Инициирует варп и автоматический док на домашнюю станцию/цитадель.
-    /// </summary>
-    public async Task<bool> WarpAndDockToHomeStationAsync(CancellationToken token)
-    {
-        // Симулируем задержку на сетевой запрос или клик по интерфейсу
-        await Task.Delay(100, token);
-        Logger.Log($"[ЗАГЛУШКА] {Settings.Name} выполняет команду: Варп и Док на домашнюю станцию.", LogType.Test);
-
-        // Для теста принудительно переводим стейт в док (космос = false)
-        _inSpace = false;
-        return true;
-    }
-
-    #endregion
-
-    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-/*
-    #region Check Cargo
-
-    /// <summary>
-    /// ДЕЙСТВИЕ: Проверяет текущую заполненность рудного трюма корабля.
-    /// </summary>
-    public async Task<bool> CheckIsCargoFullAsync(CancellationToken token)
-    {
-        await Task.Delay(50, token);
-        Logger.Log($"[ЗАГЛУШКА] {Settings.Name} проверяет заполненность трюма.", LogType.Test);
-
-        // По умолчанию возвращаем false, чтобы бот не уходил в бесконечный цикл разгрузки на старте
-        return false;
-    }
-
-    #endregion
-*/
-    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-
-    #region Unload Ore
-
-    /// <summary>
-    /// ДЕЙСТВИЕ: Переносит всю добытую руду из трюма корабля на склад станции.
-    /// </summary>
-    public async Task<bool> UnloadOreToHangarAsync(CancellationToken token)
-    {
-        await Task.Delay(500, token); // Выгрузка обычно занимает чуть больше времени
-        Logger.Log($"[ЗАГЛУШКА] {Settings.Name} успешно разгрузил руду на склад станции.", LogType.Test);
-        return true;
-    }
-
-    #endregion
-
-    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-
-    #region Undock 
-
-    /// <summary>
-    /// ДЕЙСТВИЕ: Производит отстыковку (андок) корабля от станции.
-    /// </summary>
-    public async Task<bool> UndockFromStationAsync(CancellationToken token)
-    {
-        await Task.Delay(200, token);
-        Logger.Log($"[ЗАГЛУШКА] {Settings.Name} запускает процедуру андока.", LogType.Test);
-
-        // Для теста переводим стейт корабля в космос
-        _inSpace = true;
-        return true;
-    }
-
-    #endregion
-
-    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-
-    #region Select Belt
-
-    /// <summary>
-    /// ДЕЙСТВИЕ: Сканирует овервью или меню игры, выбирает подходящий пояс астероидов.
-    /// </summary>
-    /// <returns>Возвращает объект (строку) с названием пояса, либо null, если ничего не найдено.</returns>
-    public async Task<object?> ScanAndSelectAvailableBeltAsync(CancellationToken token)
-    {
-        await Task.Delay(150, token);
-        const string mockBeltName = "Asteroid Belt Cluster-Alpha";
-        Logger.Log($"[ЗАГЛУШКА] {Settings.Name} отсканировал локацию и выбрал: {mockBeltName}.", LogType.Test);
-        return mockBeltName;
-    }
-
-    #endregion
-
-    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-
-    #region Warp To Belt
-
-    /// <summary>
-    /// ДЕЙСТВИЕ: Инициирует разгон и переход в варп на конкретно выбранный пояс астероидов.
-    /// </summary>
-    public async Task<bool> WarpToSpecificBeltAsync(object? targetBelt, CancellationToken token)
-    {
-        await Task.Delay(100, token);
-        string beltName = targetBelt?.ToString() ?? "Unknown Belt";
-        Logger.Log($"[ЗАГЛУШКА] {Settings.Name} отправлен в варп на точку: {beltName}.", LogType.Test);
-        return true;
-    }
-
-    #endregion
-
-    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-
-    #region Try Target Asteroid
-
-    /// <summary>
-    /// ДЕЙСТВИЕ: Находит ближайший астероид в овервью космоса и берет его в захват (Lock Target).
-    /// </summary>
-    public async Task<bool> TryTargetAsteroidAsync(CancellationToken token)
-    {
-        await Task.Delay(100, token);
-        Logger.Log($"[ЗАГЛУШКА] {Settings.Name} захватил астероид в цель.", LogType.Test);
-        return true;
-    }
-
-    #endregion
-
-    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-
-    #region Activate Lasers
-
-    /// <summary>
-    /// ДЕЙСТВИЕ: Включает буровые/шахтерские лазеры (модули) корабля для начала добычи.
-    /// </summary>
-    public async Task<bool> ActivateLasersAsync(CancellationToken token)
-    {
-        await Task.Delay(150, token); // Имитация задержки на клик по модулю
-        Logger.Log($"[ЗАГЛУШКА] {Settings.Name} отправил команду на активацию буровых лазеров.", LogType.Test);
-
-        // Здесь в будущем будет выставляться флаг _weaponryactive = true
-        return true;
-    }
-
-    #endregion
-
-    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-
-    #region Legacy FSM Methods (Deprecated)
-
-    /// <summary>
-    /// Устаревший метод получения плоских списков задач. Оставлен для временной обратной совместимости.
-    /// </summary>
-    [Obsolete("Используйте метод CreateTree для получения полноценного дерева поведения.")]
-    public List<string> GetDefaultTasks(string scenarioName)
-    {
-        return scenarioName?.ToLower() switch
-        {
-            "localwatcher" => ["CheckSecurity"],
-            _ => ["CheckYourOwnState"]
-        };
-    }
-
-    #endregion
-
-    /// <summary>
-    /// Логика "Осмотрись": выполняет аппаратно-независимые клики для закрытия случайных поп-апов,
-    /// окон наград или рекламы, мешающих обзору OCR.
-    /// </summary>
-    internal async Task ExecuteLookAroundDiagnosticsAsync(CancellationToken token)
-    {
-        Log($"[{Settings.Name}] Запуск макроса 'Осмотрись': попытка восстановить интерфейс.", LogType.Info);
-
-        try
-        {
-            // 1. Нажимаем клавишу ESC через ADB, чтобы закрыть любые случайные окна
-            // (Параметр KEYCODE_ESCAPE в Android равен 111, либо используйте вашу обертку Tools)
-            // Tools.SendKeyEvent(111, Settings.AdbPort); 
-
-            // 2. Делаем небольшую паузу, чтобы интерфейс успел отреагировать
-            await Task.Delay(1500, token);
-
-            // 3. Делаем клик по «пустому» безопасному месту экрана, где обычно нет кнопок,
-            // чтобы сбросить фокус с возможных зависших элементов интерфейса
-            // Tools.SmartClick(100, 100, minSec: 0, maxSec: 1, offset: 0, adbPort: Settings.AdbPort);
-
-            await Task.Delay(1000, token);
-        }
-        catch (Exception ex)
-        {
-            Log($"[{Settings.Name}] Ошибка при выполнении диагностики экрана: {ex.Message}", LogType.Error);
-        }
-    }
-
 }
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
