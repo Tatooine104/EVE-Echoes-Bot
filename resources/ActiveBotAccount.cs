@@ -452,20 +452,23 @@ public partial class ActiveBotAccount
     /// </summary>
     public void Pause()
     {
-        if (State != BotState.Running) return;
-
-        this.State = BotState.Paused;
-
-        // Фиксируем отработанное время в накопитель перед сбросом точки старта
-        if (_startTime != null)
+        lock (_taskLock)
         {
-            _accumulatedTime += (DateTime.Now - _startTime.Value);
+            if (State != BotState.Running) return;
+
+            this.State = BotState.Paused;
+
+            // Потокобезопасно фиксируем отработанное время в накопитель
+            if (_startTime != null)
+            {
+                _accumulatedTime += (DateTime.Now - _startTime.Value);
+            }
+
+            _startTime = null; // Сбрасываем точку старта, останавливая отсчет
+
+            // Плавное гашение асинхронного цикла воркера
+            _accountCts?.Cancel();
         }
-
-        _startTime = null; // Сбрасываем точку старта, останавливая отсчет
-
-        // Плавное гашение асинхронного цикла воркера
-        _accountCts?.Cancel();
 
         Logger.Log($"[{Settings?.Name}] Поток автоматизации приостановлен (Пауза). Время сохранено.", LogType.Warning);
     }
@@ -478,20 +481,25 @@ public partial class ActiveBotAccount
     {
         get
         {
-            // Если бот работает прямо сейчас, возвращаем накопленное время + время текущей сессии
-            if (State == BotState.Running && _startTime != null)
+            lock (_taskLock)
             {
-                return (_accumulatedTime + (DateTime.Now - _startTime.Value)).TotalSeconds;
+                // Защищенное чтение: исключает получение разорванного стейта времени в веб-панели
+                if (State == BotState.Running && _startTime != null)
+                {
+                    return (_accumulatedTime + (DateTime.Now - _startTime.Value)).TotalSeconds;
+                }
+                return _accumulatedTime.TotalSeconds;
             }
-            // Если бот на паузе или стопе, возвращаем только то, что успели накопить
-            return _accumulatedTime.TotalSeconds;
         }
         set
         {
-            // Пустой сеттер, если коду где-то нужно принудительно обнулить поле (например в Stop())
-            if (value == 0) _accumulatedTime = TimeSpan.Zero;
+            lock (_taskLock)
+            {
+                if (value == 0) _accumulatedTime = TimeSpan.Zero;
+            }
         }
     }
+
 
     #region RunLoopAsync
 
@@ -626,25 +634,6 @@ public partial class ActiveBotAccount
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
-    #region ForceSaveStats
-
-    /// <summary>
-    /// Выполняет немедленное принудительное сохранение текущей статистики и очереди задач на диск.
-    /// Используется внешними модулями для экстренной фиксации состояния аккаунта под защитой блокировки.
-    /// </summary>
-    public void ForceSaveStats()
-    {
-        // Безопасно блокируем контекст перед вызовом внутренней логики сериализации
-        lock (_taskLock)
-        {
-            SaveStats();
-        }
-    }
-
-    #endregion
-
-    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-
     #region CheckSecurityStatus 
 
     /// <summary>
@@ -656,12 +645,12 @@ public partial class ActiveBotAccount
     /// <returns>Возвращает <c>true</c>, если система безопасности успешно проанализировала локал и подтвердила отсутствие угроз; иначе <c>false</c>.</returns>
     internal async Task<SecurityCheckResult> CheckSecurityStatusAsync(CancellationToken token)
     {
-        Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Начало выполнения метода.", LogType.Test);
+        Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Начало выполнения метода детекции угрозы.", LogType.Test);
 
         if (Hwnd == IntPtr.Zero)
         {
             Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Окно целевой программы не найдено.", LogType.Error);
-            return SecurityCheckResult.Unknown; // Ошибка -> Осматриваемся
+            return SecurityCheckResult.Unknown;
         }
 
         string pathImg1 = Path.Combine(Program.TemplatesDir, "imgLocalChatHead.png");
@@ -669,91 +658,144 @@ public partial class ActiveBotAccount
 
         Rect localRegion1 = GameRegions.LocalChat.GetOpenCvRect();
         Rect localRegion2 = GameRegions.LocalChatIcon.GetOpenCvRect();
-        string debugDir = Path.GetFullPath(Path.Combine(Program.TemplatesDir, "..", "DebugScreenshots"));
+        string debugDir = Path.Combine(Program.TemplatesDir, "..", "DebugScreenshots");
 
-        using Mat? screenshot = Tools.CaptureWindow(Hwnd);
-        if (screenshot?.Empty() is not false || screenshot.Width <= 0 || screenshot.Height <= 0)
+        Mat? screenshot = null;
+        try
         {
-            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось выполнить повторный захват окна.", LogType.Error);
-            return SecurityCheckResult.Unknown; // Ошибка -> Осматриваемся
-        }
-
-        Rect safeRegion1 = Tools.ClampRegion(localRegion1, screenshot.Width, screenshot.Height);
-        Rect safeRegion2 = Tools.ClampRegion(localRegion2, screenshot.Width, screenshot.Height);
-
-        if (safeRegion1.Width <= 0 || safeRegion1.Height <= 0 || safeRegion2.Width <= 0 || safeRegion2.Height <= 0)
-        {
-            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Область поиска выходит за рамки окна.", LogType.Error);
-            return SecurityCheckResult.Unknown; // Ошибка -> Осматриваемся
-        }
-
-        // ========================================================
-        // ЭТАП 1: Ищем Шапку чата (Развернут ли чат?)
-        // ========================================================
-        Point? foundImg1 = Tools.FindTemplateInRegion(screenshot, pathImg1, safeRegion1, 0.80);
-
-        if (foundImg1.HasValue)
-        {
-    #if DEBUG
+            // ========================================================
+            // ЗАХВАТ ЭКРАНА С ЗАЩИТОЙ GDI WINAPI
+            // ========================================================
+            await Program.GdiSemaphore.WaitAsync(token);
             try
             {
-                using Mat cropped = new(screenshot, safeRegion1);
-                Directory.CreateDirectory(debugDir);
-                Cv2.ImWrite(Path.Combine(debugDir, $"{Settings.Name}_imgLocalChatHead_FOUND.png"), cropped);
+                screenshot = await Task.Run(() => Tools.CaptureWindow(Hwnd), token);
             }
-            catch (Exception ex) {
-                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось сохранить отладочный кадр: {ex.Message}", LogType.Warning);
+            finally
+            {
+                Program.GdiSemaphore.Release();
             }
+
+            if (screenshot?.Empty() ?? true)
+            {
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось выполнить повторный захват окна.", LogType.Error);
+                return SecurityCheckResult.Unknown;
+            }
+
+            // Выносим расчет безопасных регионов в Task.Run для разгрузки вызывающего потока
+            var currentSnap = screenshot;
+            var (safeRegion1, safeRegion2) = await Task.Run(() => (
+                Tools.ClampRegion(localRegion1, currentSnap.Width, currentSnap.Height),
+                Tools.ClampRegion(localRegion2, currentSnap.Width, currentSnap.Height)
+            ), token);
+
+            if (safeRegion1.Width <= 0 || safeRegion1.Height <= 0 || safeRegion2.Width <= 0 || safeRegion2.Height <= 0)
+            {
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Область поиска выходит за рамки окна.", LogType.Error);
+                return SecurityCheckResult.Unknown;
+            }
+
+            // ========================================================
+            // ЭТАП 1: ЧАТ РАЗВЕРНУТ (Ищем Шапку чата)
+            // ========================================================
+            Point? foundImg1 = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathImg1, safeRegion1, 0.80), token);
+
+            if (foundImg1.HasValue)
+            {
+    #if DEBUG
+                try
+                {
+                    using Mat cropped = new(currentSnap, safeRegion1);
+                    Directory.CreateDirectory(debugDir);
+                    Cv2.ImWrite(Path.Combine(debugDir, $"{Settings.Name}_imgLocalChatHead_FOUND.png"), cropped);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось сохранить отладочный кадр: {ex.Message}", LogType.Warning);
+                }
     #endif
-            return RunLocalCheck(screenshot, safeRegion1); // Возвращает Safe или Danger
-        }
+                return RunLocalCheck(currentSnap, safeRegion1);
+            }
 
-        // ========================================================
-        // ЭТАП 2: Чат свернут, ищем Иконку для разворачивания
-        // ========================================================
-        Point? foundImg2 = Tools.FindTemplateInRegion(screenshot, pathImg2, safeRegion2, 0.80);
+            // ========================================================
+            // ЭТАП 2: ЧАТ СВЕРНУТ (Ищем иконку для разворачивания)
+            // ========================================================
+            Point? foundImg2 = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathImg2, safeRegion2, 0.80), token);
 
-        if (foundImg2.HasValue)
-        {
-            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Локальный чат свернут. Обнаружена иконка развертывания.", LogType.Test);
+            if (foundImg2.HasValue)
+            {
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Локальный чат свернут. Обнаружена иконка развертывания.", LogType.Test);
 
     #if DEBUG
-            try
-            {
-                using Mat cropped = new(screenshot, safeRegion2);
-                Directory.CreateDirectory(debugDir);
-                Cv2.ImWrite(Path.Combine(debugDir, $"{Settings.Name}_imgLocalChatIcon_FOUND.png"), cropped);
-            }
-            catch (Exception ex) {
-                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось сохранить отладочный кадр: {ex.Message}", LogType.Warning);
-            }
+                try
+                {
+                    using Mat cropped = new(currentSnap, safeRegion2);
+                    Directory.CreateDirectory(debugDir);
+                    Cv2.ImWrite(Path.Combine(debugDir, $"{Settings.Name}_imgLocalChatIcon_FOUND.png"), cropped);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось сохранить отладочный кадр: {ex.Message}", LogType.Warning);
+                }
     #endif
 
-            // ИСПРАВЛЕНО: Заменяем синхронный вызов Tools.SmartClick на наш эталонный асинхронный метод расширения
-            await this.ClickPointAsync(foundImg2.Value, token, minSec: 1, maxSec: 2, offset: 2);
+                // Асинхронный безопасный клик по координатам иконки
+                await this.ClickPointAsync(foundImg2.Value, token, minSec: 1, maxSec: 2, offset: 2);
+                await Task.Delay(3500, token);
 
-            await Task.Delay(3500, token);
+                // Повторный защищенный захват экрана после клика развертывания
+                Mat? freshScreenshot = null;
+                try
+                {
+                    await Program.GdiSemaphore.WaitAsync(token);
+                    try
+                    {
+                        freshScreenshot = await Task.Run(() => Tools.CaptureWindow(Hwnd), token);
+                    }
+                    finally
+                    {
+                        Program.GdiSemaphore.Release();
+                    }
 
-            using Mat? freshScreenshot = Tools.CaptureWindow(Hwnd);
-            if (freshScreenshot?.Empty() is not false) return SecurityCheckResult.Unknown;
+                    if (freshScreenshot?.Empty() ?? true) return SecurityCheckResult.Unknown;
 
-            Rect freshSafeRegion1 = Tools.ClampRegion(localRegion1, freshScreenshot.Width, freshScreenshot.Height);
-            Point? retryImg1 = Tools.FindTemplateInRegion(freshScreenshot, pathImg1, freshSafeRegion1, 0.80);
+                    var currentFresh = freshScreenshot;
+                    Rect freshSafeRegion1 = await Task.Run(() => Tools.ClampRegion(localRegion1, currentFresh.Width, currentFresh.Height), token);
+                    Point? retryImg1 = await Task.Run(() => Tools.FindTemplateInRegion(currentFresh, pathImg1, freshSafeRegion1, 0.80), token);
 
-            if (retryImg1.HasValue)
-            {
-                return RunLocalCheck(freshScreenshot, freshSafeRegion1); // Возвращает Safe или Danger
+                    if (retryImg1.HasValue)
+                    {
+                        return RunLocalCheck(currentFresh, freshSafeRegion1);
+                    }
+                }
+                finally
+                {
+                    freshScreenshot?.Dispose(); // Гарантированная утилизация второго скриншота
+                }
+
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Интерфейс чата не открылся после клика.", LogType.Warning);
+                return SecurityCheckResult.Unknown;
             }
-
-            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Интерфейс чата не открылся после клика.", LogType.Warning);
-            return SecurityCheckResult.Unknown; // Ошибка открытия интерфейса
+        }
+        catch (OperationCanceledException)
+        {
+            throw; // Пробрасываем корректную отмену в RunLoopAsync
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"[{Settings.Name}] Критический сбой модуля проверки безопасности: {ex.Message}", LogType.Error);
+            return SecurityCheckResult.Unknown;
+        }
+        finally
+        {
+            screenshot?.Dispose(); // Гарантированная очистка базового Mat при любом исходе метода
         }
 
         // ========================================================
-        // ЭТАП 3: ЖЕЛЕЗНАЯ ТИШИНА (Интерфейс не найден вообще)
+        // ЭТАП 3: ПОЛНАЯ НЕОПРЕДЕЛЕННОСТЬ
         // ========================================================
-        Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.", LogType.Info);
-        return SecurityCheckResult.Unknown; // Полная неопределенность -> Запуск "Осмотрись"
+        Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Шаблоны чата отсутствуют на экране. Смена сессии или загрузка.", LogType.Info);
+        return SecurityCheckResult.Unknown;
     }
 
     #endregion
@@ -768,22 +810,25 @@ public partial class ActiveBotAccount
     /// Наличие всех трех маркеров гарантирует отсутствие посторонних пилотов; исчезновение хотя бы одного из них
     /// свидетельствует о появлении потенциальной угрозы в локале и переводит аккаунт в режим тревоги [INDEX].
     /// </summary>
-    /// <param name="screenshot">Текущая графическая матрица скриншота окна эмулятора <see cref="Mat"/>.</param>
-    /// <param name="searchRegion">Прямоугольная область экрана <see cref="Rect"/>, в которой отображаются маркеры чата.</param>
     /// <returns>Возвращает <c>true</c>, если обнаружены все 3 маркера (система чиста); возвращает <c>false</c>, если обнаружена угроза [INDEX].</returns>
+    // Выносим массив имен файлов в статические поля класса для экономии памяти
+    private static readonly string[] SecurityTemplates = ["imgLocalCriminal.png", "imgLocalMinus.png", "imgLocalNeutral.png"];
+
     private SecurityCheckResult RunLocalCheck(Mat screenshot, Rect searchRegion)
     {
-        Rect safeSearchRegion = Tools.ClampRegion(searchRegion, screenshot.Width, screenshot.Height);
-
-        string[] templates = ["imgLocalCriminal.png", "imgLocalMinus.png", "imgLocalNeutral.png"];
+        // Регион searchRegion уже проверен в родительском методе, ClampRegion больше не нужен
         int foundCount = 0;
+        string debugDir = Path.Combine(Program.TemplatesDir, "..", "DebugScreenshots");
+
+        // Использование ReadOnlySpan исключает выделение памяти в куче при каждом такте
+        ReadOnlySpan<string> templates = SecurityTemplates;
 
         foreach (string templateName in templates)
         {
             string fullTemplatePath = Path.Combine(Program.TemplatesDir, templateName);
             if (!File.Exists(fullTemplatePath)) continue;
 
-            Point? foundPoint = Tools.FindTemplateInRegion(screenshot, fullTemplatePath, safeSearchRegion, 0.88);
+            Point? foundPoint = Tools.FindTemplateInRegion(screenshot, fullTemplatePath, searchRegion, 0.88);
 
             if (foundPoint.HasValue)
             {
@@ -791,8 +836,7 @@ public partial class ActiveBotAccount
     #if DEBUG
                 try
                 {
-                    using Mat croppedRegion = new(screenshot, safeSearchRegion);
-                    string debugDir = Path.GetFullPath(Path.Combine(Program.TemplatesDir, "..", "DebugScreenshots"));
+                    using Mat croppedRegion = new(screenshot, searchRegion);
                     Directory.CreateDirectory(debugDir);
                     string debugPath = Path.Combine(debugDir, $"{Settings.Name}_{Path.GetFileNameWithoutExtension(templateName)}_FOUND.png");
                     Cv2.ImWrite(debugPath, croppedRegion);
@@ -806,7 +850,7 @@ public partial class ActiveBotAccount
         }
 
         // ========================================================
-        // ИСПРАВЛЕННАЯ СТРЕДЖ-ЛОГИКА ВЕРДИКТОВ:
+        // СТРОГОЕ СОБЛЮДЕНИЕ ТВОЕЙ ЛОГИКИ ВЕРДИКТОВ:
         // ========================================================
 
         // 1. ИДЕАЛЬНАЯ БЕЗОПАСНОСТЬ: Найдена вся тройка маркеров
@@ -828,6 +872,7 @@ public partial class ActiveBotAccount
         Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] ВНИМАНИЕ: Найдено маркеров безопасности: {foundCount} из 3. Четкая фиксация угрозы!", LogType.Warning);
         return SecurityCheckResult.Danger;
     }
+
 
     #endregion
 
@@ -1096,7 +1141,7 @@ public enum AccountTask
     CheckYourOwnState,
 
     /// <summary>
-    /// Задача определить что происходит
+    /// Задача определить, что происходит на экране (анализ интерфейса при полной неопределенности).
     /// </summary>
     LookAround
 }
