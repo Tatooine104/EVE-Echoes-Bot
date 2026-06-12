@@ -254,7 +254,7 @@ public static partial class ScenarioFactory
         // ========================================================
         // ШАГ 1-2: ОТКРЫТИЕ МЕНЮ И ПОДГОТОВКА СКЛАДА (Zero Allocation)
         // ========================================================
-        ReadOnlySpan<(GameUI Element, int DelayMs)> initialSteps = [
+        (GameUI Element, int DelayMs)[] initialSteps = [
             (GameUI.FastMenu1, 800),
             (GameUI.CollapseStation, 800)
         ];
@@ -293,11 +293,12 @@ public static partial class ScenarioFactory
         // ========================================================
         // ШАГ 4-6: ВЫДЕЛЕНИЕ, ПЕРЕНОС В АНГАР И ЗАКРЫТИЕ (Zero Allocation)
         // ========================================================
-        ReadOnlySpan<(GameUI Element, int DelayMs)> finalSteps = [
+        (GameUI Element, int DelayMs)[] finalSteps = [
             (GameUI.SelectAll, 600),
             (GameUI.ItemHangar, 1500),
-            (GameUI.XButton, 500)
+            (GameUI.XButton, 0)
         ];
+
 
         foreach (var (element, delayMs) in finalSteps)
         {
@@ -397,7 +398,7 @@ public static partial class ScenarioFactory
     /// Проверяет, находится ли корабль в процессе варпа.
     /// Помогает удерживать тик дерева, не совершая лишних действий до прилета.
     /// </summary>
-    private static Task<NodeStatus> CheckIfAlreadyWarpingAsync(ActiveBotAccount bot, CancellationToken token)
+    private static Task<NodeStatus> CheckIfAlreadyWarpingAsync(ActiveBotAccount bot, CancellationToken _)
     {
         if (bot._iswarping)
         {

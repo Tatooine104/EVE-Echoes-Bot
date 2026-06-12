@@ -97,7 +97,8 @@ public class AccountStateDto
     public string CurrentTask { get; set; } = "";
 
     /// <summary>Снапшот оставшейся очереди задач сценария для непрерывного возобновления работы.</summary>
-    public string[] TaskQueue { get; set; } = System.Array.Empty<string>(); // Оптимизировано: защищено от скрытых аллокаций
+    public string[] TaskQueue { get; set; } = [];
+
 
     /// <summary>Временная метка последней синхронизации данных с диском (локальное время ПК).</summary>
     public DateTime LastUpdate { get; set; }

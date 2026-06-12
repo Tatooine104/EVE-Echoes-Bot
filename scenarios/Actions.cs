@@ -44,7 +44,7 @@ public static partial class ScenarioFactory
 
             case SecurityCheckResult.Danger:
                 bot.IsSaveLocal = false;
-                bot._currenttarget = null; 
+                bot._currenttarget = null;
                 Logger.Log($"[{bot.Settings.Name}] Обнаружен противник в локале! Активирую экстренную эвакуацию...", LogType.Warning);
 
                 // Исправлено: принудительно переключаем бота и его соседей в режим бегства на станцию
@@ -94,7 +94,7 @@ public static partial class ScenarioFactory
             $"[PLANET-CHECK] [{bot.Settings.Name}] " +
             $"Флаг PlanetMining: {(bot.PlanetMining ? "ВКЛ" : "ВЫКЛ")} | " +
             $"На станции (В доке): {(!bot._inSpace ? "ДА" : "НЕТ (В космосе)")} | " +
-            $"Прошло часов: {hoursSinceLastAssembly}/8.00 (Доступно по времени: {(isTime ? "ДА" : "НЕТ")})", 
+            $"Прошло часов: {hoursSinceLastAssembly}/8.00 (Доступно по времени: {(isTime ? "ДА" : "НЕТ")})",
             LogType.Test
         );
 #endif
@@ -130,7 +130,7 @@ public static partial class ScenarioFactory
         if (navStatus == NodeStatus.Failure)
         {
             Logger.Log($"[{bot.Settings.Name}] Быстрый путь недоступен. Переход на резервный путь через меню.", LogType.Warning);
-            
+
             if (await OpenMainMenuAsync(bot, token) == NodeStatus.Success)
             {
                 navStatus = await ClickPlanetButtonInMenuAsync(bot, token);
@@ -152,7 +152,8 @@ public static partial class ScenarioFactory
 
         // Описываем шаги: какой элемент нажать и сколько миллисекунд подождать ПОСЛЕ клика
         // Используем синтаксис коллекций C# 12+ [ ... ]
-        ReadOnlySpan<(GameUI Element, int DelayMs, string LogMessage)> miningSteps = [
+        // Исправлено: заменено на массив для безопасного пересечения асинхронного await
+        (GameUI Element, int DelayMs, string LogMessage)[] miningSteps = [
             (GameUI.FirstPlanet,   1200, "Выбор первой планеты в списке..."),
             (GameUI.PlanetTimer,   1500, "Отправка команды на перезапуск таймера..."),
             (GameUI.ConfirmButton, 1500, "Ожидание и отправка подтверждения диалога...")
@@ -742,7 +743,7 @@ public static partial class ScenarioFactory
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region PrepareScreenshotRegionAsync
-    
+
     // Глобальный или статический семафор на уровне сервиса захвата для синхронизации GDI вызовов
     private static readonly System.Threading.SemaphoreSlim _gdiSemaphore = new(1, 1);
 

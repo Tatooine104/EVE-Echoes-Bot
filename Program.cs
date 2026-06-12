@@ -79,7 +79,9 @@ static partial class Program
     /// Глобальное свойство, возвращающее актуальный путь к папке с графическими шаблонами (Images).
     /// Теперь работает мгновенно из оперативной памяти благодаря кэшированию.
     /// </summary>
-    public static string TemplatesDir => _cachedTemplatesDir;
+    public static string TemplatesDir { get; } = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "resources", "images");
+
+
 
     /// <summary>
     /// ПОТОКОБЕЗОПАСНЫЙ метод получения списка ботов. Используется веб-контроллерами API и логикой паники.
@@ -90,7 +92,7 @@ static partial class Program
         lock (ActiveBotsLock)
         {
             // Возвращаем изолированную копию (снимок) списка в виде ReadOnly коллекции
-            return _activeBots.ToList();
+            return [.. _activeBots];
         }
     }
 
@@ -150,11 +152,7 @@ static partial class Program
             try
             {
                 // Корректно и без дедлоков тушим веб-сервер, если он был запущен
-                if (webApp != null)
-                {
-                    // Используем GetAwaiter().GetResult() вместо .Wait(), чтобы рантайм не заблокировал поток
-                    webApp.StopAsync().GetAwaiter().GetResult();
-                }
+                webApp?.StopAsync().GetAwaiter().GetResult();
 
                 // Принудительно гасим ADB-демон
                 using var killProcess = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
