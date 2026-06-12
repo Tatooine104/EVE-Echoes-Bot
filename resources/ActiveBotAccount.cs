@@ -1,17 +1,9 @@
-using System;
-using System.Threading;
-using System.Threading.Tasks;
 using OpenCvSharp;
-using static EVEEchoesBot.Program;
-using static EVEEchoesBot.resources.Tools;
-using System.Diagnostics;
 using System.Text.Json;
-using System.Collections.Concurrent;
-using static EVEEchoesBot.resources.Logger;
-using EVEEchoesBot.resources;
 using EVEEchoesBot.scenarios;
 using Point = OpenCvSharp.Point;
 using System.Text.RegularExpressions;
+
 
 // [v] TODO 2026.05.30 Привести все тексты логгера к единому стилю 
 
@@ -34,138 +26,144 @@ public partial class ActiveBotAccount
     /// </summary>
     public string GetRuntimeString()
     {
-        if (State == BotState.Stopped)
-            return "00 д. 00 ч. 00 м. 00 с.";
+        TimeSpan total;
 
-        // Считаем время текущей сессии (если запущен) + то, что накопилось до пауз
-        var currentSessionTime = _startTime.HasValue ? (DateTime.Now - _startTime.Value) : TimeSpan.Zero;
-        var total = _accumulatedTime + currentSessionTime;
+        // Защищаем чтение состояния сессии от изменений из RunLoopAsync
+        lock (_taskLock)
+        {
+            if (State == BotState.Stopped)
+                return "00 д. 00 ч. 00 м. 00 с.";
+
+            var currentSessionTime = _startTime.HasValue ? (DateTime.Now - _startTime.Value) : TimeSpan.Zero;
+            total = _accumulatedTime + currentSessionTime;
+        }
 
         return $"{total.Days:D2} д. {total.Hours:D2} ч. {total.Minutes:D2} м. {total.Seconds:D2} с.";
     }
 
-        public BotState State { get; private set; } = BotState.Stopped;
 
-        /// <summary>
-        /// Конфигурационные настройки текущего игрового аккаунта.
-        /// </summary>
-        public AccSettings Settings { get; }
+    public BotState State { get; private set; } = BotState.Stopped;
 
-        /// <summary>
-        /// Дескриптор (Handle) окна эмулятора, привязанного к данному аккаунту.
-        /// </summary>
-        public IntPtr Hwnd { get; set; }
+    /// <summary>
+    /// Конфигурационные настройки текущего игрового аккаунта.
+    /// </summary>
+    public AccSettings Settings { get; }
 
-        public bool PlanetMining { get; set; }
+    /// <summary>
+    /// Дескриптор (Handle) окна эмулятора, привязанного к данному аккаунту.
+    /// </summary>
+    public IntPtr Hwnd { get; set; }
 
-        public bool POS { get; set; }
+    public bool PlanetMining { get; set; }
 
-        /// <summary>
-        /// Текущая выполняемая ботом игровая задача.
-        /// </summary>
-        public AccountTask CurrentTask { get; set; }
+    public bool POS { get; set; }
 
-        /// <summary>
-        /// Публичное свойство для получения общего количества срабатываний триггеров (потокобезопасное чтение).
-        /// </summary>
-        public long TriggerCount => Interlocked.Read(ref _triggerCount);
+    /// <summary>
+    /// Текущая выполняемая ботом игровая задача.
+    /// </summary>
+    public AccountTask CurrentTask { get; set; }
 
-        // TODO: Разобраться почему не используется
-        /// <summary>
-        /// Публичное свойство для получения общего времени работы данного аккаунта.
-        /// </summary>
-        public TimeSpan TotalRuntime => TimeSpan.FromSeconds(_accumulatedSeconds);
+    /// <summary>
+    /// Публичное свойство для получения общего количества срабатываний триггеров (потокобезопасное чтение).
+    /// </summary>
+    public long TriggerCount => Interlocked.Read(ref _triggerCount);
 
-        /// <summary>
-        /// Потокобезопасное свойство для получения или изменения текущей звездной системы, где находится персонаж.
-        /// </summary>
-        public string EVESystem
-        {
-            get { lock (_taskLock) return _eveSystem; }
-            set { lock (_taskLock) _eveSystem = value; }
-        }
+    // TODO: Разобраться почему не используется
+    /// <summary>
+    /// Публичное свойство для получения общего времени работы данного аккаунта.
+    /// </summary>
+    public TimeSpan TotalRuntime => TimeSpan.FromSeconds(_accumulatedSeconds);
 
-        /// <summary>
-        /// Потокобезопасное свойство для получения или изменения текущего корабля персонажа.
-        /// </summary>
-        public string EVEShip
-        {
-            get { lock (_taskLock) return _eveShip; }
-            set { lock (_taskLock) _eveShip = value; }
-        }
+    /// <summary>
+    /// Потокобезопасное свойство для получения или изменения текущей звездной системы, где находится персонаж.
+    /// </summary>
+    public string EVESystem
+    {
+        get { lock (_taskLock) return _eveSystem; }
+        set { lock (_taskLock) _eveSystem = value; }
+    }
 
-        // Внутренние переменные игрового контекста персонажа
-        internal string _eveSystem = "???";
-        internal string _eveShip = "???";
-        internal bool _inSpace = false;
-        internal bool _isinzone = false;
-        internal bool _iswarping = false;
-        internal bool _hastarget = false;
-        internal bool _weaponryactive = false;
-        internal bool? _isfullmain = false;
-        internal bool? _isfullore = false;
-        internal DateTime? _planetassembly = null;
-        internal long _triggerCount;
-        #pragma warning disable IDE1006 // Отключаем проверку стиля именования
-        internal object? _currenttarget { get; set; }
-        #pragma warning restore IDE1006 // Включаем обратно для остального кода
+    /// <summary>
+    /// Потокобезопасное свойство для получения или изменения текущего корабля персонажа.
+    /// </summary>
+    public string EVEShip
+    {
+        get { lock (_taskLock) return _eveShip; }
+        set { lock (_taskLock) _eveShip = value; }
+    }
 
-        // Приватные поля управления потоками, памятью, деревом и файловой системой
-        private CancellationTokenSource? _accountCts;
-        private double _accumulatedSeconds;
-        private readonly string _statsFilePath;
-        private readonly System.Threading.Lock _taskLock = new();
-        private List<string> _taskQueue = [];
+    // Внутренние переменные игрового контекста персонажа
+    internal string _eveSystem = "???";
+    internal string _eveShip = "???";
+    internal bool _inSpace = false;
+    internal bool _isinzone = false;
+    internal bool _iswarping = false;
+    internal bool _hastarget = false;
+    internal bool _weaponryactive = false;
+    internal bool? _isfullmain = false;
+    internal bool? _isfullore = false;
+    internal DateTime? _planetassembly = null;
+    internal long _triggerCount;
+    #pragma warning disable IDE1006 // Отключаем проверку стиля именования
+    internal object? _currenttarget { get; set; }
+    #pragma warning restore IDE1006 // Включаем обратно для остального кода
 
-        /// <summary>
-        /// Корневой управляющий узел дерева поведения (Behavior Tree) текущего аккаунта.
-        /// </summary>
-        private BehaviorNode _behaviorTree;
+    // Приватные поля управления потоками, памятью, деревом и файловой системой
+    private CancellationTokenSource? _accountCts;
+    private double _accumulatedSeconds;
+    private readonly string _statsFilePath;
+    private readonly System.Threading.Lock _taskLock = new();
+    private List<string> _taskQueue = [];
 
-        /// <summary>
-        /// Флаг для принудительного пропуска первого лога проверки безопасности при старте сессии.
-        /// </summary>
-        private bool _isFirstSecurityCheck = true;
+    /// <summary>
+    /// Корневой управляющий узел дерева поведения (Behavior Tree) текущего аккаунта.
+    /// </summary>
+    private BehaviorNode _behaviorTree;
 
-        /// <summary>
-        /// Кэшированные настройки JSON-сериализации для оптимизации работы с файлами статов во всех потоках аккаунтов.
-        /// </summary>
-        private static readonly JsonSerializerOptions _jsonOptions = new() { WriteIndented = true };
+    /// <summary>
+    /// Флаг для принудительного пропуска первого лога проверки безопасности при старте сессии.
+    /// </summary>
+    private bool _isFirstSecurityCheck = true;
 
-        /// <summary>
-        /// Инициализирует новый экземпляр класса <see cref="ActiveBotAccount"/> на основе конфигурации аккаунта.
-        /// Выполняет восстановление сохраненного состояния и компилирует дерево поведения из фабрики сценариев.
-        /// </summary>
-        /// <param name="settings">Объект настроек игрового аккаунта <see cref="AccSettings"/>.</param>
-        public ActiveBotAccount(AccSettings settings)
-        {
-            // 1. Присваиваем настройки
-            Settings = settings;
+    /// <summary>
+    /// Кэшированные настройки JSON-сериализации для оптимизации работы с файлами статов во всех потоках аккаунтов.
+    /// </summary>
+    private static readonly JsonSerializerOptions _jsonOptions = new() { WriteIndented = true };
 
-            // 2. Формируем путь к файлу состояния для конкретного аккаунта
-            _statsFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, $"{settings.Name}_stats.json");
+    /// <summary>
+    /// Инициализирует новый экземпляр класса <see cref="ActiveBotAccount"/> на основе конфигурации аккаунта.
+    /// Выполняет восстановление сохраненного состояния и компилирует дерево поведения из фабрики сценариев.
+    /// </summary>
+    /// <param name="settings">Объект настроек игрового аккаунта <see cref="AccSettings"/>.</param>
+    public ActiveBotAccount(AccSettings settings)
+    {
+        // 1. Присваиваем настройки
+        Settings = settings;
 
-            // 3. Пытаемся загрузить сохраненную статистику из файла
-            _ = TryLoadLastStatsAndQueue();
+        // 2. КОМПИЛЯЦИЯ ДЕРЕВА ПОВЕДЕНИЯ: Инициализируем поле в первую очередь для безопасности Nullable-контекста
+        string currentScript = settings.Script ?? "mining";
+        _behaviorTree = ScenarioFactory.CreateTree(currentScript);
 
-            // 4. КОМПИЛЯЦИЯ ДЕРЕВА ПОВЕДЕНИЯ: Навечно привязываем воркер к его ветвящемуся сценарию
-            string currentScript = settings.Script ?? "mining";
-            _behaviorTree = ScenarioFactory.CreateTree(currentScript);
+        // 3. Формируем путь к файлу состояния для конкретного аккаунта
+        _statsFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, $"{settings.Name}_stats.json");
 
-            // Старая FSM-инициализация очередей удалена. Бот готов к тикам дерева поведения.
-        }
+        // 4. Пытаемся загрузить сохраненную статистику из файла
+        _ = TryLoadLastStatsAndQueue();
 
-        // TODO: Разобраться почему не используется
-        /// <summary>
-        /// Производит атомарный инкремент счетчика срабатываний триггеров из любой части логики автоматизации бота.
-        /// </summary>
-        public void IncrementTrigger() => Interlocked.Increment(ref _triggerCount);
+        // Старая FSM-инициализация очередей удалена. Бот готов к тикам дерева поведения.
+    }
 
-        // Использование нового высокоэффективного типа Lock из C# 13 / .NET 9
-        private readonly System.Threading.Lock _scenarioLock = new();
+    // TODO: Разобраться почему не используется
+    /// <summary>
+    /// Производит атомарный инкремент счетчика срабатываний триггеров из любой части логики автоматизации бота.
+    /// </summary>
+    public void IncrementTrigger() => Interlocked.Increment(ref _triggerCount);
 
-        // Упрощенное создание экземпляра через целевой тип new()
-        private CancellationTokenSource _delayCts = new();
+    // Использование нового высокоэффективного типа Lock из C# 13 / .NET 9
+    private readonly System.Threading.Lock _scenarioLock = new();
+
+    // Упрощенное создание экземпляра через целевой тип new()
+    private CancellationTokenSource _delayCts = new();
 
 
     #endregion
@@ -174,7 +172,7 @@ public partial class ActiveBotAccount
     {
         lock (_scenarioLock)
         {
-            Log($"[{Settings.Name}] Запрос на горячую смену сценария на: '{newScenarioName}'", LogType.Info);
+            Logger.Log($"[{Settings.Name}] Запрос на горячую смену сценария на: '{newScenarioName}'", LogType.Info);
 
             // 1. Запрашиваем у фабрики новое дерево поведения
             // Передаем newScenarioName, если фолбек — соберет дефолтное дерево
@@ -184,9 +182,12 @@ public partial class ActiveBotAccount
             _behaviorTree = newTree;
             Settings.Script = newScenarioName;
 
-            // 3. МГНОВЕННО БУДИМ БОТА: прерываем текущий Task.Delay в цикле RunLoopAsync
-            // Это заставит цикл тут же начать новый тик с новым деревом
-            _delayCts.Cancel();
+            // 3. МГНОВЕННО БУДИМ БОТА: отменяем только активный токен
+            if (!_delayCts.IsCancellationRequested)
+            {
+                _delayCts.Cancel();
+            }
+
         }
     }
 
@@ -207,21 +208,22 @@ public partial class ActiveBotAccount
     {
         if (tasks == null) return;
 
-        // Используем объект синхронизации Lock из .NET 9+
+        // Материализуем коллекцию в памяти, защищая InsertRange от сбоев итератора
+        var materializedTasks = tasks.ToList();
+        if (materializedTasks.Count == 0) return;
+
         lock (_taskLock)
         {
             if (addToFront)
             {
-                // Вставляем элементы в начало очереди, строго сохраняя их исходную последовательность
-                _taskQueue.InsertRange(0, tasks);
+                // Используем стабильный материализованный список
+                _taskQueue.InsertRange(0, materializedTasks);
             }
             else
             {
-                // Стандартное добавление элементов в хвост очереди сценария
-                _taskQueue.AddRange(tasks);
+                _taskQueue.AddRange(materializedTasks);
             }
 
-            // Синхронизируем измененную очередь с файлом состояния на диске под защитой блокировки
             SaveStats();
         }
     }
@@ -270,49 +272,16 @@ public partial class ActiveBotAccount
                         CurrentTask = AccountTask.CheckYourOwnState;
                     }
 
-                    // Выполняем интерактивный опрос оператора с блокировкой системного потока ввода Console.In
-                    lock (Console.In)
-                    {
+                    // Убрали опасную блокировку консоли. Данные восстанавливаются напрямую из DTO.
+                    _eveSystem = state.EVESystem;
+                    _eveShip = state.EVEShip;
+                    _isfullmain = state.IsFullMain;
+                    _isfullore = state.IsFullOre;
+                    _planetassembly = state.PlanetAssembly;
 
-                        _eveSystem = state.EVESystem;
+                    // Если значения нет, выставляем безопасный дефолт (false - станция), OpenCV обновит его на первом тике
+                    _inSpace = state.InSpace ?? false;
 
-                        _eveShip = state.EVEShip;
-
-                        _isfullmain = state.IsFullMain;
-
-                        _isfullore = state.IsFullOre;
-
-                        // Загружаем дату последнего сбора планетарных ресурсов
-                        _planetassembly = state.PlanetAssembly;
-
-                        // Умная проверка локации (космос / станция) без ошибок компиляции и лишних вопросов к пользователю
-                        if (state.InSpace.HasValue)
-                        {
-                            // Если значение успешно прочитано из JSON, берем его и НЕ открываем консоль опроса
-                            _inSpace = state.InSpace.Value;
-                        }
-                        else
-                        {
-                            // Консольный опрос сработает ТОЛЬКО один раз, если поля в JSON файле еще физически нет
-                            Console.ResetColor();
-                            Console.Write($"[{state.AccountName}] Корабль сейчас в космосе? (y/n, по умолчанию n): ");
-                            string spaceAnswer = Console.ReadLine()?.Trim().ToLower() ?? "";
-
-                            if (spaceAnswer == "y" || spaceAnswer == "yes" || spaceAnswer == "д" || spaceAnswer == "да")
-                            {
-                                _inSpace = true;
-                            }
-                            else if (spaceAnswer == "n" || spaceAnswer == "no" || spaceAnswer == "н" || spaceAnswer == "нет")
-                            {
-                                _inSpace = false;
-                            }
-                            else
-                            {
-                                // Если ввели некорректные данные, безопасно приводим bool? к дефолтному false
-                                _inSpace = state.InSpace ?? false;
-                            }
-                        }
-                    }
                 }
 
                 return true;
@@ -321,7 +290,7 @@ public partial class ActiveBotAccount
         catch (Exception ex)
         {
             // Маршрутизируем сбой десериализации через штатный логгер платформы, чтобы событие улетело в CSV-отчет
-            Log($"Ошибка загрузки файла состояния: {ex.Message}", LogType.Error);
+            Logger.Log($"Ошибка загрузки файла состояния: {ex.Message}", LogType.Error);
         }
 
         return false;
@@ -337,7 +306,8 @@ public partial class ActiveBotAccount
         {
             _eveSystem = systemName;
         }
-        Logger.Log($"[Аккаунт {Settings?.Name ?? "ID_" + CurrentTask}] Система изменена вручную на: {systemName}", LogType.Info);
+        Logger.Log($"[Аккаунт {Settings?.Name ?? $"ID_{CurrentTask}"}] Система изменена вручную на: {systemName}", LogType.Info);
+
     }
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
@@ -348,7 +318,8 @@ public partial class ActiveBotAccount
         {
             _eveShip = shipName;
         }
-        Logger.Log($"[Аккаунт {Settings?.Name ?? "ID_" + CurrentTask}] Корабль изменен вручную на: {shipName}", LogType.Info);
+        Logger.Log($"[Аккаунт {Settings?.Name ?? $"ID_{CurrentTask}"}] Корабль изменен вручную на: {shipName}", LogType.Info);
+
     }
 
 
@@ -402,7 +373,7 @@ public partial class ActiveBotAccount
         catch (Exception ex)
         {
             // Вызов логгера строго в соответствии с сигнатурой вашего бота (message, type)
-            Log($"Не удалось сохранить статистику аккаунта '{Settings.Name}': {ex.Message}", LogType.Warning);
+            Logger.Log($"Не удалось сохранить статистику аккаунта '{Settings.Name}': {ex.Message}", LogType.Warning);
         }
     }
 
@@ -428,6 +399,9 @@ public partial class ActiveBotAccount
             _startTime = DateTime.Now;
         }
 
+        // Гарантированно очищаем ресурсы старого токена перед выделением новой памяти
+        _accountCts?.Dispose();
+
         // Создаем сквозную связку токенов
         _accountCts = CancellationTokenSource.CreateLinkedTokenSource(globalToken);
 
@@ -448,17 +422,21 @@ public partial class ActiveBotAccount
     /// </summary>
     public void Stop()
     {
-        // Если уже остановлен — ничего не делаем
-        if (State == BotState.Stopped) return;
+        lock (_taskLock)
+        {
+            if (State == BotState.Stopped) return;
 
-        State = BotState.Stopped;
+            State = BotState.Stopped;
 
-        // Плавное гашение асинхронного цикла воркера
-        _accountCts?.Cancel();
+            // Плавное гашение асинхронного цикла воркера и очистка памяти
+            _accountCts?.Cancel();
+            _accountCts?.Dispose();
+            _accountCts = null;
 
-        // Полный сброс таймеров аптайма (Требование №3)
-        _startTime = null;
-        _accumulatedTime = TimeSpan.Zero;
+            // Полный сброс таймеров аптайма под защитой лока
+            _startTime = null;
+            _accumulatedTime = TimeSpan.Zero;
+        }
 
         Logger.Log($"[{Settings?.Name}] Поток автоматизации полностью остановлен. Время сброшено.", LogType.Warning);
     }
@@ -466,6 +444,8 @@ public partial class ActiveBotAccount
     #endregion
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region Pause
 
     /// <summary>
     /// Кнопка "Пауза": Приостанавливает поток автоматизации, сохраняя набранное время работы.
@@ -489,6 +469,8 @@ public partial class ActiveBotAccount
 
         Logger.Log($"[{Settings?.Name}] Поток автоматизации приостановлен (Пауза). Время сохранено.", LogType.Warning);
     }
+
+    #endregion
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
@@ -522,7 +504,7 @@ public partial class ActiveBotAccount
     /// <returns>Асинхронная задача <see cref="Task"/>, управляющая жизненным циклом потока воркера.</returns>
     private async Task RunLoopAsync(CancellationToken token)
     {
-        Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Поток запущен. Начало работы по Дереву поведения: '{Settings.Script ?? "mining"}'.", LogType.Info);
+        Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Поток запущен. Начало работы по Дереву поведения: '{Settings.Script ?? "mining"}'.", LogType.Info);
 
         var sessionStart = System.DateTime.Now;
         var sessionStopwatch = System.Diagnostics.Stopwatch.StartNew();
@@ -570,7 +552,7 @@ public partial class ActiveBotAccount
     #if DEBUG
                     if (treeResult == NodeStatus.Running)
                     {
-                        Log($"[{Settings.Name}] Дерево выполняет длительную операцию (Running). Следующий чек через {delaySeconds}с.", LogType.Test);
+                        Logger.Log($"[{Settings.Name}] Дерево выполняет длительную операцию (Running). Следующий чек через {delaySeconds}с.", LogType.Test);
                     }
     #endif
                     // Использование упрощенного using без фигурных скобок
@@ -590,7 +572,7 @@ public partial class ActiveBotAccount
                     {
                         // Сюда мы попадаем, ТОЛЬКО если token.IsCancellationRequested == false.
                         // Значит, отмена пришла от локального _delayCts.Token (вызван SwitchScenario).
-                        Log($"[{Settings.Name}] Пауза прервана командой из UI. Переключение на новый сценарий...", LogType.Info);
+                        Logger.Log($"[{Settings.Name}] Пауза прервана командой из UI. Переключение на новый сценарий...", LogType.Info);
                     }
                     finally
                     {
@@ -608,18 +590,18 @@ public partial class ActiveBotAccount
                 }
                 catch (Exception ex)
                 {
-                    Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Сбой в главном цикле обработки такта дерева: {ex.Message}", LogType.Error);
+                    Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Сбой в главном цикле обработки такта дерева: {ex.Message}", LogType.Error);
                     await Task.Delay(5000, token); // Защитная пауза при ошибках логики дерева
                 }
             }
         }
         catch (TaskCanceledException)
         {
-            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Получен сигнал остановки аккаунта. Фиксация состояния дерева.", LogType.Info);
+            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Получен сигнал остановки аккаунта. Фиксация состояния дерева.", LogType.Info);
         }
         catch (Exception ex)
         {
-            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Критический сбой рабочего потока дерева поведения: {ex.Message}", LogType.Error);
+            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Критический сбой рабочего потока дерева поведения: {ex.Message}", LogType.Error);
         }
         finally
         {
@@ -635,7 +617,7 @@ public partial class ActiveBotAccount
             }
 
             int sessionSeconds = (int)(System.DateTime.Now - sessionStart).TotalSeconds;
-            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Состояние сохранено. Поток поведения остановлен. Время работы в сессии (сек): {sessionSeconds}", LogType.Info);
+            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Состояние сохранено. Поток поведения остановлен. Время работы в сессии (сек): {sessionSeconds}", LogType.Info);
         }
     }
 
@@ -674,11 +656,11 @@ public partial class ActiveBotAccount
     /// <returns>Возвращает <c>true</c>, если система безопасности успешно проанализировала локал и подтвердила отсутствие угроз; иначе <c>false</c>.</returns>
     internal async Task<SecurityCheckResult> CheckSecurityStatusAsync(CancellationToken token)
     {
-        Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Начало выполнения метода.", LogType.Test);
+        Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Начало выполнения метода.", LogType.Test);
 
         if (Hwnd == IntPtr.Zero)
         {
-            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Окно целевой программы не найдено.", LogType.Error);
+            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Окно целевой программы не найдено.", LogType.Error);
             return SecurityCheckResult.Unknown; // Ошибка -> Осматриваемся
         }
 
@@ -692,7 +674,7 @@ public partial class ActiveBotAccount
         using Mat? screenshot = Tools.CaptureWindow(Hwnd);
         if (screenshot?.Empty() is not false || screenshot.Width <= 0 || screenshot.Height <= 0)
         {
-            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось выполнить повторный захват окна.", LogType.Error);
+            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось выполнить повторный захват окна.", LogType.Error);
             return SecurityCheckResult.Unknown; // Ошибка -> Осматриваемся
         }
 
@@ -701,7 +683,7 @@ public partial class ActiveBotAccount
 
         if (safeRegion1.Width <= 0 || safeRegion1.Height <= 0 || safeRegion2.Width <= 0 || safeRegion2.Height <= 0)
         {
-            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Область поиска выходит за рамки окна.", LogType.Error);
+            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Область поиска выходит за рамки окна.", LogType.Error);
             return SecurityCheckResult.Unknown; // Ошибка -> Осматриваемся
         }
 
@@ -720,7 +702,7 @@ public partial class ActiveBotAccount
                 Cv2.ImWrite(Path.Combine(debugDir, $"{Settings.Name}_imgLocalChatHead_FOUND.png"), cropped);
             }
             catch (Exception ex) {
-                Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось сохранить отладочный кадр: {ex.Message}", LogType.Warning);
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось сохранить отладочный кадр: {ex.Message}", LogType.Warning);
             }
     #endif
             return RunLocalCheck(screenshot, safeRegion1); // Возвращает Safe или Danger
@@ -733,7 +715,7 @@ public partial class ActiveBotAccount
 
         if (foundImg2.HasValue)
         {
-            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Локальный чат свернут. Обнаружена иконка развертывания.", LogType.Test);
+            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Локальный чат свернут. Обнаружена иконка развертывания.", LogType.Test);
 
     #if DEBUG
             try
@@ -743,7 +725,7 @@ public partial class ActiveBotAccount
                 Cv2.ImWrite(Path.Combine(debugDir, $"{Settings.Name}_imgLocalChatIcon_FOUND.png"), cropped);
             }
             catch (Exception ex) {
-                Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось сохранить отладочный кадр: {ex.Message}", LogType.Warning);
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось сохранить отладочный кадр: {ex.Message}", LogType.Warning);
             }
     #endif
 
@@ -763,14 +745,14 @@ public partial class ActiveBotAccount
                 return RunLocalCheck(freshScreenshot, freshSafeRegion1); // Возвращает Safe или Danger
             }
 
-            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Интерфейс чата не открылся после клика.", LogType.Warning);
+            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Интерфейс чата не открылся после клика.", LogType.Warning);
             return SecurityCheckResult.Unknown; // Ошибка открытия интерфейса
         }
 
         // ========================================================
         // ЭТАП 3: ЖЕЛЕЗНАЯ ТИШИНА (Интерфейс не найден вообще)
         // ========================================================
-        Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.", LogType.Info);
+        Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Шаблоны чата отсутствуют на экране. Смена сессии или загрузка экрана.", LogType.Info);
         return SecurityCheckResult.Unknown; // Полная неопределенность -> Запуск "Осмотрись"
     }
 
@@ -817,7 +799,7 @@ public partial class ActiveBotAccount
                 }
                 catch (Exception ex)
                 {
-                    Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось сохранить снимок экрана: {ex.Message}", LogType.Warning);
+                    Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось сохранить снимок экрана: {ex.Message}", LogType.Warning);
                 }
     #endif
             }
@@ -837,13 +819,13 @@ public partial class ActiveBotAccount
         // Чат вроде бы открыт, но маркеры пропали полностью. Даем боту шанс "Осмотреться".
         if (foundCount == 0)
         {
-            Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Маркеры безопасности не найдены (0 из 3). Интерфейс смазан или перекрыт. Осматриваемся.", LogType.Warning);
+            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Маркеры безопасности не найдены (0 из 3). Интерфейс смазан или перекрыт. Осматриваемся.", LogType.Warning);
             return SecurityCheckResult.Unknown;
         }
 
         // 3. РЕАЛЬНАЯ ОПАСНОСТЬ: Найдено 1 или 2 маркера. 
         // Это значит, что интерфейс чата виден ИДЕАЛЬНО, но часть маркеров сместилась/исчезла из-за появления минуса/нейтрала.
-        Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] ВНИМАНИЕ: Найдено маркеров безопасности: {foundCount} из 3. Четкая фиксация угрозы!", LogType.Warning);
+        Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] ВНИМАНИЕ: Найдено маркеров безопасности: {foundCount} из 3. Четкая фиксация угрозы!", LogType.Warning);
         return SecurityCheckResult.Danger;
     }
 
@@ -879,11 +861,11 @@ public partial class ActiveBotAccount
                     if (value is true)
                     {
                         SystemSafetyManager.SetSystemSafe(EVESystem);
-                        Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Стартовая инициализация: система безопасна. Мониторинг запущен.", LogType.Info);
+                        Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Стартовая инициализация: система безопасна. Мониторинг запущен.", LogType.Info);
                         return;
                     }
 
-                    Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Стартовая проверка: система СРАЗУ ОПАСНА! Запуск экстренных процедур.", LogType.Warning);
+                    Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Стартовая проверка: система СРАЗУ ОПАСНА! Запуск экстренных процедур.", LogType.Warning);
                     // При опасности на старте не делаем return, идем обрабатывать угрозу локально
                 }
             }
@@ -897,7 +879,7 @@ public partial class ActiveBotAccount
 
                 if (isFirstAlert)
                 {
-                    Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] ВНИМАНИЕ! Первичная фиксация угрозы в системе. Запуск каскадной паники.", LogType.Warning);
+                    Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] ВНИМАНИЕ! Первичная фиксация угрозы в системе. Запуск каскадной паники.", LogType.Warning);
 
                     // СТРОГО ОДНОКРАТНАЯ ОТПРАВКА УВЕДОМЛЕНИЯ В ЧАТ
                     Task.Run(async () =>
@@ -909,7 +891,7 @@ public partial class ActiveBotAccount
                         }
                         catch (Exception ex)
                         {
-                            Log($"Ошибка отправки сообщения в чат альянса: {ex.Message}", LogType.Error);
+                            Logger.Log($"Ошибка отправки сообщения в чат альянса: {ex.Message}", LogType.Error);
                         }
                     });
 
@@ -933,7 +915,7 @@ public partial class ActiveBotAccount
                         }
                         catch (Exception ex)
                         {
-                            Log($"Ошибка паники для окна {bot.Settings.Name}: {ex.Message}", LogType.Error);
+                            Logger.Log($"Ошибка паники для окна {bot.Settings.Name}: {ex.Message}", LogType.Error);
                         }
                     }
 
@@ -955,7 +937,7 @@ public partial class ActiveBotAccount
                 {
                     // Если мы на станции — просто переводим задачу в ожидание/мониторинг, не запуская эвакуацию
                     this.CurrentTask = AccountTask.CheckSecurity;
-                    Log($"[{Settings.Name}] Корабль уже находится в безопасности (в доке станции). Эвакуация не требуется.", LogType.Info);
+                    Logger.Log($"[{Settings.Name}] Корабль уже находится в безопасности (в доке станции). Эвакуация не требуется.", LogType.Info);
                 }
             }
             else if (value is true)
@@ -964,7 +946,7 @@ public partial class ActiveBotAccount
                 if (SystemSafetyManager.GetSystemState(EVESystem).IsSafe is true) return;
 
                 SystemSafetyManager.SetSystemSafe(EVESystem);
-                Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Статус системы изменился на БЕЗОПАСНО. Враги покинули систему.", LogType.Info);
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Статус системы изменился на БЕЗОПАСНО. Враги покинули систему.", LogType.Info);
             }
         }
     }
@@ -992,13 +974,13 @@ public partial class ActiveBotAccount
                 switch (Settings.Script?.ToLower())
                 {
                     case "lowminer":
-                        Log($"[{Settings.Name}|{EVESystem}] 🚨 УГРОЗА! Инициирована экстренная эвакуация на станцию!", LogType.Warning);
+                        Logger.Log($"[{Settings.Name}|{EVESystem}] 🚨 УГРОЗА! Инициирована экстренная эвакуация на станцию!", LogType.Warning);
                         this.ClearTasks();
                         this.CurrentTask = AccountTask.GoToStation;
                         break;
 
                     case "localwatcher":
-                        Log($"[{Settings.Name}|{EVESystem}] Наблюдатель зафиксировал угрозу, но остается на позиции в доке.", LogType.Info);
+                        Logger.Log($"[{Settings.Name}|{EVESystem}] Наблюдатель зафиксировал угрозу, но остается на позиции в доке.", LogType.Info);
                         this.CurrentTask = AccountTask.CheckSecurity;
                         break;
 
@@ -1017,7 +999,7 @@ public partial class ActiveBotAccount
         // ========================================================
         if (isInitiator)
         {
-            Log($"[{Settings.Name}|{EVESystem}] Рассылка сигнала тревоги остальным ботам в системе...", LogType.Warning);
+            Logger.Log($"[{Settings.Name}|{EVESystem}] Рассылка сигнала тревоги остальным ботам в системе...", LogType.Warning);
 
             // ИСПРАВЛЕНО: Вызываем наш новый потокобезопасный метод из Program напрямую!
             var companionBots = Program.GetActiveBots();
@@ -1028,7 +1010,7 @@ public partial class ActiveBotAccount
                     companion.EVESystem == this.EVESystem &&
                     companion.CurrentTask != AccountTask.GoToStation)
                 {
-                    Log($"[{Settings.Name}] -> Отправка команды паники для {companion.Settings.Name}...", LogType.Info);
+                    Logger.Log($"[{Settings.Name}] -> Отправка команды паники для {companion.Settings.Name}...", LogType.Info);
 
                     _ = companion.ExecuteEmergencyResponseAsync(isInitiator: false, token);
                 }
@@ -1040,7 +1022,7 @@ public partial class ActiveBotAccount
         // ========================================================
         if (isInitiator)
         {
-            Log($"[{Settings.Name}|{EVESystem}] Этот аккаунт — обнаружил угрозу первым. Запуск макроса чата альянса.", LogType.Warning);
+            Logger.Log($"[{Settings.Name}|{EVESystem}] Этот аккаунт — обнаружил угрозу первым. Запуск макроса чата альянса.", LogType.Warning);
 
             try
             {
@@ -1048,11 +1030,11 @@ public partial class ActiveBotAccount
             }
             catch (OperationCanceledException)
             {
-                Log($"[{Settings.Name}] Макрос чата прерван отменой потока.", LogType.Warning);
+                Logger.Log($"[{Settings.Name}] Макрос чата прерван отменой потока.", LogType.Warning);
             }
             catch (Exception ex)
             {
-                Log($"Ошибка отправки сообщения в чат альянса: {ex.Message}", LogType.Error);
+                Logger.Log($"Ошибка отправки сообщения в чат альянса: {ex.Message}", LogType.Error);
             }
         }
     }
@@ -1080,7 +1062,7 @@ public partial class ActiveBotAccount
             // Сбрасываем текущую задачу в состояние покоя, чтобы главный цикл RunLoopAsync понял, что нужно переключиться
             CurrentTask = AccountTask.CheckYourOwnState;
         }
-        Log($"[{Settings.Name}] Очередь задач экстренно очищена.", LogType.Info);
+        Logger.Log($"[{Settings.Name}] Очередь задач экстренно очищена.", LogType.Info);
     }
 
     #endregion
