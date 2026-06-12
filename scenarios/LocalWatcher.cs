@@ -10,9 +10,17 @@ public static partial class ScenarioFactory
     {
         return new SelectorNode("LocalWatcher Root",
 
-            new SequenceNode("Emergency Response Branch",
-                new ActionNode("Check System Danger Status", CheckSystemDangerStatusAsync),
-                new ActionNode("Execute Panic Evacuation", ExecutePanicEvacuationAsync)
+            // ИСПРАВЛЕНО: Изменено на SelectorNode, чтобы эвакуация проверяла стейт 
+            // и не кликала по кнопкам на каждом тике, если корабль уже улетает
+            new SelectorNode("Emergency Response Selector",
+                // Если мы уже на станции или задача GoToStation уже активна — этот узел вернет Success и защитит от повторного входа
+                new ActionNode("Is Already Evacuating Check", CheckIsPanicStateActiveAsync),
+
+                // Если мы еще в космосе и паники нет, срабатывает Sequence проверки локала и запуска эвакуации
+                new SequenceNode("Trigger Emergency Panic",
+                    new ActionNode("Check System Danger Status", CheckSystemDangerStatusAsync),
+                    new ActionNode("Execute Panic Evacuation", ExecutePanicEvacuationAsync)
+                )
             ),
 
             new SequenceNode("Look Around Branch",
