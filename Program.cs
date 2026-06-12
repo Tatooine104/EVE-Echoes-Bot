@@ -79,7 +79,8 @@ static partial class Program
     /// Глобальное свойство, возвращающее актуальный путь к папке с графическими шаблонами (Images).
     /// Теперь работает мгновенно из оперативной памяти благодаря кэшированию.
     /// </summary>
-    public static string TemplatesDir { get; } = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "resources", "images");
+    public static string TemplatesDir => _cachedTemplatesDir;
+
 
 
 
@@ -334,7 +335,7 @@ static partial class Program
         });
 
         // GET /api/debug/enums/regions — Получить список всех регионов OpenCV
-        app.MapGet("/api/debug/enums/regions", () => 
+        app.MapGet("/api/debug/enums/regions", () =>
         {
             // Извлекаем имена из вашего Enum GameRegions
             string[] regions = Enum.GetNames<GameRegions>();
@@ -342,7 +343,7 @@ static partial class Program
         });
 
         // GET /api/debug/enums/ui — Получить список всех элементов кликов GameUI
-        app.MapGet("/api/debug/enums/ui", () => 
+        app.MapGet("/api/debug/enums/ui", () =>
         {
             // Извлекаем имена из вашего Enum GameUI
             string[] uiElements = Enum.GetNames<GameUI>();
@@ -387,9 +388,9 @@ static partial class Program
 
         // POST /api/debug/{id:int}/click/{elementName} — Отправить клик по выбранному элементу GameUI
         app.MapPost("/api/debug/{id:int}/click/{elementName}", async (
-            int id, 
-            string elementName, 
-            BotAccountManager manager, 
+            int id,
+            string elementName,
+            BotAccountManager manager,
             CancellationToken token) => // Кэстрел автоматически передаст сюда токен отмены HTTP-запроса
         {
             var bot = manager.GetAccountById(id);
@@ -493,7 +494,7 @@ static partial class Program
         contextMenu.Items.Add("Открыть веб-панель", null, (s, e) => {
             try
             {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("http://localhost:5000") { UseShellExecute = true }); 
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("http://localhost:5000") { UseShellExecute = true });
             }
             catch { /* Подавляем ошибки, если в ОС нет дефолтного браузера */ }
         });
@@ -528,7 +529,7 @@ static partial class Program
         };
 
         // При выходе гарантированно убираем иконку, чтобы она не "залипала" в панели Windows
-        AppDomain.CurrentDomain.ProcessExit += (s, e) => 
+        AppDomain.CurrentDomain.ProcessExit += (s, e) =>
         {
             if (_notifyIcon != null)
             {

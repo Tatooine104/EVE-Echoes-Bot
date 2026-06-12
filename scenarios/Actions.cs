@@ -397,7 +397,7 @@ public static partial class ScenarioFactory
     /// </summary>
     private static async Task<NodeStatus> TryClickPlanetShortcutAsync(ActiveBotAccount bot, CancellationToken token)
     {
-        Logger.Log($"[{bot.Settings.Name}] Поиск иконки快速доступа планетарки на экране...", LogType.Info);
+        Logger.Log($"[{bot.Settings.Name}] Поиск иконки доступа планетарки на экране...", LogType.Info);
 
         if (bot.Hwnd == IntPtr.Zero)
         {
