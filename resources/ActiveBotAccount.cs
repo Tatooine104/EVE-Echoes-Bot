@@ -95,8 +95,9 @@ public partial class ActiveBotAccount
     // Внутренние переменные игрового контекста персонажа
     internal string _eveSystem = "???";
     internal string _eveShip = "???";
+    internal bool _isUndocking = false;
     internal bool _inSpace = false;
-    internal bool _isinzone = false;
+    internal bool _isinminingzone = false;
     internal bool _iswarping = false;
     internal bool _hastarget = false;
     internal bool _weaponryactive = false;
@@ -356,7 +357,7 @@ public partial class ActiveBotAccount
 
                     InSpace        = _inSpace,
                     IsWarping      = _iswarping,
-                    IsInMiningZone = _isinzone,
+                    IsInMiningZone = _isinminingzone,
                     HasTarget      = _hastarget,
                     WeaponryActive = _weaponryactive,
                     PlanetAssembly = _planetassembly,

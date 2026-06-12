@@ -57,7 +57,8 @@ namespace EVEEchoesBot.resources;
         CollapseStation = 2450105,
         SelectAll = 9850645,
         MoveTo = 1150150,
-        ItemHangar = 4000165
+        ItemHangar = 4000165,
+        UndockButton = 12300250
         // ? = ?
 
     }

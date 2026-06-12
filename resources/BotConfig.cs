@@ -226,7 +226,7 @@ public class BotAccountManager
                     EVEShip = bot._eveShip,
                     InSpace = bot._inSpace,
                     CurrentTarget = bot._currenttarget?.ToString(),
-                    IsInMiningZone = bot._isinzone,
+                    IsInMiningZone = bot._isinminingzone,
                     IsWarping = bot._iswarping,
                     HasTarget = bot._hastarget,
                     WeaponryActive = bot._weaponryactive
