@@ -1,12 +1,9 @@
-using System.Threading;
-using System.Threading.Tasks;
 using EVEEchoesBot.resources;
 using OpenCvSharp;
 using Point = OpenCvSharp.Point;
 using Rect = OpenCvSharp.Rect;
 using System.Diagnostics;
 
-using static System.Diagnostics.Process;
 namespace EVEEchoesBot.scenarios;
 
 public static partial class ScenarioFactory
@@ -47,15 +44,19 @@ public static partial class ScenarioFactory
 
             case SecurityCheckResult.Danger:
                 bot.IsSaveLocal = false;
-                bot._currenttarget = null; // Сбрасываем цель, чтобы не лететь в ловушку
-                Logger.Log($"[{bot.Settings.Name}] Обнаружен противник в локале!", LogType.Warning);
-                await Task.Delay(5000, token); // Даем паузу перед следующим тиком
+                bot._currenttarget = null; 
+                Logger.Log($"[{bot.Settings.Name}] Обнаружен противник в локале! Активирую экстренную эвакуацию...", LogType.Warning);
+
+                // Исправлено: принудительно переключаем бота и его соседей в режим бегства на станцию
+                await bot.ExecuteEmergencyResponseAsync(isInitiator: true, token);
                 return NodeStatus.Failure;
 
             case SecurityCheckResult.Unknown:
                 bot.CurrentTask = AccountTask.LookAround;
-                Logger.Log($"[{bot.Settings.Name}] Интерфейс потерян. Запуск макроса очистки...", LogType.Warning);
-                await bot.ExecuteLookAroundDiagnosticsAsync(token);
+                Logger.Log($"[{bot.Settings.Name}] Интерфейс потерян или перекрыт. Перехожу в режим ожидания и осмотра.", LogType.Warning);
+
+                // Даем игре 3 секунды на возможную прогрузку интерфейса перед следующим тиком
+                await Task.Delay(3000, token);
                 return NodeStatus.Failure;
 
             default:
@@ -73,13 +74,21 @@ public static partial class ScenarioFactory
     /// </summary>
     private static Task<NodeStatus> CheckIfPlanetMiningTimeAsync(ActiveBotAccount bot, CancellationToken _)
     {
+        // МГНОВЕННЫЙ ФИЛЬТР: если планетарка выключена в JSON, сразу выходим без спама в логи
+        if (!bot.PlanetMining)
+        {
+            return Task.FromResult(NodeStatus.Failure);
+        }
+
         // 1. Считаем триггер времени и округляем прошедшие часы для лога
         bool isTime = !bot._planetassembly.HasValue || (DateTime.Now - bot._planetassembly.Value).TotalHours >= 8;
+
 
         double hoursSinceLastAssembly = bot._planetassembly.HasValue
             ? Math.Round((DateTime.Now - bot._planetassembly.Value).TotalHours, 2)
             : 99.0;
 
+#if DEBUG
         // 2. Выводим детальный диагностический лог для отладки условий на каждом тике дерева
         Logger.Log(
             $"[PLANET-CHECK] [{bot.Settings.Name}] " +
@@ -88,6 +97,7 @@ public static partial class ScenarioFactory
             $"Прошло часов: {hoursSinceLastAssembly}/8.00 (Доступно по времени: {(isTime ? "ДА" : "НЕТ")})", 
             LogType.Test
         );
+#endif
 
         // 3. Финальная проверка условий для пропуска к макросу
         if (bot._inSpace || !bot.PlanetMining)
@@ -163,7 +173,12 @@ public static partial class ScenarioFactory
         if (bot.POS)
         {
             Logger.Log($"[{bot.Settings.Name}] Обнаружена привязка к ПОС. Запуск подмодуля сбора...", LogType.Info);
-            await CollectPlanetToPosAsync(bot, token);
+
+            // Исправлено: если сбор ресурсов на ПОС провалился — прерываем выполнение макроса
+            if (await CollectPlanetToPosAsync(bot, token) == NodeStatus.Failure)
+            {
+                return NodeStatus.Failure;
+            }
         }
 
         Logger.Log($"[{bot.Settings.Name}] Завершение макроса. Закрытие интерфейса планетарной добычи...", LogType.Info);
@@ -203,15 +218,15 @@ public static partial class ScenarioFactory
             Mat? screenshot = null;
             try
             {
-                // Защищаем GDI от многопоточного хаоса WinAPI
-                await _gdiSemaphore.WaitAsync(token);
+                // Исправлено: обращаемся к глобальному семафору через Program
+                await Program.GdiSemaphore.WaitAsync(token);
                 try
                 {
                     screenshot = await Task.Run(() => Tools.CaptureWindow(bot.Hwnd), token);
                 }
                 finally
                 {
-                    _gdiSemaphore.Release();
+                    Program.GdiSemaphore.Release();
                 }
 
                 if (screenshot?.Empty() ?? true) return null;
@@ -261,7 +276,7 @@ public static partial class ScenarioFactory
 
             // Исправлено: Передан токен отмены
             await bot.ClickToAsync(GameUI.ConfirmButton, token);
-            await Task.Delay(1500, token); 
+            await Task.Delay(1500, token);
 
             return NodeStatus.Success;
         }
@@ -301,8 +316,16 @@ public static partial class ScenarioFactory
             try
             {
                 ProcessStartInfo psiSwipe = new(adbPath, argsSwipe) { CreateNoWindow = true, UseShellExecute = false };
-                Process.Start(psiSwipe)?.WaitForExit();
+                using var currentProcess = Process.Start(psiSwipe);
+
+                // Оптимизировано: использовали условный доступ ?. для проверки на null
+                if (currentProcess?.WaitForExit(3000) is false)
+                {
+                    currentProcess.Kill();
+                    Logger.Log($"[{bot.Settings.Name}] Команда ADB скролла убита по таймауту.", LogType.Warning);
+                }
     #if DEBUG
+
                 Logger.Log($"[{bot.Settings.Name}] Отправлен свайп от {startElement} (X={startX}, Y={startY}) вверх на {distance}px.", LogType.Test);
     #endif
             }
@@ -343,7 +366,14 @@ public static partial class ScenarioFactory
             try
             {
                 ProcessStartInfo psiSwipe = new(adbPath, argsSwipe) { CreateNoWindow = true, UseShellExecute = false };
-                Process.Start(psiSwipe)?.WaitForExit();
+                using var currentProcess = Process.Start(psiSwipe);
+
+                // Оптимизировано: защита от бесконечного ожидания с использованием условного доступа ?.
+                if (currentProcess?.WaitForExit(3000) is false)
+                {
+                    currentProcess.Kill();
+                    Logger.Log($"[{bot.Settings.Name}] Команда ADB горизонтального скролла убита по таймауту.", LogType.Warning);
+                }
 #if DEBUG
                 Logger.Log($"[{bot.Settings.Name}] Отправлен свайп от {startElement} (X={startX}, Y={startY}) влево на {distance}px.", LogType.Test);
 #endif
@@ -366,7 +396,7 @@ public static partial class ScenarioFactory
     /// </summary>
     private static async Task<NodeStatus> TryClickPlanetShortcutAsync(ActiveBotAccount bot, CancellationToken token)
     {
-        Logger.Log($"[{bot.Settings.Name}] Поиск иконки быстрого доступа планетарки на экране...", LogType.Info);
+        Logger.Log($"[{bot.Settings.Name}] Поиск иконки快速доступа планетарки на экране...", LogType.Info);
 
         if (bot.Hwnd == IntPtr.Zero)
         {
@@ -379,41 +409,70 @@ public static partial class ScenarioFactory
 
         // Получаем регион поиска быстрой панели
         Rect searchRegion = GameRegions.FastMenu.GetOpenCvRect();
+        Mat? screenshot = null;
 
-        // Захватываем скриншот окна эмулятора
-        using Mat? screenshot = Tools.CaptureWindow(bot.Hwnd);
-        if (screenshot?.Empty() is not false || screenshot.Width <= 0 || screenshot.Height <= 0)
+        try
         {
-            Logger.Log($"[{bot.Settings.Name}] Не удалось выполнить захват окна эмулятора.", LogType.Error);
+            // 1. Захватываем скриншот окна эмулятора под защитой глобального семафора GDI
+            await Program.GdiSemaphore.WaitAsync(token);
+            try
+            {
+                screenshot = await Task.Run(() => Tools.CaptureWindow(bot.Hwnd), token);
+            }
+            finally
+            {
+                Program.GdiSemaphore.Release();
+            }
+
+            // Упрощено: современная проверка на null/empty через условный доступ ?.
+            if (screenshot?.Empty() ?? true)
+            {
+                Logger.Log($"[{bot.Settings.Name}] Не удалось выполнить захват окна эмулятора.", LogType.Error);
+                return NodeStatus.Failure;
+            }
+
+            // Корректируем регион под размеры окна, чтобы избежать выхода за границы
+            Rect safeRegion = Tools.ClampRegion(searchRegion, screenshot.Width, screenshot.Height);
+            if (safeRegion.Width <= 0 || safeRegion.Height <= 0)
+            {
+                Logger.Log($"[{bot.Settings.Name}] Область поиска иконки выходит за рамки окна.", LogType.Error);
+                return NodeStatus.Failure;
+            }
+
+            // 2. Уводим тяжелый поиск OpenCV в фоновый пул потоков
+            var currentScreenshot = screenshot;
+            Point? foundPos = await Task.Run(() => Tools.FindTemplateInRegion(currentScreenshot, pathImg, safeRegion, 0.80), token);
+
+            if (foundPos.HasValue)
+            {
+                Logger.Log($"[{bot.Settings.Name}] Иконка доступа найдена. Клик...", LogType.Test);
+
+                // Используем созданный эталонный метод расширения для динамического клика
+                await bot.ClickPointAsync(foundPos.Value, token, minSec: 1, maxSec: 2, offset: 2);
+
+                // Ожидаем загрузку интерфейса планетарки
+                await Task.Delay(2000, token);
+                return NodeStatus.Success;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw; // Пробрасываем корректную асинхронную отмену
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"[{bot.Settings.Name}] Сбой при попытке клика по быстрому интерфейсу планетарки: {ex.Message}", LogType.Error);
             return NodeStatus.Failure;
         }
-
-        // Корректируем регион под размеры окна, чтобы избежать выхода за границы
-        Rect safeRegion = Tools.ClampRegion(searchRegion, screenshot.Width, screenshot.Height);
-        if (safeRegion.Width <= 0 || safeRegion.Height <= 0)
+        finally
         {
-            Logger.Log($"[{bot.Settings.Name}] Область поиска иконки выходит за рамки окна.", LogType.Error);
-            return NodeStatus.Failure;
-        }
-
-        // Ищем шаблон внутри региона с точностью 80%
-        Point? foundPos = Tools.FindTemplateInRegion(screenshot, pathImg, safeRegion, 0.80);
-
-        if (foundPos.HasValue)
-        {
-            Logger.Log($"[{bot.Settings.Name}] Иконка быстрого доступа найдена. Клик...", LogType.Info);
-
-            // ОПТИМИЗАЦИЯ: Используем созданный эталонный метод расширения для динамического клика
-            await bot.ClickPointAsync(foundPos.Value, token, minSec: 1, maxSec: 2, offset: 2);
-
-            // Ожидаем загрузку интерфейса планетарки
-            await Task.Delay(2000, token);
-            return NodeStatus.Success;
+            screenshot?.Dispose(); // Гарантированная утилизация Mat из неуправляемой памяти C++
         }
 
         Logger.Log($"[{bot.Settings.Name}] Иконка быстрого доступа не обнаружена.", LogType.Test);
         return NodeStatus.Failure;
     }
+
 
     #endregion
 
@@ -468,41 +527,70 @@ public static partial class ScenarioFactory
 
         // Получаем область экрана открытого главного меню
         Rect searchRegion = GameRegions.MainMenu.GetOpenCvRect();
+        Mat? screenshot = null;
 
-        // Захватываем текущий скриншот окна эмулятора
-        using Mat? screenshot = Tools.CaptureWindow(bot.Hwnd);
-        if (screenshot?.Empty() is not false || screenshot.Width <= 0 || screenshot.Height <= 0)
+        try
         {
-            Logger.Log($"[{bot.Settings.Name}] Не удалось выполнить захват окна для сканирования меню.", LogType.Error);
+            // 1. Захватываем скриншот окна эмулятора под защитой глобального семафора GDI
+            await Program.GdiSemaphore.WaitAsync(token);
+            try
+            {
+                screenshot = await Task.Run(() => Tools.CaptureWindow(bot.Hwnd), token);
+            }
+            finally
+            {
+                Program.GdiSemaphore.Release();
+            }
+
+            // Упрощено: современная проверка на null/empty через условный доступ ?.
+            if (screenshot?.Empty() ?? true)
+            {
+                Logger.Log($"[{bot.Settings.Name}] Не удалось выполнить захват окна для сканирования меню.", LogType.Error);
+                return NodeStatus.Failure;
+            }
+
+            // Корректируем регион под реальные размеры окна эмулятора
+            Rect safeRegion = Tools.ClampRegion(searchRegion, screenshot.Width, screenshot.Height);
+            if (safeRegion.Width <= 0 || safeRegion.Height <= 0)
+            {
+                Logger.Log($"[{bot.Settings.Name}] Область поиска кнопки меню выходит за рамки окна эмулятора.", LogType.Error);
+                return NodeStatus.Failure;
+            }
+
+            // 2. Уводим тяжелый поиск OpenCV в фоновый пул потоков
+            var currentScreenshot = screenshot;
+            Point? foundPos = await Task.Run(() => Tools.FindTemplateInRegion(currentScreenshot, pathImg, safeRegion, 0.80), token);
+
+            if (foundPos.HasValue)
+            {
+                Logger.Log($"[{bot.Settings.Name}] Кнопка планетарной добычи найдена. Переход в интерфейс...", LogType.Info);
+
+                // Используем наш эталонный асинхронный метод расширения для динамического клика
+                await bot.ClickPointAsync(foundPos.Value, token, minSec: 1, maxSec: 2, offset: 2);
+
+                // Даем игре время прогрузить открывшийся оверлей планетарки
+                await Task.Delay(2000, token);
+                return NodeStatus.Success;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw; // Пробрасываем корректную асинхронную отмену
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"[{bot.Settings.Name}] Сбой при сканировании главного меню: {ex.Message}", LogType.Error);
             return NodeStatus.Failure;
         }
-
-        // Корректируем регион под реальные размеры окна эмулятора
-        Rect safeRegion = Tools.ClampRegion(searchRegion, screenshot.Width, screenshot.Height);
-        if (safeRegion.Width <= 0 || safeRegion.Height <= 0)
+        finally
         {
-            Logger.Log($"[{bot.Settings.Name}] Область поиска кнопки меню выходит за рамки окна эмулятора.", LogType.Error);
-            return NodeStatus.Failure;
-        }
-
-        // Ищем кнопку внутри региона главного меню с точностью 80%
-        Point? foundPos = Tools.FindTemplateInRegion(screenshot, pathImg, safeRegion, 0.80);
-
-        if (foundPos.HasValue)
-        {
-            Logger.Log($"[{bot.Settings.Name}] Кнопка планетарной добычи найдена. Переход в интерфейс...", LogType.Info);
-
-            // Используем наш эталонный асинхронный метод расширения для динамического клика
-            await bot.ClickPointAsync(foundPos.Value, token, minSec: 1, maxSec: 2, offset: 2);
-
-            // Даем игре время прогрузить открывшийся оверлей планетарки
-            await Task.Delay(2000, token);
-            return NodeStatus.Success;
+            screenshot?.Dispose(); // Гарантированная утилизация Mat из неуправляемой памяти C++
         }
 
         Logger.Log($"[{bot.Settings.Name}] Ошибка: Пункт 'Планетарная добыча' не найден в главном меню.", LogType.Error);
         return NodeStatus.Failure;
     }
+
 
     #endregion
 
@@ -654,9 +742,7 @@ public static partial class ScenarioFactory
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region PrepareScreenshotRegionAsync
-
-    /* Проверено */
-
+    
     // Глобальный или статический семафор на уровне сервиса захвата для синхронизации GDI вызовов
     private static readonly System.Threading.SemaphoreSlim _gdiSemaphore = new(1, 1);
 
