@@ -49,7 +49,8 @@ namespace EVEEchoesBot.resources;
         PlanetTimer = 11900145, // Проверено
         ResList = 10600400,
         ConfirmButton = 11650565, // Проверено
-        // EyeIconClose = 
+        EyeIconClose = 12400435,
+        EyeIconOpen  = 9250435,
         FastMenu1 = 250115,
         // FastMenu2 = ?
         // FastMenu3 = ?
@@ -58,7 +59,8 @@ namespace EVEEchoesBot.resources;
         SelectAll = 9850645,
         MoveTo = 1150150,
         ItemHangar = 4000165,
-        UndockButton = 12300250
+        UndockButton = 12300250,
+        CoreInSpace = 6450660
         // ? = ?
 
     }
@@ -91,10 +93,10 @@ public enum GameRegions : long
 
     MainMenu = 5L | (120L << 16) | (775L << 32) | (700L << 48),
     PlanetList = 5L | (110L << 16) | (245L << 32) | (670L << 48),
-    ResourceList = 830L | (100L << 16) | (450L << 32) | (630L << 48)//,
+    ResourceList = 830L | (100L << 16) | (450L << 32) | (630L << 48),
 
-    // ResourceList = 830L | (100L << 16) | (450L << 32) | (630L << 48),
-    // ResourceList = 830L | (100L << 16) | (450L << 32) | (630L << 48)
+    EyeIconClose = 1190L | (390L << 16) | (90L << 32) | (90L << 48),
+    EyeIconOpen  =  880L | (390L << 16) | (90L << 32) | (90L << 48)
 
 }
 

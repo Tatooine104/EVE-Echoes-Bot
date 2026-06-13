@@ -318,20 +318,61 @@ public static partial class ScenarioFactory
     {
         Logger.Log($"[{bot.Settings.Name}] В системе чисто. Инициирую выход из дока.", LogType.Info);
 
-        // Защищаем станцию от повторного входа на следующем тике
+        // Взводим флаг для защиты от повторного входа в метод на время анимации
         bot._isUndocking = true;
 
         try
         {
-            // Клиparent по кнопке Андока
+            // Кликаем по кнопке Андока
             await bot.ClickToAsync(GameUI.UndockButton, token);
 
-            // Даем игре 4 секунды на базовый старт анимации прогрузки космоса
-            await Task.Delay(5000, token);
+            // Даем игре 6 секунд — это базовое минимальное время на запуск анимации вылета
+            await Task.Delay(6000, token);
 
-            // Выставляем флаг, что процесс пошел успешно. На следующем тике 
-            // узел CheckIsDockedAsync сам перепроверит экран.
-            return NodeStatus.Success;
+            Logger.Log($"[{bot.Settings.Name}] Анимация вылета запущена. Ожидаю появление интерфейса космоса...", LogType.Info);
+
+            // Путь к маркеру открытого космоса (глаз овервью)
+            string pathEyeImg = Path.Combine(Program.TemplatesDir, "imgEyeIcon.png");
+
+            // Делаем до 5 динамических попыток сканирования экрана с шагом в 2 секунды (итого даем до 10 секунд на прогрузку)
+            for (int i = 1; i <= 5; i++)
+            {
+                token.ThrowIfCancellationRequested();
+
+                // Используем наш эталонный метод расширения для захвата и обрезки региона
+                var (screenshot, safeRegion) = await bot.PrepareScreenshotRegionAsync(GameRegions.EyeIconClose, token);
+
+                if (screenshot != null)
+                {
+                    using var scope = screenshot; // Автоматически чистим unmanaged-память
+                    var currentSnap = screenshot;
+
+                    // Ищем иконку глаза в фоновом пуле
+                    Point? foundEye = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathEyeImg, safeRegion, 0.82), token);
+
+                    if (foundEye.HasValue)
+                    {
+                        Logger.Log($"[{bot.Settings.Name}] Интерфейс космоса успешно прогружен. Вылет подтвержден!", LogType.Success);
+                        bot._inSpace = true;
+
+                        // Исправлено: вызываем наш новый универсальный метод настройки экрана в космосе
+                        bool interfaceReady = await bot.PrepareSpaceInterfaceAsync(token);
+
+                        if (!interfaceReady)
+                        {
+                            Logger.Log($"[{bot.Settings.Name}] Предупреждение: Не удалось настроить овервью/зум, но корабль в космосе.", LogType.Warning);
+                        }
+
+                        return NodeStatus.Success;
+                    }
+                }
+
+                Logger.Log($"[{bot.Settings.Name}] Космос еще загружается. Попытка валидации {i}/5...", LogType.Test);
+                await Task.Delay(2000, token);
+            }
+
+            Logger.Log($"[{bot.Settings.Name}] Ошибка андока: Время ожидания истекло, интерфейс космоса не появился.", LogType.Error);
+            return NodeStatus.Failure;
         }
         catch (Exception ex)
         {
@@ -343,8 +384,6 @@ public static partial class ScenarioFactory
             bot._isUndocking = false;
         }
     }
-
-
 
     #endregion
 

@@ -3,7 +3,7 @@
     {
       "Name": "Lana Muc",
       "WindowTitle": "BlueStacks_EVE.01",
-      "Script": "LocalWatcher",
+      "Script": "lowminer",
       "PlanetMining": true,
       "POS": false,
       "AdbPort":5565,

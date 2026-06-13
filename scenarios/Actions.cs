@@ -742,4 +742,46 @@ public static partial class ScenarioFactory
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
+    #region PrepareSpaceInterfaceAsync
+
+    public static async Task<bool> PrepareSpaceInterfaceAsync(this ActiveBotAccount bot, CancellationToken token)
+    {
+        Logger.Log($"[{bot.Settings.Name}] Инициализация космического интерфейса: отдаление камеры и открытие грида...", LogType.Info);
+
+        try
+        {
+            // 1. Отдаление камеры (симулируем щипок/зум пальцами наружу для отварпа камеры на максимум)
+            // Координаты Pinch/Zoom в ADB передаются как последовательность, но проще и надежнее отправить 
+            // 3-4 быстрых свайпа от центра к краям, либо нажать специальную кнопку интерфейса, если она заведена.
+            // Если у тебя заведен элемент GameUI.ZoomOutButton, используем его. 
+            // Если нет — симулируем стандартный жест отдаления через ADB:
+
+            string deviceTarget = $"127.0.0.1:{bot.Settings.AdbPort}";
+            string adbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "resources", "adb.exe");
+
+            // Симуляция быстрого жеста отдаления (в зависимости от разрешения, настроим базовый жест)
+            // Для универсальности нажмем горячую клавишу или выполним свайпы. 
+            // Но так как ты просил нажать на ДВЕ ТОЧКИ — мы будем использовать твои элементы GameUI!
+            Logger.Log($"[{bot.Settings.Name}] Отдаляю камеру корабля на максимум...", LogType.Test);
+            await bot.ClickToAsync(GameUI.CoreInSpace, token);
+            await Task.Delay(800, token);
+
+            // 2. Открытие меню локального грида (овервью)
+            Logger.Log($"[{bot.Settings.Name}] Открываю панель локального овервью/грида...", LogType.Test);
+            await bot.ClickToAsync(GameUI.EyeIconClose, token);
+            await Task.Delay(1200, token); // Даем анимации списка открыться
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Ошибка при подготовке космического интерфейса для '{bot.Settings.Name}': {ex.Message}", LogType.Error);
+            return false;
+        }
+    }
+
+    #endregion
+
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
 }
