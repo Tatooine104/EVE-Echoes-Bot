@@ -656,140 +656,102 @@ public partial class ActiveBotAccount
 
         string pathImg1 = Path.Combine(Program.TemplatesDir, "imgLocalChatHead.png");
         string pathImg2 = Path.Combine(Program.TemplatesDir, "imgLocalChatIcon.png");
-
-        Rect localRegion1 = GameRegions.LocalChat.GetOpenCvRect();
-        Rect localRegion2 = GameRegions.LocalChatIcon.GetOpenCvRect();
         string debugDir = Path.Combine(Program.TemplatesDir, "..", "DebugScreenshots");
 
-        Mat? screenshot = null;
-        try
+        // ========================================================
+        // ШАГ 1: ПОЛУЧЕНИЕ ПЕРВОГО СНИМКА ЧЕРЕЗ ХЕЛПЕР
+        // ========================================================
+        var (screenshot, safeRegion1) = await this.PrepareScreenshotRegionAsync(GameRegions.LocalChat, token);
+
+
+        if (screenshot == null)
         {
-            // ========================================================
-            // ЗАХВАТ ЭКРАНА С ЗАЩИТОЙ GDI WINAPI
-            // ========================================================
-            await Program.GdiSemaphore.WaitAsync(token);
-            try
-            {
-                screenshot = await Task.Run(() => Tools.CaptureWindow(Hwnd), token);
-            }
-            finally
-            {
-                Program.GdiSemaphore.Release();
-            }
-
-            if (screenshot?.Empty() ?? true)
-            {
-                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось выполнить повторный захват окна.", LogType.Error);
-                return SecurityCheckResult.Unknown;
-            }
-
-            // Выносим расчет безопасных регионов в Task.Run для разгрузки вызывающего потока
-            var currentSnap = screenshot;
-            var (safeRegion1, safeRegion2) = await Task.Run(() => (
-                Tools.ClampRegion(localRegion1, currentSnap.Width, currentSnap.Height),
-                Tools.ClampRegion(localRegion2, currentSnap.Width, currentSnap.Height)
-            ), token);
-
-            if (safeRegion1.Width <= 0 || safeRegion1.Height <= 0 || safeRegion2.Width <= 0 || safeRegion2.Height <= 0)
-            {
-                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Область поиска выходит за рамки окна.", LogType.Error);
-                return SecurityCheckResult.Unknown;
-            }
-
-            // ========================================================
-            // ЭТАП 1: ЧАТ РАЗВЕРНУТ (Ищем Шапку чата)
-            // ========================================================
-            Point? foundImg1 = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathImg1, safeRegion1, 0.80), token);
-
-            if (foundImg1.HasValue)
-            {
-    #if DEBUG
-                try
-                {
-                    using Mat cropped = new(currentSnap, safeRegion1);
-                    Directory.CreateDirectory(debugDir);
-                    Cv2.ImWrite(Path.Combine(debugDir, $"{Settings.Name}_imgLocalChatHead_FOUND.png"), cropped);
-                }
-                catch (Exception ex)
-                {
-                    Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось сохранить отладочный кадр: {ex.Message}", LogType.Warning);
-                }
-    #endif
-                return RunLocalCheck(currentSnap, safeRegion1);
-            }
-
-            // ========================================================
-            // ЭТАП 2: ЧАТ СВЕРНУТ (Ищем иконку для разворачивания)
-            // ========================================================
-            Point? foundImg2 = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathImg2, safeRegion2, 0.80), token);
-
-            if (foundImg2.HasValue)
-            {
-                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Локальный чат свернут. Обнаружена иконка развертывания.", LogType.Test);
-
-    #if DEBUG
-                try
-                {
-                    using Mat cropped = new(currentSnap, safeRegion2);
-                    Directory.CreateDirectory(debugDir);
-                    Cv2.ImWrite(Path.Combine(debugDir, $"{Settings.Name}_imgLocalChatIcon_FOUND.png"), cropped);
-                }
-                catch (Exception ex)
-                {
-                    Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось сохранить отладочный кадр: {ex.Message}", LogType.Warning);
-                }
-    #endif
-
-                // Асинхронный безопасный клик по координатам иконки
-                await this.ClickPointAsync(foundImg2.Value, token, minSec: 1, maxSec: 2, offset: 2);
-                await Task.Delay(3500, token);
-
-                // Повторный защищенный захват экрана после клика развертывания
-                Mat? freshScreenshot = null;
-                try
-                {
-                    await Program.GdiSemaphore.WaitAsync(token);
-                    try
-                    {
-                        freshScreenshot = await Task.Run(() => Tools.CaptureWindow(Hwnd), token);
-                    }
-                    finally
-                    {
-                        Program.GdiSemaphore.Release();
-                    }
-
-                    if (freshScreenshot?.Empty() ?? true) return SecurityCheckResult.Unknown;
-
-                    var currentFresh = freshScreenshot;
-                    Rect freshSafeRegion1 = await Task.Run(() => Tools.ClampRegion(localRegion1, currentFresh.Width, currentFresh.Height), token);
-                    Point? retryImg1 = await Task.Run(() => Tools.FindTemplateInRegion(currentFresh, pathImg1, freshSafeRegion1, 0.80), token);
-
-                    if (retryImg1.HasValue)
-                    {
-                        return RunLocalCheck(currentFresh, freshSafeRegion1);
-                    }
-                }
-                finally
-                {
-                    freshScreenshot?.Dispose(); // Гарантированная утилизация второго скриншота
-                }
-
-                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Интерфейс чата не открылся после клика.", LogType.Warning);
-                return SecurityCheckResult.Unknown;
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            throw; // Пробрасываем корректную отмену в RunLoopAsync
-        }
-        catch (Exception ex)
-        {
-            Logger.Log($"[{Settings.Name}] Критический сбой модуля проверки безопасности: {ex.Message}", LogType.Error);
+            // Логирование и очистка брака уже сработали внутри хелпера
             return SecurityCheckResult.Unknown;
         }
-        finally
+
+        // Гарантированная scoped-утилизация базового Mat из памяти C++ при любом выходе из метода
+        using var screenshotScope = screenshot;
+
+        // Рассчитываем второй регион (иконки чата) в памяти без лишних графических захватов
+        Rect localRegion2 = GameRegions.MainMenu.GetOpenCvRect(); // Или GameRegions.LocalChatIcon в зависимости от твоего Enum
+        var currentSnap = screenshot;
+        Rect safeRegion2 = await Task.Run(() => Tools.ClampRegion(localRegion2, currentSnap.Width, currentSnap.Height), token);
+
+        if (safeRegion2.Width <= 0 || safeRegion2.Height <= 0)
         {
-            screenshot?.Dispose(); // Гарантированная очистка базового Mat при любом исходе метода
+            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Резервная область поиска иконки чата выходит за рамки окна.", LogType.Test);
+            return SecurityCheckResult.Unknown;
+        }
+
+        // ========================================================
+        // ЭТАП 1: ЧАТ РАЗВЕРНУТ (Ищем Шапку чата)
+        // ========================================================
+        Point? foundImg1 = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathImg1, safeRegion1, 0.80), token);
+
+        if (foundImg1.HasValue)
+        {
+    #if DEBUG
+            try
+            {
+                using Mat cropped = new(currentSnap, safeRegion1);
+                Directory.CreateDirectory(debugDir);
+                Cv2.ImWrite(Path.Combine(debugDir, $"{Settings.Name}_imgLocalChatHead_FOUND.png"), cropped);
+            }
+            catch (Exception ex) 
+            {
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось сохранить отладочный кадр: {ex.Message}", LogType.Warning);
+            }
+    #endif
+            // Передаем управление в RunLocalCheck. Базовый скриншот очистится автоматически благодаря screenshotScope!
+            return RunLocalCheck(currentSnap, safeRegion1);
+        }
+
+        // ========================================================
+        // ЭТАП 2: ЧАТ СВЕРНУТ (Ищем иконку для разворачивания)
+        // ========================================================
+        Point? foundImg2 = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathImg2, safeRegion2, 0.80), token);
+
+        if (foundImg2.HasValue)
+        {
+            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Локальный чат свернут. Обнаружена иконка развертывания.", LogType.Test);
+
+    #if DEBUG
+            try
+            {
+                using Mat cropped = new(currentSnap, safeRegion2);
+                Directory.CreateDirectory(debugDir);
+                Cv2.ImWrite(Path.Combine(debugDir, $"{Settings.Name}_imgLocalChatIcon_FOUND.png"), cropped);
+            }
+            catch (Exception ex) 
+            {
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось сохранить отладочный кадр: {ex.Message}", LogType.Warning);
+            }
+    #endif
+
+            // Асинхронный безопасный клик по координатам иконки
+            await this.ClickPointAsync(foundImg2.Value, token, minSec: 1, maxSec: 2, offset: 2);
+            await Task.Delay(3500, token);
+
+            // Повторный защищенный захват экрана после клика — ТОЖЕ через твой хелпер!
+             var (freshScreenshot, freshSafeRegion1) = await this.PrepareScreenshotRegionAsync(GameRegions.LocalChat, token);
+
+
+            if (freshScreenshot != null)
+            {
+                using var freshScope = freshScreenshot; // Защищаем unmanaged память второго снимка
+                var currentFresh = freshScreenshot;
+
+                Point? retryImg1 = await Task.Run(() => Tools.FindTemplateInRegion(currentFresh, pathImg1, freshSafeRegion1, 0.80), token);
+
+                if (retryImg1.HasValue)
+                {
+                    return RunLocalCheck(currentFresh, freshSafeRegion1); 
+                }
+            }
+
+            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Интерфейс чата не открылся после клика.", LogType.Warning);
+            return SecurityCheckResult.Unknown;
         }
 
         // ========================================================
@@ -813,10 +775,15 @@ public partial class ActiveBotAccount
     /// </summary>
     /// <returns>Возвращает <c>true</c>, если обнаружены все 3 маркера (система чиста); возвращает <c>false</c>, если обнаружена угроза [INDEX].</returns>
     // Выносим массив имен файлов в статические поля класса для экономии памяти
+    // Массив остается статическим на уровне partial-класса аккаунта
     private static readonly string[] SecurityTemplates = ["imgLocalCriminal.png", "imgLocalMinus.png", "imgLocalNeutral.png"];
 
     private SecurityCheckResult RunLocalCheck(Mat screenshot, Rect searchRegion)
     {
+        // Исправлено: страхуем отладочный блок от выхода за рамки матрицы, если safeRegion2 лагнул
+        Rect debugSafeRegion = Tools.ClampRegion(searchRegion, screenshot.Width, screenshot.Height);
+
+    
         // Регион searchRegion уже проверен в родительском методе, ClampRegion больше не нужен
         int foundCount = 0;
         string debugDir = Path.Combine(Program.TemplatesDir, "..", "DebugScreenshots");
@@ -837,7 +804,7 @@ public partial class ActiveBotAccount
     #if DEBUG
                 try
                 {
-                    using Mat croppedRegion = new(screenshot, searchRegion);
+                    using Mat croppedRegion = new(screenshot, debugSafeRegion);
                     Directory.CreateDirectory(debugDir);
                     string debugPath = Path.Combine(debugDir, $"{Settings.Name}_{Path.GetFileNameWithoutExtension(templateName)}_FOUND.png");
                     Cv2.ImWrite(debugPath, croppedRegion);

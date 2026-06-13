@@ -210,45 +210,23 @@ public static partial class ScenarioFactory
         Logger.Log($"[{bot.Settings.Name}] Поиск кнопки запуска сбора ресурсов на ПОС...", LogType.Info);
 
         string launchPathImg = Path.Combine(Program.TemplatesDir, "imgLaunchButton.png");
-        Rect interfaceRegion = GameRegions.ResourceList.GetOpenCvRect();
         Point? foundLaunchBtn = null;
-
-        // Вспомогательная локальная функция (для DRY), чтобы не дублировать логику захвата и поиска OpenCV
-        async Task<Point?> CaptureAndFindButtonAsync()
-        {
-            Mat? screenshot = null;
-            try
-            {
-                // Исправлено: обращаемся к глобальному семафору через Program
-                await Program.GdiSemaphore.WaitAsync(token);
-                try
-                {
-                    screenshot = await Task.Run(() => Tools.CaptureWindow(bot.Hwnd), token);
-                }
-                finally
-                {
-                    Program.GdiSemaphore.Release();
-                }
-
-                if (screenshot?.Empty() ?? true) return null;
-
-                Rect safeRegion = Tools.ClampRegion(interfaceRegion, screenshot.Width, screenshot.Height);
-
-                // Выносим тяжелый поиск OpenCV в фоновый пул
-                var currentScreenshot = screenshot;
-                return await Task.Run(() => Tools.FindTemplateInRegion(currentScreenshot, launchPathImg, safeRegion, 0.80), token);
-            }
-            finally
-            {
-                screenshot?.Dispose(); // Гарантированная очистка Mat при каждом поиске
-            }
-        }
 
         // ========================================================
         // ПОПЫТКА 1: Поиск кнопки "как есть" при открытии интерфейса
         // ========================================================
         await Task.Delay(1500, token);
-        foundLaunchBtn = await CaptureAndFindButtonAsync();
+        
+        // Вызываем созданный нами ранее сквозной метод расширения
+        var (screenshot, safeRegion) = await bot.PrepareScreenshotRegionAsync(GameRegions.ResourceList, token);
+
+        if (screenshot != null)
+        {
+            using var scope = screenshot; // Гарантированная scoped-утилизация unmanaged памяти
+            var currentSnap = screenshot;
+            
+            foundLaunchBtn = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, launchPathImg, safeRegion, 0.80), token);
+        }
 
         // ========================================================
         // ПОПЫТКА 2: Если не нашли — выполняем скролл и ищем заново
@@ -258,11 +236,19 @@ public static partial class ScenarioFactory
             Logger.Log($"[{bot.Settings.Name}] Кнопка запуска не видна на первом экране. Выполняю прокрутку вниз...", LogType.Warning);
 
             await Task.Delay(500, token);
-            // Скроллим интерфейс (передаем token)
             await bot.ScrollDownAsync(GameUI.ResList, 200, token);
             await Task.Delay(1500, token); // Ожидаем завершения анимации скролла игры
 
-            foundLaunchBtn = await CaptureAndFindButtonAsync();
+            // Повторный захват через тот же безопасный метод расширения
+            var (retryScreenshot, retryRegion) = await bot.PrepareScreenshotRegionAsync(GameRegions.ResourceList, token);
+
+            if (retryScreenshot != null)
+            {
+                using var retryScope = retryScreenshot;
+                var currentRetrySnap = retryScreenshot;
+                
+                foundLaunchBtn = await Task.Run(() => Tools.FindTemplateInRegion(currentRetrySnap, launchPathImg, retryRegion, 0.80), token);
+            }
         }
 
         // ========================================================
@@ -275,7 +261,6 @@ public static partial class ScenarioFactory
             await bot.ClickPointAsync(foundLaunchBtn.Value, token, minSec: 1, maxSec: 2, offset: 2);
             await Task.Delay(2000, token); // Ожидаем реакцию интерфейса
 
-            // Исправлено: Передан токен отмены
             await bot.ClickToAsync(GameUI.ConfirmButton, token);
             await Task.Delay(1500, token);
 
@@ -285,6 +270,7 @@ public static partial class ScenarioFactory
         Logger.Log($"[{bot.Settings.Name}] Ошибка: Кнопка 'imgLaunchButton.png' не найдена даже после скролла.", LogType.Error);
         return NodeStatus.Failure;
     }
+
 
     #endregion
 
@@ -408,39 +394,21 @@ public static partial class ScenarioFactory
         // Путь к шаблону иконки на главном экране
         string pathImg = Path.Combine(Program.TemplatesDir, "imgPlanetShortcut.png");
 
-        // Получаем регион поиска быстрой панели
-        Rect searchRegion = GameRegions.FastMenu.GetOpenCvRect();
-        Mat? screenshot = null;
+        // ИСПРАВЛЕНО: Теперь метод использует твой сквозной метод расширения для подготовки кадра
+        var (screenshot, safeRegion) = await bot.PrepareScreenshotRegionAsync(GameRegions.FastMenu, token);
+
+        if (screenshot == null)
+        {
+            // Логирование сбоя захвата и очистка брака уже сработали внутри хелпера
+            return NodeStatus.Failure;
+        }
+
+        // Гарантированная scoped-утилизация unmanaged памяти OpenCV при любом выходе из метода
+        using var screenshotScope = screenshot;
 
         try
         {
-            // 1. Захватываем скриншот окна эмулятора под защитой глобального семафора GDI
-            await Program.GdiSemaphore.WaitAsync(token);
-            try
-            {
-                screenshot = await Task.Run(() => Tools.CaptureWindow(bot.Hwnd), token);
-            }
-            finally
-            {
-                Program.GdiSemaphore.Release();
-            }
-
-            // Упрощено: современная проверка на null/empty через условный доступ ?.
-            if (screenshot?.Empty() ?? true)
-            {
-                Logger.Log($"[{bot.Settings.Name}] Не удалось выполнить захват окна эмулятора.", LogType.Error);
-                return NodeStatus.Failure;
-            }
-
-            // Корректируем регион под размеры окна, чтобы избежать выхода за границы
-            Rect safeRegion = Tools.ClampRegion(searchRegion, screenshot.Width, screenshot.Height);
-            if (safeRegion.Width <= 0 || safeRegion.Height <= 0)
-            {
-                Logger.Log($"[{bot.Settings.Name}] Область поиска иконки выходит за рамки окна.", LogType.Error);
-                return NodeStatus.Failure;
-            }
-
-            // 2. Уводим тяжелый поиск OpenCV в фоновый пул потоков
+            // Уводим тяжелый поиск OpenCV в фоновый пул потоков
             var currentScreenshot = screenshot;
             Point? foundPos = await Task.Run(() => Tools.FindTemplateInRegion(currentScreenshot, pathImg, safeRegion, 0.80), token);
 
@@ -462,12 +430,8 @@ public static partial class ScenarioFactory
         }
         catch (Exception ex)
         {
-            Logger.Log($"[{bot.Settings.Name}] Сбой при попытке клика по быстрому интерфейсу планетарки: {ex.Message}", LogType.Error);
+            Logger.Log($"[{bot.Settings.Name}] Сбой при анализе быстрого интерфейса планетарки: {ex.Message}", LogType.Error);
             return NodeStatus.Failure;
-        }
-        finally
-        {
-            screenshot?.Dispose(); // Гарантированная утилизация Mat из неуправляемой памяти C++
         }
 
         Logger.Log($"[{bot.Settings.Name}] Иконка быстрого доступа не обнаружена.", LogType.Test);
@@ -526,39 +490,21 @@ public static partial class ScenarioFactory
             return NodeStatus.Failure;
         }
 
-        // Получаем область экрана открытого главного меню
-        Rect searchRegion = GameRegions.MainMenu.GetOpenCvRect();
-        Mat? screenshot = null;
+        // ИСПРАВЛЕНО: Теперь метод использует твой сквозной метод расширения для подготовки кадра главного меню
+        var (screenshot, safeRegion) = await bot.PrepareScreenshotRegionAsync(GameRegions.MainMenu, token);
+
+        if (screenshot == null)
+        {
+            // Логирование сбоя захвата и очистка брака уже сработали внутри хелпера
+            return NodeStatus.Failure;
+        }
+
+        // Гарантированная scoped-утилизация unmanaged памяти OpenCV при любом выходе из метода
+        using var screenshotScope = screenshot;
 
         try
         {
-            // 1. Захватываем скриншот окна эмулятора под защитой глобального семафора GDI
-            await Program.GdiSemaphore.WaitAsync(token);
-            try
-            {
-                screenshot = await Task.Run(() => Tools.CaptureWindow(bot.Hwnd), token);
-            }
-            finally
-            {
-                Program.GdiSemaphore.Release();
-            }
-
-            // Упрощено: современная проверка на null/empty через условный доступ ?.
-            if (screenshot?.Empty() ?? true)
-            {
-                Logger.Log($"[{bot.Settings.Name}] Не удалось выполнить захват окна для сканирования меню.", LogType.Error);
-                return NodeStatus.Failure;
-            }
-
-            // Корректируем регион под реальные размеры окна эмулятора
-            Rect safeRegion = Tools.ClampRegion(searchRegion, screenshot.Width, screenshot.Height);
-            if (safeRegion.Width <= 0 || safeRegion.Height <= 0)
-            {
-                Logger.Log($"[{bot.Settings.Name}] Область поиска кнопки меню выходит за рамки окна эмулятора.", LogType.Error);
-                return NodeStatus.Failure;
-            }
-
-            // 2. Уводим тяжелый поиск OpenCV в фоновый пул потоков
+            // Уводим тяжелый поиск OpenCV в фоновый пул потоков
             var currentScreenshot = screenshot;
             Point? foundPos = await Task.Run(() => Tools.FindTemplateInRegion(currentScreenshot, pathImg, safeRegion, 0.80), token);
 
@@ -583,15 +529,10 @@ public static partial class ScenarioFactory
             Logger.Log($"[{bot.Settings.Name}] Сбой при сканировании главного меню: {ex.Message}", LogType.Error);
             return NodeStatus.Failure;
         }
-        finally
-        {
-            screenshot?.Dispose(); // Гарантированная утилизация Mat из неуправляемой памяти C++
-        }
 
         Logger.Log($"[{bot.Settings.Name}] Ошибка: Пункт 'Планетарная добыча' не найден в главном меню.", LogType.Error);
         return NodeStatus.Failure;
     }
-
 
     #endregion
 
@@ -632,7 +573,6 @@ public static partial class ScenarioFactory
             return NodeStatus.Failure;
         }
 
-        Rect searchRegion = GameRegions.ChatsLabels.GetOpenCvRect();
         Point? foundChat = null;
         bool isCorpChat = false;
         Mat? screenshot = null;
@@ -647,32 +587,23 @@ public static partial class ScenarioFactory
                 await bot.ClickToAsync(GameUI.ChatsInterface, token);
                 await Task.Delay(attempt == 1 ? 3500 : 4000, token);
 
-                // Безопасно очищаем старый скриншот перед новым захватом
+                // Перед новой попыткой освобождаем Mat из предыдущей итерации цикла
                 screenshot?.Dispose();
-                screenshot = null;
 
-                // Защищаем GDI от многопоточных сбоев WinAPI через семафор
-                await _gdiSemaphore.WaitAsync(token);
-                try
-                {
-                    screenshot = await Task.Run(() => Tools.CaptureWindow(bot.Hwnd), token);
-                }
-                finally
-                {
-                    _gdiSemaphore.Release();
-                }
+                // ОПТИМИЗИРОВАНО: Хелпер сам сделает захват под семафором, проверит на брак и вернет Rect
+                var (freshSnap, safeRegion) = await PrepareScreenshotRegionAsync(bot, GameRegions.ChatsLabels, token);
 
-                // Современная проверка на null/empty
-                if (screenshot?.Empty() ?? true)
+                if (freshSnap == null)
                 {
-                    Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Не удалось выполнить повторный захват окна. Прерывание выполнения.", LogType.Error);
+                    Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Не удалось получить кадр чата на попытке {attempt}.", LogType.Error);
                     return NodeStatus.Failure;
                 }
 
-                Rect safeRegion = Tools.ClampRegion(searchRegion, screenshot.Width, screenshot.Height);
+                screenshot = freshSnap; // Передаем ссылку в переменную для дальнейшего OpenCV-поиска
+
                 Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Поиск маркеров языка интерфейса чата (Попытка {attempt}).", LogType.Test);
 
-                // Кэшируем локальные переменные для передачи в Task.Run (избегаем замыкания Mat)
+                // Кэшируем локальные переменные для передачи в Task.Run
                 var currentScreenshot = screenshot;
                 var currentRegion = safeRegion;
 
@@ -751,7 +682,8 @@ public static partial class ScenarioFactory
     /// Универсальный метод захвата экрана и подготовки безопасной области поиска.
     /// Возвращает кортеж (screenshot, safeRegion). Если захват не удался, возвращает (null, safeRegion с нулевыми размерами).
     /// </summary>
-    private static async Task<(Mat? Screenshot, Rect SafeRegion)> PrepareScreenshotRegionAsync(ActiveBotAccount bot, GameRegions region, CancellationToken token)
+    // Исправлено: сделали метод публичным методом расширения (добавлено слово this)
+    public static async Task<(Mat? Screenshot, Rect SafeRegion)> PrepareScreenshotRegionAsync(this ActiveBotAccount bot, GameRegions region, CancellationToken token)
     {
         if (bot.Hwnd == IntPtr.Zero)
         {
@@ -761,13 +693,13 @@ public static partial class ScenarioFactory
 
         Mat? screenshot = null;
 
+        // Сначала занимаем очередь. Если токен отменится ТУТ, поток вылетит ДО блока try, 
+        // не вызывая ложного и опасного Release() в блоке finally.
+        await Program.GdiSemaphore.WaitAsync(token);
+
         try
         {
-            // 1. Защищаем GDI от многопоточного хаоса. Боты заходят за скриншотом строго по очереди.
-            // Ожидаем очередь с поддержкой токена отмены.
-            await _gdiSemaphore.WaitAsync(token);
-
-            // 2. Выполняем захват в фоновом потоке
+            // Выполняем захват в фоновом потоке
             screenshot = await Task.Run(() => Tools.CaptureWindow(bot.Hwnd), token);
         }
         catch (OperationCanceledException)

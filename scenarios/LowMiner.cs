@@ -120,7 +120,7 @@ public static partial class ScenarioFactory
     /// </summary>
     public static async Task<NodeStatus> CheckIsDockedAsync(ActiveBotAccount bot, CancellationToken token)
     {
-        // Используем хелпер для захвата экрана и подготовки региона
+        // ИСПРАВЛЕНО: Теперь метод использует твой централизованный асинхронный хелпер подготовки экрана
         var (screenshot, safeRegion) = await PrepareScreenshotRegionAsync(bot, GameRegions.ControlUndock, token);
 
         if (screenshot == null)
@@ -128,29 +128,27 @@ public static partial class ScenarioFactory
             return NodeStatus.Failure;
         }
 
-        // Современная и безопасная утилизация unmanaged памяти OpenCV при любом выходе из метода
+        // Гарантированная утилизация unmanaged памяти OpenCV при любом выходе из метода
         using var screenshotScope = screenshot;
 
-        // Оптимизировано: берем централизованный путь к графике из памяти, не терзая диск
+        // Берем путь к файлу шаблона из кэша ядра платформы
         string pathImg = Path.Combine(Program.TemplatesDir, "imgUndock1.png");
 
-        // Защищаем фоновый поток: фиксируем ссылку на матрицу до запуска Task.Run,
-        // исключая AccessViolationException при внезапной отмене токена
+        // Блокируем ссылку на матрицу пикселей для безопасного фонового поиска в пуле Task.Run
         var currentSnap = screenshot;
         Point? foundPos = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathImg, safeRegion, 0.85), token);
 
         if (foundPos.HasValue)
         {
-            // Кнопка выхода найдена -> корабль точно в доке
+            // Кнопка выхода из дока найдена -> фиксируем нахождение на станции
             bot._inSpace = false;
             return NodeStatus.Success;
         }
 
-        // Кнопка не найдена -> корабль в космосе
+        // Кнопка не обнаружена -> фиксируем нахождение персонажа в открытом космосе
         bot._inSpace = true;
         return NodeStatus.Failure;
     }
-
 
     #endregion
 
@@ -163,8 +161,8 @@ public static partial class ScenarioFactory
     /// </summary>
     private static async Task<NodeStatus> CheckIsCargoFullAsync(ActiveBotAccount bot, CancellationToken token)
     {
-        // 1. Делаем первый снимок для первичного анализа
-        var (screenshot, safeRegion) = await PrepareScreenshotRegionAsync(bot, GameRegions.FastMenu, token);
+        // 1. Делаем первый снимок через твой хелпер-метод расширения
+        var (screenshot, safeRegion) = await bot.PrepareScreenshotRegionAsync(GameRegions.FastMenu, token);
         if (screenshot == null) return NodeStatus.Failure;
 
         using var screenshotScope = screenshot; // Безопасная scoped-утилизация Mat
@@ -175,21 +173,21 @@ public static partial class ScenarioFactory
         Point? foundCargo = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathCargo, safeRegion, 0.85), token);
         if (foundCargo.HasValue) return NodeStatus.Success;
 
-        // 2. Если не нашли трюм, ищем флаг флота, который мог его перекрыть (тоже асинхронно)
+        // 2. Если не нашли трюм, ищем флаг флота
         string pathFleet = Path.Combine(Program.TemplatesDir, "imgFleetFlags.png");
         Point? foundFleet = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathFleet, safeRegion, 0.85), token);
 
-        if (!foundFleet.HasValue) return NodeStatus.Failure; // Ни трюма, ни флага — значит не полон
+        if (!foundFleet.HasValue) return NodeStatus.Failure;
 
-        // 3. Флаг нашли — сдвигаем панель влево на 50 пикселей от точки FastMenu1
+        // 3. Флаг нашли — сдвигаем панель влево
         await bot.ScrollLeftAsync(GameUI.FastMenu1, 50, token);
-        await Task.Delay(600, token); // Ждем завершения анимации свайпа
+        await Task.Delay(600, token);
 
-        // 4. Повторный снимок для проверки трюма после сдвига
-        var (retryScreenshot, retryRegion) = await PrepareScreenshotRegionAsync(bot, GameRegions.FastMenu, token);
+        // 4. Повторный снимок через твой хелпер
+        var (retryScreenshot, retryRegion) = await bot.PrepareScreenshotRegionAsync(GameRegions.FastMenu, token);
         if (retryScreenshot == null) return NodeStatus.Failure;
 
-        using var retryScope = retryScreenshot; // Безопасная scoped-утилизация второго Mat
+        using var retryScope = retryScreenshot;
         var currentRetrySnap = retryScreenshot;
 
         // Финальный асинхронный поиск трюма на сдвинутом экране
@@ -197,6 +195,7 @@ public static partial class ScenarioFactory
 
         return foundCargoRetry.HasValue ? NodeStatus.Success : NodeStatus.Failure;
     }
+
 
 
     #endregion
@@ -210,33 +209,26 @@ public static partial class ScenarioFactory
     /// </summary>
     private static async Task<NodeStatus> CheckIsCargoEmptyAsync(ActiveBotAccount bot, CancellationToken token)
     {
-        // Делаем снимок панели для анализа пустого трюма
-        var (screenshot, safeRegion) = await PrepareScreenshotRegionAsync(bot, GameRegions.FastMenu, token);
+        // ИСПРАВЛЕНО: Вызываем хелпер как метод расширения
+        var (screenshot, safeRegion) = await bot.PrepareScreenshotRegionAsync(GameRegions.FastMenu, token);
         if (screenshot == null)
         {
             return NodeStatus.Failure;
         }
 
-        // Современная и безопасная scoped-утилизация unmanaged памяти OpenCV
         using var screenshotScope = screenshot;
-
-        // Оптимизировано: берем централизованный путь к графике из памяти
         string pathCargoEmpty = Path.Combine(Program.TemplatesDir, "imgCargoHold0.png");
 
-        // Исправлено: Защищаем фоновый поток и уводим тяжелый поиск OpenCV в фоновый пул
         var currentSnap = screenshot;
         Point? foundCargoEmpty = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathCargoEmpty, safeRegion, 0.85), token);
 
         if (foundCargoEmpty.HasValue)
         {
-            // Шаблон нуля найден -> трюм пуст
             return NodeStatus.Success;
         }
 
-        // Шаблон не найден -> трюм не пуст (или меню перекрыто)
         return NodeStatus.Failure;
     }
-
 
     #endregion
 
@@ -601,25 +593,7 @@ public static partial class ScenarioFactory
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
-
-
-    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-
-
-
-    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-
-
-
-
-    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-
-
-
-
-
-    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-
+    #region CheckIsPanicStateActiveAsync
 
     /// <summary>
     /// Проверяет, находится ли бот в состоянии экстренной паники/эвакуации.
@@ -648,5 +622,7 @@ public static partial class ScenarioFactory
         // Возвращаем Failure, чтобы дерево не пошло дальше по ветке андока в этот тик.
         return Task.FromResult(bot._isUndocking ? NodeStatus.Failure : NodeStatus.Success);
     }
+
+    #endregion
 
 }
