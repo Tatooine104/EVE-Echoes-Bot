@@ -87,6 +87,9 @@ public class AccountStateDto
     /// <summary>Имя игрового аккаунта.</summary>
     public string AccountName { get; set; } = "";
 
+    // Поле для автоматического вывода любого сценария в UI
+    public string Script { get; set; } = string.Empty;
+
     /// <summary>Общее накопленное количество срабатываний триггеров безопасности/активности.</summary>
     public long Triggers { get; set; }
 
@@ -221,6 +224,7 @@ public class BotAccountManager
                 extended = new AccountStateDto
                 {
                     AccountName = bot.Settings?.Name ?? $"Account_{index + 1}",
+                    Script = bot.Settings?.Script ?? "Unknown",
                     CurrentTask = bot.CurrentTask.ToString(),
                     RuntimeSeconds = bot.RuntimeSeconds,
                     EVESystem = bot._eveSystem,

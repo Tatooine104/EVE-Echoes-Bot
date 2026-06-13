@@ -52,7 +52,7 @@
                 <tr>
                     <th>Эмулятор</th>
                     <th>Аккаунт</th>
-                    <th>Текущая задача</th>
+                    <th>Сценарий</th>
                     <th>Состояние</th>
                     <th>Действия</th>
                     <th>В работе</th>
@@ -360,8 +360,10 @@
 
                     // Извлекаем вложенный стейт (extendedState или ExtendedState)
                     const ext = acc.extendedState || acc.ExtendedState;
-                    const taskName = ext ? (ext.currentTask || ext.CurrentTask || 'Ожидание...') : 'Ожидание...';
                     const runtimeSec = ext ? (ext.runtimeSeconds || ext.RuntimeSeconds || 0) : 0;
+
+                    // ИСПРАВЛЕНО: Читаем чистое изолированное поле сценария из проброшенного ExtendedState DTO
+                    const taskName = ext ? (ext.Script || ext.script || 'Ожидание...') : 'Ожидание...';
 
                     let badgeClass = 'badge-stopped';
                     if (botState === 'Running' || botState === 'Active') badgeClass = 'badge-running';

@@ -64,8 +64,12 @@ public static partial class ScenarioFactory
             // БЛОК КОСМОСА: Полеты, навигация и процесс копки
             // =========================================================================
             new SequenceNode("Space Operations Branch",
+                // ИСПРАВЛЕНО: Защита от ложного падения детекции станции. 
+                // Не пускаем бота к полетам, если флаг _inSpace равен false (мы в доке).
+                new ActionNode("Verify Is In Space", (bot, _) => Task.FromResult(bot._inSpace ? NodeStatus.Success : NodeStatus.Failure)),
 
                 new SelectorNode("Space Workflow Selector",
+
 
                     // ВОЗВРАТ НА БАЗУ: Если трюм заполнился во время добычи
                     new SequenceNode("Return Full Cargo To Base",
@@ -327,7 +331,7 @@ public static partial class ScenarioFactory
             await bot.ClickToAsync(GameUI.UndockButton, token);
 
             // Даем игре 6 секунд — это базовое минимальное время на запуск анимации вылета
-            await Task.Delay(6000, token);
+            await Task.Delay(13000, token);
 
             Logger.Log($"[{bot.Settings.Name}] Анимация вылета запущена. Ожидаю появление интерфейса космоса...", LogType.Info);
 
@@ -368,7 +372,7 @@ public static partial class ScenarioFactory
                 }
 
                 Logger.Log($"[{bot.Settings.Name}] Космос еще загружается. Попытка валидации {i}/5...", LogType.Test);
-                await Task.Delay(2000, token);
+                await Task.Delay(5000, token);
             }
 
             Logger.Log($"[{bot.Settings.Name}] Ошибка андока: Время ожидания истекло, интерфейс космоса не появился.", LogType.Error);

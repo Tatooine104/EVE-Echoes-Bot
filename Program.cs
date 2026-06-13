@@ -220,6 +220,11 @@ static partial class Program
         // Настраиваем Kestrel строго на локальный порт 5000
         builder.WebHost.ConfigureKestrel(options => options.ListenLocalhost(5000));
 
+        // Исправлено: заставляем Kestrel передавать JSON-поля ровно в том регистре, в каком они написаны в C# DTO
+        // Исправлено: избавились от фигурных скобок с помощью стрелочной лямбды C# 13
+        builder.Services.AddControllers()
+            .AddJsonOptions(options => options.JsonSerializerOptions.PropertyNamingPolicy = null);
+
         // Включаем поддержку CORS, чтобы фронтенд мог слать запросы к API
         builder.Services.AddCors(options =>
         {
@@ -233,6 +238,9 @@ static partial class Program
 
         // Регистрируем Менеджер Аккаунтов в DI-контейнер
         builder.Services.AddSingleton<BotAccountManager>();
+
+        // ИСПРАВЛЕНО: принудительно заставляем Minimal APIs (app.MapGet) сохранять исходный C# регистр букв во всех JSON-ответах
+        builder.Services.ConfigureHttpJsonOptions(options => options.SerializerOptions.PropertyNamingPolicy = null);
 
         var app = builder.Build();
 
@@ -258,10 +266,11 @@ static partial class Program
         });
 
         // Маршрут получения состояния (Простой и надежный)
-        app.MapGet("/api/state", () => Microsoft.AspNetCore.Http.Results.Json(new {
+        // Исправлено: убрали Results.Json, теперь объект сериализуется через наш глобальный JSON-контекст с сохранением регистра
+        app.MapGet("/api/state", () => new {
             Accounts = manager.GetAccountsState(),
             Logs = Logger.GetLastLogs()
-        }));
+        });
 
         // Маршрут для обработки кликов по кнопкам Управления
         app.MapPost("/api/control/{id:int}/{actionName}", async (int id, string actionName, ControlPropertyValueDto? dto) => {

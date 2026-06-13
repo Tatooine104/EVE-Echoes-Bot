@@ -84,7 +84,7 @@ public enum GameRegions : long
     //LocalChatArea = 10L | (80L << 16) | (400L << 32) | (600L << 48)
 
     /// <summary>Область кнопок "Control" / "Undock" (X=1070, Y=185, W=210, H=100)</summary>
-    ControlUndock = 1070L | (230L << 16) | (210L << 32) | (70L << 48),
+    ControlUndock = 1070L | (220L << 16) | (210L << 32) | (100L << 48),
 
     SystemName = 110L | (50L  << 16) | (140L << 32) | (25L << 48),
     ShipName   = 6L   | (235L << 16) | (300L << 32) | (50L << 48),

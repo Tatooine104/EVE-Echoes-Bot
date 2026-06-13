@@ -342,9 +342,14 @@ public partial class ActiveBotAccount
             // Быстро собираем срез данных под защитой объекта синхронизации Lock из .NET 9+
             lock (_taskLock)
             {
+
+                // Если бот еще не запущен (время сессии 0), выводим имя самого сценария,
+                string displayTask = $"{Settings.Script} | {CurrentTask}";
+
                 dto = new AccountStateDto
                 {
                     AccountName    = Settings.Name,
+                    Script         = Settings.Script,
                     Triggers       = TriggerCount,
                     RuntimeSeconds = _accumulatedSeconds,
                     CurrentTask    = CurrentTask.ToString(),
