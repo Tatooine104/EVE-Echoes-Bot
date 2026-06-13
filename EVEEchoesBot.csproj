@@ -17,7 +17,7 @@
     <AssemblyName>EVE%20Echoes%20Bot%20v.$(Version)</AssemblyName>
 
     <!-- 3. ВШИВАЕМ ИКОНКУ ИЗ ПАПКИ IMAGES -->
-    <ApplicationIcon>images\ProgramLogo.ico</ApplicationIcon>
+    <ApplicationIcon>resources\images\ProgramLogo.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -53,17 +53,16 @@
     <None Remove="bin\**" />
     <Content Remove="bin\**" />
 
-    <!-- Очищаем старые правила, включая поиск в корне -->
+    <!-- Очищаем старые правила, исключая только файлы в корне проекта -->
     <None Remove="*.png" />
-    <None Remove="**/*.png" />
 
     <!-- Говорим компилятору всегда копировать файлы моделей в билд -->
     <None Update="resources\**\*.traineddata">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
 
-    <!-- ГЛАВНОЕ ПРАВИЛО: Автоматически копируем папку images со всем содержимым -->
-    <Content Include="images\**\*.png">
+    <!-- Исправлено: принудительно заставляем Web SDK копировать файлы картинок в bin/Debug -->
+    <Content Include="resources\images\*.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>

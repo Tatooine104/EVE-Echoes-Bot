@@ -578,11 +578,25 @@ static partial class Program
         {
             Console.ForegroundColor = ConsoleColor.Red;
             Console.WriteLine("\n[ОШИБКА] Работа бота невозможна. Проверьте целостность папки приложения.");
-            Console.WriteLine("Нажмите любую клавишу для выхода...");
-            Console.ReadKey();
+
+            // Исправлено: безопасное чтение, не вызывающее краша при запуске из-под веб-сервера Kestrel
+            if (!Console.IsInputRedirected)
+            {
+                Console.WriteLine("Нажмите Enter для выхода...");
+                Console.Read();
+            }
+            else
+            {
+                Console.WriteLine("Принудительное завершение процесса через 5 секунд...");
+                Thread.Sleep(5000); // Даем время оператору прочитать консоль Docker/панели
+            }
+
+            // Жестко тушим приложение, не давая рантайму упасть дальше с UnhandledException
+            Environment.Exit(1);
         }
 
         return allExist;
+
     }
 
     #endregion

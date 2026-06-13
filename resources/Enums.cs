@@ -91,7 +91,10 @@ public enum GameRegions : long
 
     MainMenu = 5L | (120L << 16) | (775L << 32) | (700L << 48),
     PlanetList = 5L | (110L << 16) | (245L << 32) | (670L << 48),
-    ResourceList = 830L | (100L << 16) | (450L << 32) | (630L << 48)
+    ResourceList = 830L | (100L << 16) | (450L << 32) | (630L << 48)//,
+
+    // ResourceList = 830L | (100L << 16) | (450L << 32) | (630L << 48),
+    // ResourceList = 830L | (100L << 16) | (450L << 32) | (630L << 48)
 
 }
 

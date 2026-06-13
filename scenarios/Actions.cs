@@ -711,8 +711,8 @@ public static partial class ScenarioFactory
         }
         finally
         {
-            // Всегда освобождаем семафор для следующего бота
-            _gdiSemaphore.Release();
+            // Исправлено: освобождаем именно тот глобальный семафор, который заняли перед блоком try
+            Program.GdiSemaphore.Release();
         }
 
         // Использование условного доступа ?. и явного сравнения с true
