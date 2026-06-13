@@ -216,7 +216,7 @@ public static partial class ScenarioFactory
         // ПОПЫТКА 1: Поиск кнопки "как есть" при открытии интерфейса
         // ========================================================
         await Task.Delay(1500, token);
-        
+
         // Вызываем созданный нами ранее сквозной метод расширения
         var (screenshot, safeRegion) = await bot.PrepareScreenshotRegionAsync(GameRegions.ResourceList, token);
 
@@ -224,7 +224,7 @@ public static partial class ScenarioFactory
         {
             using var scope = screenshot; // Гарантированная scoped-утилизация unmanaged памяти
             var currentSnap = screenshot;
-            
+
             foundLaunchBtn = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, launchPathImg, safeRegion, 0.80), token);
         }
 
@@ -246,7 +246,7 @@ public static partial class ScenarioFactory
             {
                 using var retryScope = retryScreenshot;
                 var currentRetrySnap = retryScreenshot;
-                
+
                 foundLaunchBtn = await Task.Run(() => Tools.FindTemplateInRegion(currentRetrySnap, launchPathImg, retryRegion, 0.80), token);
             }
         }

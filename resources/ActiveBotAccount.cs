@@ -698,7 +698,7 @@ public partial class ActiveBotAccount
                 Directory.CreateDirectory(debugDir);
                 Cv2.ImWrite(Path.Combine(debugDir, $"{Settings.Name}_imgLocalChatHead_FOUND.png"), cropped);
             }
-            catch (Exception ex) 
+            catch (Exception ex)
             {
                 Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось сохранить отладочный кадр: {ex.Message}", LogType.Warning);
             }
@@ -723,7 +723,7 @@ public partial class ActiveBotAccount
                 Directory.CreateDirectory(debugDir);
                 Cv2.ImWrite(Path.Combine(debugDir, $"{Settings.Name}_imgLocalChatIcon_FOUND.png"), cropped);
             }
-            catch (Exception ex) 
+            catch (Exception ex)
             {
                 Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось сохранить отладочный кадр: {ex.Message}", LogType.Warning);
             }
@@ -746,7 +746,7 @@ public partial class ActiveBotAccount
 
                 if (retryImg1.HasValue)
                 {
-                    return RunLocalCheck(currentFresh, freshSafeRegion1); 
+                    return RunLocalCheck(currentFresh, freshSafeRegion1);
                 }
             }
 
@@ -783,7 +783,6 @@ public partial class ActiveBotAccount
         // Исправлено: страхуем отладочный блок от выхода за рамки матрицы, если safeRegion2 лагнул
         Rect debugSafeRegion = Tools.ClampRegion(searchRegion, screenshot.Width, screenshot.Height);
 
-    
         // Регион searchRegion уже проверен в родительском методе, ClampRegion больше не нужен
         int foundCount = 0;
         string debugDir = Path.Combine(Program.TemplatesDir, "..", "DebugScreenshots");

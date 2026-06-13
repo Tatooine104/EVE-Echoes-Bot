@@ -53,36 +53,14 @@ static partial class Program
     /// </summary>
     private static BotConfig? _config;
 
-    /// <summary>
-    /// Кэшированное значение пути к папке шаблонов, чтобы не терзать диск при каждом такте дерева.
-    /// </summary>
-    private static readonly string _cachedTemplatesDir;
+    // Оптимизировано: использовали автосвойство с инициализатором, указывающим на папку с картинками
+    public static string TemplatesDir { get; } = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "resources", "images");
 
-    /// <summary>
-    /// Статический конструктор для безопасной и однократной инициализации путей
-    /// </summary>
-    static Program()
-    {
-        string releasePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images");
-
-        if (Directory.Exists(releasePath))
-        {
-            _cachedTemplatesDir = releasePath;
-        }
-        else
-        {
-            _cachedTemplatesDir = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\..\..\Images"));
-        }
-    }
-
-    /// <summary>
-    /// Глобальное свойство, возвращающее актуальный путь к папке с графическими шаблонами (Images).
-    /// Теперь работает мгновенно из оперативной памяти благодаря кэшированию.
-    /// </summary>
-    public static string TemplatesDir => _cachedTemplatesDir;
-
-
-
+    // /// <summary>
+    // /// Глобальное свойство, возвращающее актуальный путь к папке с графическими шаблонами (Images).
+    // /// Теперь работает мгновенно из оперативной памяти благодаря кэшированию.
+    // /// </summary>
+    // public static string TemplatesDir => _cachedTemplatesDir;
 
     /// <summary>
     /// ПОТОКОБЕЗОПАСНЫЙ метод получения списка ботов. Используется веб-контроллерами API и логикой паники.
