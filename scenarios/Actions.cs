@@ -734,6 +734,7 @@ public static partial class ScenarioFactory
             return (null, new Rect());
         }
 
+        Logger.Log($"[{bot.Settings.Name}] Скриншот подготовлен.", LogType.Test);
         return (screenshot, safeRegion);
     }
 

@@ -124,7 +124,7 @@ public static partial class ScenarioFactory
     /// </summary>
     public static async Task<NodeStatus> CheckIsDockedAsync(ActiveBotAccount bot, CancellationToken token)
     {
-        // ИСПРАВЛЕНО: Теперь метод использует твой централизованный асинхронный хелпер подготовки экрана
+        // Используем хелпер подготовки экрана
         var (screenshot, safeRegion) = await PrepareScreenshotRegionAsync(bot, GameRegions.ControlUndock, token);
 
         if (screenshot == null)
@@ -145,11 +145,13 @@ public static partial class ScenarioFactory
         if (foundPos.HasValue)
         {
             // Кнопка выхода из дока найдена -> фиксируем нахождение на станции
+            Logger.Log($"[{bot.Settings.Name}] Кнопка выхода из дока найдена. Фиксируем нахождение на станции", LogType.Test);
             bot._inSpace = false;
             return NodeStatus.Success;
         }
 
         // Кнопка не обнаружена -> фиксируем нахождение персонажа в открытом космосе
+        Logger.Log($"[{bot.Settings.Name}] Кнопка выхода из дока не найдена. Фиксируем нахождение в космосе", LogType.Test);
         bot._inSpace = true;
         return NodeStatus.Failure;
     }
@@ -165,41 +167,59 @@ public static partial class ScenarioFactory
     /// </summary>
     private static async Task<NodeStatus> CheckIsCargoFullAsync(ActiveBotAccount bot, CancellationToken token)
     {
-        // 1. Делаем первый снимок через твой хелпер-метод расширения
+        // 1. Делаем снимок зоны фаст-меню
         var (screenshot, safeRegion) = await bot.PrepareScreenshotRegionAsync(GameRegions.FastMenu, token);
         if (screenshot == null) return NodeStatus.Failure;
 
-        using var screenshotScope = screenshot; // Безопасная scoped-утилизация Mat
-        string pathCargo = Path.Combine(Program.TemplatesDir, "imgCargoFold100.png");
+        using var screenshotScope = screenshot;
         var currentSnap = screenshot;
 
-        // Ищем трюм асинхронно в фоновом пуле потоков
-        Point? foundCargo = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathCargo, safeRegion, 0.85), token);
-        if (foundCargo.HasValue) return NodeStatus.Success;
+        string pathCargoIcon = Path.Combine(Program.TemplatesDir, "imgCargoHoldIcon.png");
+        string pathCargo100 = Path.Combine(Program.TemplatesDir, "imgCargoFold100.png");
 
-        // 2. Если не нашли трюм, ищем флаг флота
+        // Шаг 1: Ищем сам факт наличия иконки трюма на экране
+        Point? foundCargoIcon = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathCargoIcon, safeRegion, 0.85), token);
+
+        if (foundCargoIcon.HasValue)
+        {
+            // Шаг 2: Иконка на месте -> проверяем, заполнен ли он на 100%
+            Point? foundFull = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathCargo100, safeRegion, 0.85), token);
+            if (foundFull.HasValue)
+            {
+                Logger.Log($"[{bot.Settings.Name}] Трюм полностью заполнен (100%). Пора на станцию.", LogType.Info);
+                return NodeStatus.Success;
+            }
+
+            return NodeStatus.Failure; // Трюм виден, но он не заполнен до упора
+        }
+
+        // Шаг 3: Иконки трюма нет -> проверяем, не перекрыта ли она флагами флота
         string pathFleet = Path.Combine(Program.TemplatesDir, "imgFleetFlags.png");
         Point? foundFleet = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathFleet, safeRegion, 0.85), token);
 
-        if (!foundFleet.HasValue) return NodeStatus.Failure;
+        if (!foundFleet.HasValue)
+        {
+            // Шаг 5: Иконки нет, флагов нет — интерфейс сломан или перекрыт. Даем сигнал дереву "Осмотреться".
+            Logger.Log($"[{bot.Settings.Name}] Ошибка: Панель трюма отсутствует, флаги флота не найдены. Сбой UI.", LogType.Warning);
+            return NodeStatus.Failure; 
+        }
 
-        // 3. Флаг нашли — сдвигаем панель влево
+        // Шаг 4: Флаг флота нашли — сдвигаем панель влево
+        Logger.Log($"[{bot.Settings.Name}] Панель сдвинута флагом флота. Выполняю корректирующий свайп...", LogType.Test);
         await bot.ScrollLeftAsync(GameUI.FastMenu1, 50, token);
         await Task.Delay(600, token);
 
-        // 4. Повторный снимок через твой хелпер
+        // Делаем повторный снимок после свайпа
         var (retryScreenshot, retryRegion) = await bot.PrepareScreenshotRegionAsync(GameRegions.FastMenu, token);
         if (retryScreenshot == null) return NodeStatus.Failure;
 
         using var retryScope = retryScreenshot;
         var currentRetrySnap = retryScreenshot;
 
-        // Финальный асинхронный поиск трюма на сдвинутом экране
-        Point? foundCargoRetry = await Task.Run(() => Tools.FindTemplateInRegion(currentRetrySnap, pathCargo, retryRegion, 0.85), token);
-
-        return foundCargoRetry.HasValue ? NodeStatus.Success : NodeStatus.Failure;
+        // Финальная проверка на полный трюм на сдвинутом экране
+        Point? foundFullRetry = await Task.Run(() => Tools.FindTemplateInRegion(currentRetrySnap, pathCargo100, retryRegion, 0.85), token);
+        return foundFullRetry.HasValue ? NodeStatus.Success : NodeStatus.Failure;
     }
-
 
 
     #endregion
@@ -213,25 +233,59 @@ public static partial class ScenarioFactory
     /// </summary>
     private static async Task<NodeStatus> CheckIsCargoEmptyAsync(ActiveBotAccount bot, CancellationToken token)
     {
-        // ИСПРАВЛЕНО: Вызываем хелпер как метод расширения
+        // 1. Делаем снимок зоны фаст-меню
         var (screenshot, safeRegion) = await bot.PrepareScreenshotRegionAsync(GameRegions.FastMenu, token);
-        if (screenshot == null)
+        if (screenshot == null) return NodeStatus.Failure;
+
+        using var screenshotScope = screenshot;
+        var currentSnap = screenshot;
+
+        string pathCargoIcon = Path.Combine(Program.TemplatesDir, "imgCargoHoldIcon.png");
+        string pathCargo0 = Path.Combine(Program.TemplatesDir, "imgCargoHold0.png");
+
+        // Шаг 1: Ищем сам факт наличия иконки трюма на экране
+        Point? foundCargoIcon = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathCargoIcon, safeRegion, 0.85), token);
+
+        if (foundCargoIcon.HasValue)
         {
+            // Шаг 2: Иконка на месте -> проверяем, пустой ли он (0%)
+            Point? foundEmpty = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathCargo0, safeRegion, 0.85), token);
+            if (foundEmpty.HasValue)
+            {
+                Logger.Log($"[{bot.Settings.Name}] Трюм идеально пуст", LogType.Test);
+                return NodeStatus.Success; // Трюм идеально пуст
+            }
+
+            Logger.Log($"[{bot.Settings.Name}] Трюм виден, но в нем что-то лежит", LogType.Test);
+            return NodeStatus.Failure; // Трюм виден, но в нем что-то лежит
+        }
+
+        // Шаг 3: Иконки трюма нет -> проверяем, не перекрыта ли она флагами флота
+        string pathFleet = Path.Combine(Program.TemplatesDir, "imgFleetFlags.png");
+        Point? foundFleet = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathFleet, safeRegion, 0.85), token);
+
+        if (!foundFleet.HasValue)
+        {
+            // Шаг 5: Иконки нет, флагов нет — интерфейс сломан или перекрыт. Даем сигнал дереву "Осмотреться".
+            Logger.Log($"[{bot.Settings.Name}] Ошибка: Панель трюма отсутствует, флаги флота не найдены. Сбой UI.", LogType.Warning);
             return NodeStatus.Failure;
         }
 
-        using var screenshotScope = screenshot;
-        string pathCargoEmpty = Path.Combine(Program.TemplatesDir, "imgCargoHold0.png");
+        // Шаг 4: Флаг флота нашли — сдвигаем панель влево
+        Logger.Log($"[{bot.Settings.Name}] Панель сдвинута флагом флота. Выполняю корректирующий свайп...", LogType.Test);
+        await bot.ScrollLeftAsync(GameUI.FastMenu1, 50, token);
+        await Task.Delay(600, token);
 
-        var currentSnap = screenshot;
-        Point? foundCargoEmpty = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathCargoEmpty, safeRegion, 0.85), token);
+        // Делаем повторный снимок после свайпа
+        var (retryScreenshot, retryRegion) = await bot.PrepareScreenshotRegionAsync(GameRegions.FastMenu, token);
+        if (retryScreenshot == null) return NodeStatus.Failure;
 
-        if (foundCargoEmpty.HasValue)
-        {
-            return NodeStatus.Success;
-        }
+        using var retryScope = retryScreenshot;
+        var currentRetrySnap = retryScreenshot;
 
-        return NodeStatus.Failure;
+        // Финальная проверка на пустой трюм на сдвинутом экране
+        Point? foundEmptyRetry = await Task.Run(() => Tools.FindTemplateInRegion(currentRetrySnap, pathCargo0, retryRegion, 0.85), token);
+        return foundEmptyRetry.HasValue ? NodeStatus.Success : NodeStatus.Failure;
     }
 
     #endregion
@@ -240,6 +294,7 @@ public static partial class ScenarioFactory
 
     #region UnloadOreToHangarAsync
 
+    // [ ] TODO 2026.06.14 Нужно в логике учесть что иконка быстрого меню может быть перекрыта флагами флота 
     /// <summary>
     /// Выполняет разгрузку руды на склад текущей станции (Узел Дерева Поведения).
     /// </summary>
@@ -420,6 +475,8 @@ public static partial class ScenarioFactory
     /// </summary>
     private static Task<NodeStatus> CheckIsNotInMiningZoneAsync(ActiveBotAccount bot, CancellationToken token)
     {
+        // TODO: [Заглушка] Реализовать метод проверки находится ли корабль в зоне добычи
+        Logger.Log($"[{bot.Settings.Name}] Проверям находится ли корабль в зоне добычи (ЗАГЛУШКА).", LogType.Warning);
         return Task.FromResult(!bot._isinminingzone ? NodeStatus.Success : NodeStatus.Failure);
     }
 
@@ -429,6 +486,7 @@ public static partial class ScenarioFactory
 
     #region CheckIfAlreadyWarpingAsync
 
+    // [ ] TODO 2026.06.14 Сделать проверку варпа и использоваь в дереве 
     /// <summary>
     /// Проверяет, находится ли корабль в процессе варпа.
     /// Помогает удерживать тик дерева, не совершая лишних действий до прилета.
@@ -437,8 +495,7 @@ public static partial class ScenarioFactory
     {
         if (bot._iswarping)
         {
-            Logger.Log($"[{bot.Settings.Name}] Корабль находится в процессе варпа. Удерживаю состояние полета.", LogType.Test);
-
+            Logger.Log($"[{bot.Settings.Name}] Корабль находится в процессе варпа. Удерживаю состояние полета. (ЗАГЛУШКА)", LogType.Test);
             // Возвращаем Running, чтобы заблокировать выполнение нижних шагов (выбор и клик варпа) до прилета
             return Task.FromResult(NodeStatus.Running);
         }
@@ -453,11 +510,13 @@ public static partial class ScenarioFactory
 
     #region CheckIsBeltAlreadySelectedAsync
 
+    // [ ] TODO 2026.06.14 Сделать проверку 
     /// <summary>
     /// Проверяет, выбран ли уже астероидный пояс в качестве текущей цели движения.
     /// </summary>
     private static Task<NodeStatus> CheckIsBeltAlreadySelectedAsync(ActiveBotAccount bot, CancellationToken token)
     {
+        Logger.Log($"[{bot.Settings.Name}] Сделать проверку (ЗАГЛУШКА).", LogType.Warning);
         // Исправлено: проверяем не просто на null, а на то, что это реальный текстовый маркер пояса
         string? targetStr = bot._currenttarget?.ToString();
         bool isBelt = !string.IsNullOrEmpty(targetStr) && targetStr.Contains("Belt", StringComparison.OrdinalIgnoreCase);
@@ -561,6 +620,8 @@ public static partial class ScenarioFactory
     /// </summary>
     private static Task<NodeStatus> CheckIfMiningIsActiveAsync(ActiveBotAccount bot, CancellationToken token)
     {
+        // TODO: [Заглушка] Реализовать метод проверки захвата
+        Logger.Log($"[{bot.Settings.Name}] Проверяем захват цели (ЗАГЛУШКА).", LogType.Warning);
         // Исправлено: если лазеры уже горят на экране, возвращаем Success. 
         // Это защитит интерфейс эмулятора от попыток захватить новую цель при включенном оружии.
         return Task.FromResult(bot._weaponryactive ? NodeStatus.Success : NodeStatus.Failure);
@@ -629,10 +690,7 @@ public static partial class ScenarioFactory
         return Task.FromResult(NodeStatus.Success);
     }
 
-    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-
     #endregion
-
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
@@ -651,6 +709,12 @@ public static partial class ScenarioFactory
 
         return Task.FromResult(isPanic ? NodeStatus.Success : NodeStatus.Failure);
     }
+
+    #endregion
+
+    // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    #region CheckIsNotUndockingAsync
 
     /// <summary>
     /// Проверяет, что бот в данный момент НЕ находится в процессе анимации андока (вылета со станции).
