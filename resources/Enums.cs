@@ -96,7 +96,8 @@ public enum GameRegions : long
     ResourceList = 830L | (100L << 16) | (450L << 32) | (630L << 48),
 
     EyeIconClose = 1190L | (390L << 16) | (90L << 32) | (90L << 48),
-    EyeIconOpen  =  880L | (390L << 16) | (90L << 32) | (90L << 48)
+    EyeIconOpen  =  880L | (390L << 16) | (90L << 32) | (90L << 48),
+    GridFilter  =  1220L | (50L << 16) | (1280L << 32) | (720L << 48)
 
 }
 

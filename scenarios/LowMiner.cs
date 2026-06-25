@@ -145,13 +145,13 @@ public static partial class ScenarioFactory
         if (foundPos.HasValue)
         {
             // Кнопка выхода из дока найдена -> фиксируем нахождение на станции
-            Logger.Log($"[{bot.Settings.Name}] Кнопка выхода из дока найдена. Фиксируем нахождение на станции", LogType.Test);
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Кнопка выхода из дока найдена. Фиксируем нахождение на станции", LogType.Test);
             bot._inSpace = false;
             return NodeStatus.Success;
         }
 
         // Кнопка не обнаружена -> фиксируем нахождение персонажа в открытом космосе
-        Logger.Log($"[{bot.Settings.Name}] Кнопка выхода из дока не найдена. Фиксируем нахождение в космосе", LogType.Test);
+        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Кнопка выхода из дока не найдена. Фиксируем нахождение в космосе", LogType.Test);
         bot._inSpace = true;
         return NodeStatus.Failure;
     }
@@ -186,7 +186,7 @@ public static partial class ScenarioFactory
             Point? foundFull = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathCargo100, safeRegion, 0.85), token);
             if (foundFull.HasValue)
             {
-                Logger.Log($"[{bot.Settings.Name}] Трюм полностью заполнен (100%). Пора на станцию.", LogType.Info);
+                Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Трюм полностью заполнен. Пора на станцию.", LogType.Info);
                 return NodeStatus.Success;
             }
 
@@ -200,12 +200,12 @@ public static partial class ScenarioFactory
         if (!foundFleet.HasValue)
         {
             // Шаг 5: Иконки нет, флагов нет — интерфейс сломан или перекрыт. Даем сигнал дереву "Осмотреться".
-            Logger.Log($"[{bot.Settings.Name}] Ошибка: Панель трюма отсутствует, флаги флота не найдены. Сбой UI.", LogType.Warning);
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Ошибка: Панель трюма отсутствует, флаги флота не найдены. Сбой UI.", LogType.Warning);
             return NodeStatus.Failure; 
         }
 
         // Шаг 4: Флаг флота нашли — сдвигаем панель влево
-        Logger.Log($"[{bot.Settings.Name}] Панель сдвинута флагом флота. Выполняю корректирующий свайп...", LogType.Test);
+        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Панель сдвинута флагом флота. Выполняю корректирующий свайп.", LogType.Test);
         await bot.ScrollLeftAsync(GameUI.FastMenu1, 50, token);
         await Task.Delay(600, token);
 
@@ -252,11 +252,11 @@ public static partial class ScenarioFactory
             Point? foundEmpty = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathCargo0, safeRegion, 0.85), token);
             if (foundEmpty.HasValue)
             {
-                Logger.Log($"[{bot.Settings.Name}] Трюм идеально пуст", LogType.Test);
+                Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Трюм идеально пуст", LogType.Test);
                 return NodeStatus.Success; // Трюм идеально пуст
             }
 
-            Logger.Log($"[{bot.Settings.Name}] Трюм виден, но в нем что-то лежит", LogType.Test);
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Трюм виден, но в нем что-то лежит", LogType.Test);
             return NodeStatus.Failure; // Трюм виден, но в нем что-то лежит
         }
 
@@ -267,12 +267,12 @@ public static partial class ScenarioFactory
         if (!foundFleet.HasValue)
         {
             // Шаг 5: Иконки нет, флагов нет — интерфейс сломан или перекрыт. Даем сигнал дереву "Осмотреться".
-            Logger.Log($"[{bot.Settings.Name}] Ошибка: Панель трюма отсутствует, флаги флота не найдены. Сбой UI.", LogType.Warning);
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Ошибка: Панель трюма отсутствует, флаги флота не найдены. Сбой UI.", LogType.Warning);
             return NodeStatus.Failure;
         }
 
         // Шаг 4: Флаг флота нашли — сдвигаем панель влево
-        Logger.Log($"[{bot.Settings.Name}] Панель сдвинута флагом флота. Выполняю корректирующий свайп...", LogType.Test);
+        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Панель сдвинута флагом флота. Выполняю корректирующий свайп.", LogType.Test);
         await bot.ScrollLeftAsync(GameUI.FastMenu1, 50, token);
         await Task.Delay(600, token);
 
@@ -300,7 +300,7 @@ public static partial class ScenarioFactory
     /// </summary>
     private static async Task<NodeStatus> UnloadOreToHangarAsync(ActiveBotAccount bot, CancellationToken token)
     {
-        Logger.Log($"[{bot.Settings.Name}] Трюм заполнен. Выгрузка руды на склад станции.", LogType.Info);
+        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Трюм заполнен. Выгрузка руды на склад станции.", LogType.Info);
 
         // ========================================================
         // ШАГ 1-2: ОТКРЫТИЕ МЕНЮ И ПОДГОТОВКА СКЛАДА (Zero Allocation)
@@ -333,7 +333,7 @@ public static partial class ScenarioFactory
 
         if (!foundOreHold.HasValue)
         {
-            Logger.Log($"[{bot.Settings.Name}] Иконка рудного отсека (imgOreHold.png) не найдена.", LogType.Error);
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Иконка рудного отсека не найдена.", LogType.Error);
             return NodeStatus.Failure;
         }
 
@@ -345,7 +345,7 @@ public static partial class ScenarioFactory
         // ШАГ 4-6: ВЫДЕЛЕНИЕ, ПЕРЕНОС В АНГАР И ЗАКРЫТИЕ (Zero Allocation)
         // ========================================================
         (GameUI Element, int DelayMs)[] finalSteps = [
-            (GameUI.SelectAll, 600),
+            (GameUI.SelectAll, 900),
             (GameUI.ItemHangar, 1500),
             (GameUI.XButton, 0)
         ];
@@ -360,7 +360,7 @@ public static partial class ScenarioFactory
             }
         }
 
-        Logger.Log($"[{bot.Settings.Name}] Выгрузка руды успешно завершена.", LogType.Success);
+        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Выгрузка руды успешно завершена.", LogType.Success);
         return NodeStatus.Success;
     }
 
@@ -375,7 +375,7 @@ public static partial class ScenarioFactory
     /// </summary>
     private static async Task<NodeStatus> ExecuteUndockAsync(ActiveBotAccount bot, CancellationToken token)
     {
-        Logger.Log($"[{bot.Settings.Name}] В системе чисто. Инициирую выход из дока.", LogType.Info);
+        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] В системе чисто. Инициирую выход из дока.", LogType.Info);
 
         // Взводим флаг для защиты от повторного входа в метод на время анимации
         bot._isUndocking = true;
@@ -388,7 +388,7 @@ public static partial class ScenarioFactory
             // Даем игре 6 секунд — это базовое минимальное время на запуск анимации вылета
             await Task.Delay(13000, token);
 
-            Logger.Log($"[{bot.Settings.Name}] Анимация вылета запущена. Ожидаю появление интерфейса космоса...", LogType.Info);
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Анимация вылета запущена. Ожидаю появление интерфейса космоса...", LogType.Info);
 
             // Путь к маркеру открытого космоса (глаз овервью)
             string pathEyeImg = Path.Combine(Program.TemplatesDir, "imgEyeIcon.png");
@@ -411,7 +411,7 @@ public static partial class ScenarioFactory
 
                     if (foundEye.HasValue)
                     {
-                        Logger.Log($"[{bot.Settings.Name}] Интерфейс космоса успешно прогружен. Вылет подтвержден!", LogType.Success);
+                        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Интерфейс космоса успешно прогружен. Вылет подтвержден!", LogType.Success);
                         bot._inSpace = true;
 
                         // Исправлено: вызываем наш новый универсальный метод настройки экрана в космосе
@@ -419,23 +419,23 @@ public static partial class ScenarioFactory
 
                         if (!interfaceReady)
                         {
-                            Logger.Log($"[{bot.Settings.Name}] Предупреждение: Не удалось настроить овервью/зум, но корабль в космосе.", LogType.Warning);
+                            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Предупреждение: Не удалось настроить овервью/зум, но корабль в космосе.", LogType.Warning);
                         }
 
                         return NodeStatus.Success;
                     }
                 }
 
-                Logger.Log($"[{bot.Settings.Name}] Космос еще загружается. Попытка валидации {i}/5...", LogType.Test);
+                Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Космос еще загружается. Попытка валидации {i}/5...", LogType.Test);
                 await Task.Delay(5000, token);
             }
 
-            Logger.Log($"[{bot.Settings.Name}] Ошибка андока: Время ожидания истекло, интерфейс космоса не появился.", LogType.Error);
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Ошибка андока: Время ожидания истекло, интерфейс космоса не появился.", LogType.Error);
             return NodeStatus.Failure;
         }
         catch (Exception ex)
         {
-            Logger.Log($"Ошибка при выполнении андока аккаунта '{bot.Settings.Name}': {ex.Message}", LogType.Error);
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Ошибка при выполнении андока аккаунта: {ex.Message}", LogType.Error);
             return NodeStatus.Failure;
         }
         finally
@@ -456,7 +456,7 @@ public static partial class ScenarioFactory
     private static async Task<NodeStatus> WarpToBaseAsync(ActiveBotAccount bot, CancellationToken token)
     {
         // TODO: [Заглушка] Реализовать макрос варпа и дока на домашнюю станцию
-        Logger.Log($"[{bot.Settings.Name}] Вызван макрос варпа на базу (ЗАГЛУШКА).", LogType.Warning);
+        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Вызван макрос варпа на базу (ЗАГЛУШКА).", LogType.Warning);
 
         await Task.Delay(1000, token); // Имитация минимальной задержки выполнения
         return NodeStatus.Success;
@@ -476,7 +476,7 @@ public static partial class ScenarioFactory
     private static Task<NodeStatus> CheckIsNotInMiningZoneAsync(ActiveBotAccount bot, CancellationToken token)
     {
         // TODO: [Заглушка] Реализовать метод проверки находится ли корабль в зоне добычи
-        Logger.Log($"[{bot.Settings.Name}] Проверям находится ли корабль в зоне добычи (ЗАГЛУШКА).", LogType.Warning);
+        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Проверям находится ли корабль в зоне добычи (ЗАГЛУШКА).", LogType.Warning);
         return Task.FromResult(!bot._isinminingzone ? NodeStatus.Success : NodeStatus.Failure);
     }
 
@@ -495,7 +495,7 @@ public static partial class ScenarioFactory
     {
         if (bot._iswarping)
         {
-            Logger.Log($"[{bot.Settings.Name}] Корабль находится в процессе варпа. Удерживаю состояние полета. (ЗАГЛУШКА)", LogType.Test);
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Корабль находится в процессе варпа. Удерживаю состояние полета. (ЗАГЛУШКА)", LogType.Test);
             // Возвращаем Running, чтобы заблокировать выполнение нижних шагов (выбор и клик варпа) до прилета
             return Task.FromResult(NodeStatus.Running);
         }
@@ -516,7 +516,7 @@ public static partial class ScenarioFactory
     /// </summary>
     private static Task<NodeStatus> CheckIsBeltAlreadySelectedAsync(ActiveBotAccount bot, CancellationToken token)
     {
-        Logger.Log($"[{bot.Settings.Name}] Сделать проверку (ЗАГЛУШКА).", LogType.Warning);
+        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Сделать проверку (ЗАГЛУШКА).", LogType.Warning);
         // Исправлено: проверяем не просто на null, а на то, что это реальный текстовый маркер пояса
         string? targetStr = bot._currenttarget?.ToString();
         bool isBelt = !string.IsNullOrEmpty(targetStr) && targetStr.Contains("Belt", StringComparison.OrdinalIgnoreCase);
@@ -536,7 +536,7 @@ public static partial class ScenarioFactory
     /// </summary>
     private static async Task<NodeStatus> SelectAsteroidBeltAsync(ActiveBotAccount bot, CancellationToken token)
     {
-        Logger.Log($"[{bot.Settings.Name}] Выбираю подходящий астероидный пояс...", LogType.Info);
+        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Выбираю подходящий астероидный пояс...", LogType.Info);
 
         // TODO: [Заглушка] Заменить на реальный графический поиск OpenCV или OCR списка белтов в овервью
         await Task.Delay(1000, token);
@@ -545,11 +545,11 @@ public static partial class ScenarioFactory
         if (belt != null)
         {
             bot._currenttarget = belt;
-            Logger.Log($"[{bot.Settings.Name}] Пояс выбран: {belt} (ЗАГЛУШКА). Перехожу к проверке безопасности.", LogType.Info);
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Пояс выбран: {belt} (ЗАГЛУШКА). Перехожу к проверке безопасности.", LogType.Info);
             return NodeStatus.Success;
         }
 
-        Logger.Log($"[{bot.Settings.Name}] Не удалось найти доступный пояс астероидов!", LogType.Error);
+        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Не удалось найти доступный пояс астероидов!", LogType.Error);
         return NodeStatus.Failure;
     }
 
@@ -567,7 +567,7 @@ public static partial class ScenarioFactory
     {
         if (bot._currenttarget == null) return NodeStatus.Failure;
 
-        Logger.Log($"[{bot.Settings.Name}] Инициирую варп на пояс: {bot._currenttarget}", LogType.Info);
+        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Инициирую варп на пояс: {bot._currenttarget}", LogType.Info);
 
         // Взводим флаг полета для перевода RunLoopAsync на быстрый секундный мониторинг чата
         bot._iswarping = true;
@@ -577,7 +577,7 @@ public static partial class ScenarioFactory
             // TODO: [Заглушка] Заменить на реальный клик по кнопке "Варп" выбранного в овервью пояса
             await Task.Delay(1500, token); // Имитация времени на клики в меню эмулятора
 
-            Logger.Log($"[{bot.Settings.Name}] Корабль успешно ушел в варп-туннель к {bot._currenttarget} (ЗАГЛУШКА).", LogType.Success);
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Корабль успешно ушел в варп-туннель к {bot._currenttarget} (ЗАГЛУШКА).", LogType.Success);
             return NodeStatus.Success;
         }
         catch (Exception ex)
@@ -621,7 +621,7 @@ public static partial class ScenarioFactory
     private static Task<NodeStatus> CheckIfMiningIsActiveAsync(ActiveBotAccount bot, CancellationToken token)
     {
         // TODO: [Заглушка] Реализовать метод проверки захвата
-        Logger.Log($"[{bot.Settings.Name}] Проверяем захват цели (ЗАГЛУШКА).", LogType.Warning);
+        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Проверяем захват цели (ЗАГЛУШКА).", LogType.Warning);
         // Исправлено: если лазеры уже горят на экране, возвращаем Success. 
         // Это защитит интерфейс эмулятора от попыток захватить новую цель при включенном оружии.
         return Task.FromResult(bot._weaponryactive ? NodeStatus.Success : NodeStatus.Failure);
@@ -647,7 +647,7 @@ public static partial class ScenarioFactory
         // Взводим флаг успешного захвата цели
         bot._hastarget = true;
 
-        Logger.Log($"[{bot.Settings.Name}] Астероид успешно взят в лок (ЗАГЛУШКА).", LogType.Info);
+        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Астероид успешно взят в лок (ЗАГЛУШКА).", LogType.Info);
         return NodeStatus.Success;
     }
 
@@ -670,7 +670,7 @@ public static partial class ScenarioFactory
         // Взводим флаг успешного включения лазеров
         bot._weaponryactive = true;
 
-        Logger.Log($"[{bot.Settings.Name}] Буровые лазеры успешно активированы (ЗАГЛУШКА).", LogType.Success);
+        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Буровые лазеры успешно активированы (ЗАГЛУШКА).", LogType.Success);
         return NodeStatus.Success;
     }
 
@@ -733,3 +733,5 @@ public static partial class ScenarioFactory
     #endregion
 
 }
+
+// Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] ???", LogType.Test);
