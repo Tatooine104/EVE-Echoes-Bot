@@ -17,7 +17,8 @@ debug_screenshot*.png
 # === Локальные файлы логов и статистики ===
 *.log
 *.csv
-_stats.json
+*stats.json
+stats*.json
 accounts_stats/
 
 # === Системные файлы ОС ===

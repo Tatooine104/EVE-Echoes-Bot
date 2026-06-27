@@ -27,16 +27,14 @@ namespace EVEEchoesBot.resources
                 throw new DirectoryNotFoundException($"[OCR] Критическая ошибка: Папка с языковыми данными не найдена по пути: {tessdataPath}");
             }
 
-            // Инициализация движка: склеиваем языки через плюс, чтобы распознавать eng и rus параллельно
-            _ocrEngine = new Engine(tessdataPath, "eng+rus", EngineMode.Default);
+            // Инициализация движка: только английский язык для максимальной скорости и точности
+            _ocrEngine = new Engine(tessdataPath, "eng", EngineMode.Default);
 
             // =========================================================================
             // НАСТРОЙКА БЕЛОГО СПИСКА СИМВОЛОВ ДЛЯ ОПТИМИЗАЦИИ ШРИФТОВ EVE Echoes
             // =========================================================================
-            // Разрешаем только английские заглавные/строчные буквы, цифры и дефис.
-            // Это заставит Tesseract выбирать между '8' и 'B'/'O' гораздо строже.
-            _ocrEngine.SetVariable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-");
-
+            // Разрешаем только английские буквы, цифры, дефис и косую черту '/' (для AU/s, m/s).
+            _ocrEngine.SetVariable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-/");
         }
 
         /// <summary>

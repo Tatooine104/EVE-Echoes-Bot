@@ -105,9 +105,15 @@ public partial class ActiveBotAccount
     internal bool? _isfullore = false;
     internal DateTime? _planetassembly = null;
     internal long _triggerCount;
-    #pragma warning disable IDE1006 // Отключаем проверку стиля именования
-    internal object? _currenttarget { get; set; }
-    #pragma warning restore IDE1006 // Включаем обратно для остального кода
+
+    #pragma warning disable IDE1006 // Отключаем проверку стиля именования для этого свойства
+        /// <summary>
+        /// Физические координаты точки выбранного астероидного пояса / объекта в овервью.
+        /// Использование префикса подчёркивания согласовано с архитектурной кодовой базой проекта.
+        /// </summary>
+        internal OpenCvSharp.Point? _currenttarget { get; set; }
+    #pragma warning restore IDE1006 // Включаем проверку обратно для остального кода
+
 
     // Приватные поля управления потоками, памятью, деревом и файловой системой
     private CancellationTokenSource? _accountCts;
@@ -146,7 +152,7 @@ public partial class ActiveBotAccount
         _behaviorTree = ScenarioFactory.CreateTree(currentScript);
 
         // 3. Формируем путь к файлу состояния для конкретного аккаунта
-        _statsFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, $"{settings.Name}_stats.json");
+        _statsFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, $"stats_{settings.Name}.json");
 
         // 4. Пытаемся загрузить сохраненную статистику из файла
         _ = TryLoadLastStatsAndQueue();
@@ -340,9 +346,9 @@ public partial class ActiveBotAccount
             AccountStateDto dto;
 
             // Быстро собираем срез данных под защитой объекта синхронизации Lock из .NET 9+
+            // Быстро собираем срез данных под защитой объекта синхронизации Lock из .NET 9+
             lock (_taskLock)
             {
-
                 // Если бот еще не запущен (время сессии 0), выводим имя самого сценария,
                 string displayTask = $"{Settings.Script} | {CurrentTask}";
 
@@ -356,8 +362,6 @@ public partial class ActiveBotAccount
                     TaskQueue      = [.. _taskQueue],
                     EVESystem      = _eveSystem,
                     EVEShip        = _eveShip,
-
-                    // Используем локальное время персонального компьютера вместо UTC для удобства чтения логов
                     LastUpdate     = DateTime.Now,
 
                     InSpace        = _inSpace,
@@ -366,11 +370,15 @@ public partial class ActiveBotAccount
                     HasTarget      = _hastarget,
                     WeaponryActive = _weaponryactive,
                     PlanetAssembly = _planetassembly,
-                    CurrentTarget  = _currenttarget?.ToString(),
+                    
+                    // ИСПРАВЛЕНО: Убран .ToString(). Передаем чистый Point? напрямую в Point? свойства DTO
+                    CurrentTarget  = _currenttarget,
+                    
                     IsFullMain     = _isfullmain,
                     IsFullOre      = _isfullore
                 };
             }
+
 
             // Сериализация и дисковая запись выполняются за пределами lock, чтобы не блокировать процессор
             string json = JsonSerializer.Serialize(dto, _jsonOptions);

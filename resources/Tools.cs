@@ -234,6 +234,110 @@ public static class Tools
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
+    /// <summary>
+    /// Кроссплатформенный метод поиска всех совпадений изображения-шаблона в заданной области кадра.
+    /// Выполняет сопоставление признаков в градациях серого и фильтрует дубликаты в пределах размеров шаблона.
+    /// </summary>
+    /// <param name="screen">Матрица полного скриншота эмулятора (в формате BGR/BGRA).</param>
+    /// <param name="templatePath">Абсолютный или относительный путь к графическому файлу-шаблону.</param>
+    /// <param name="searchArea">Прямоугольная область ограничения поиска. Если <c>null</c> — сканируется весь кадр.</param>
+    /// <param name="threshold">Порог точности совпадения от 0.0 до 1.0. По умолчанию: 0.55.</param>
+    /// <param name="maxResults">Максимальное количество возвращаемых точек, чтобы избежать зацикливания. По умолчанию: 20.</param>
+    /// <returns>Список точек <see cref="Point"/> центров найденных объектов в координатах исходного кадра, или пустой список при отсутствии совпадений.</returns>
+    public static List<Point> FindAllTemplatesInRegion(
+        Mat screen,
+        string templatePath,
+        Rect? searchArea = null,
+        double threshold = 0.55,
+        int maxResults = 20)
+    {
+        List<Point> foundPoints = [];
+
+        if (screen?.Empty() is not false) return foundPoints;
+
+        // Вырезаем область поиска, если она задана, иначе работаем с полным экраном
+        Mat croppedScreen = searchArea.HasValue
+            ? new Mat(screen, searchArea.Value)
+            : screen;
+
+        try
+        {
+            using var matTemplate = Cv2.ImRead(templatePath, ImreadModes.Color);
+            if (matTemplate.Empty())
+            {
+                Logger.Log($"Не удалось загрузить файл шаблона по пути '{templatePath}'.", LogType.Error);
+                return foundPoints;
+            }
+
+            if (matTemplate.Width > croppedScreen.Width || matTemplate.Height > croppedScreen.Height)
+            {
+                Logger.Log($"Файл шаблона '{Path.GetFileName(templatePath)}' ({matTemplate.Width}x{matTemplate.Height}) превышает размеры области поиска ({croppedScreen.Width}x{croppedScreen.Height}).", LogType.Warning);
+                return foundPoints;
+            }
+
+            // Переводим изображения в оттенки серого для ускорения вычислений
+            using Mat grayScreen = new();
+            using Mat grayTemplate = new();
+            Cv2.CvtColor(croppedScreen, grayScreen, ColorConversionCodes.BGR2GRAY);
+            Cv2.CvtColor(matTemplate, grayTemplate, ColorConversionCodes.BGR2GRAY);
+
+            // Выполняем нормированное сопоставление
+            using Mat result = new();
+            Cv2.MatchTemplate(grayScreen, grayTemplate, result, TemplateMatchModes.CCoeffNormed);
+
+            int offsetX = searchArea?.X ?? 0;
+            int offsetY = searchArea?.Y ?? 0;
+
+            // Цикл извлечения локальных максимумов (Non-Maximum Suppression)
+            for (int i = 0; i < maxResults; i++)
+            {
+                Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out Point maxLoc);
+
+                // Если максимальное совпадение ниже порога — выходим из цикла, совпадений больше нет
+                if (maxVal < threshold)
+                    break;
+
+                // Вычисляем точку центра найденного объекта в координатах полного экрана
+                int centerX = offsetX + maxLoc.X + (matTemplate.Width / 2);
+                int centerY = offsetY + maxLoc.Y + (matTemplate.Height / 2);
+                foundPoints.Add(new Point(centerX, centerY));
+
+#if DEBUG
+                Logger.Log($"Множественный поиск '{Path.GetFileName(templatePath)}' [#{i + 1}], совпадение: {maxVal * 100:F1}%, центр: {centerX}х{centerY}.", LogType.Test);
+#endif
+
+                // Стираем (зануляем) область вокруг найденного максимума в матрице результатов,
+                // чтобы не находить один и тот же объект на соседних пикселях. Стираем в радиусе размера шаблона.
+                int startX = Math.Max(0, maxLoc.X - (matTemplate.Width / 2));
+                int startY = Math.Max(0, maxLoc.Y - (matTemplate.Height / 2));
+                int endX = Math.Min(result.Cols, maxLoc.X + (matTemplate.Width / 2));
+                int endY = Math.Min(result.Rows, maxLoc.Y + (matTemplate.Height / 2));
+
+                Rect roiToErase = new(startX, startY, endX - startX, endY - startY);
+                using Mat eraseRoi = new(result, roiToErase);
+                eraseRoi.SetTo(Scalar.All(0)); // Заполняем нулями, так как ищем значения близкие к 1.0
+            }
+
+            return foundPoints;
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Сбой при множественном сопоставлении шаблона '{Path.GetFileName(templatePath)}': {ex.Message}", LogType.Error);
+            return foundPoints;
+        }
+        finally
+        {
+            // Обязательно освобождаем память вырезанной подматрицы, чтобы не было утечек в цикле бота
+            if (searchArea.HasValue)
+            {
+                croppedScreen.Dispose();
+            }
+        }
+    }
+
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
     #region ClampRegion
 
     /// <summary>

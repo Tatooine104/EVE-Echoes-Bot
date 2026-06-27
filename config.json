@@ -16,7 +16,7 @@
       "Name": "V04KO",
       "WindowTitle": "BlueStacks_EVE.02",
       "Script": "LocalWatcher",
-      "PlanetMining": false,
+      "PlanetMining": true,
       "POS": false,
       "AdbPort":5575,
       "WindowSettings": {

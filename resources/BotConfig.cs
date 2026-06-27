@@ -121,10 +121,12 @@ public class AccountStateDto
     public bool? InSpace { get; set; }
 
     /// <summary>
-    /// Имя или идентификатор конкретного астероидного пояса / аномалии,
-    /// выбранной на Шаге 3 для совершения варпа. Очищается при прилете.
+    /// Физические координаты точки выбранного астероидного пояса / объекта в овервью,
+    /// по которому был совершен клик для разгона. Очищается при прилете.
     /// </summary>
-    public string? CurrentTarget { get; set; }
+    // Вариант 1: Изменяем тип на OpenCvSharp.Point?
+    public OpenCvSharp.Point? CurrentTarget { get; set; }
+
 
     public bool? IsInMiningZone { get; set; }
 
@@ -230,7 +232,10 @@ public class BotAccountManager
                     EVESystem = bot._eveSystem,
                     EVEShip = bot._eveShip,
                     InSpace = bot._inSpace,
-                    CurrentTarget = bot._currenttarget?.ToString(),
+
+                    // ИСПРАВЛЕНО: Убран .ToString(). Передаем чистый Point? напрямую в Point? свойства DTO
+                    CurrentTarget = bot._currenttarget,
+
                     IsInMiningZone = bot._isinminingzone,
                     IsWarping = bot._iswarping,
                     HasTarget = bot._hastarget,

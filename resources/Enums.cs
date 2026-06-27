@@ -60,7 +60,8 @@ namespace EVEEchoesBot.resources;
         MoveTo = 1150150,
         ItemHangar = 4000165,
         UndockButton = 12300250,
-        CoreInSpace = 6450660
+        CoreInSpace = 6450660,
+        GridSettings = 10000050
         // ? = ?
 
     }
@@ -97,7 +98,10 @@ public enum GameRegions : long
 
     EyeIconClose = 1190L | (390L << 16) | (90L << 32) | (90L << 48),
     EyeIconOpen  =  880L | (390L << 16) | (90L << 32) | (90L << 48),
-    GridFilter  =  1220L | (50L << 16) | (1280L << 32) | (720L << 48)
+    GridFilter  =  1220L | (50L << 16) | (60L << 32) | (720L << 48),
+    GridList  =  970L | (30L << 16) | (250L << 32) | (720L << 48),
+    SpaceActions  =  700L | (30L << 16) | (300L << 32) | (720L << 48),
+    ShipControl  =  550L | (550L << 16) | (200L << 32) | (200L << 48)
 
 }
 
