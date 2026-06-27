@@ -143,12 +143,21 @@ public static void Log(
             // В консоль пишем ВСЕГДА
             PrintToConsole(consoleMessage, color);
 
-            // В файл пишем только важное
-            if (type is LogType.Warning or LogType.Error or LogType.Info)
+            // === ИСПРАВЛЕНИЕ: МНОГОУРОВНЕВОЕ ФИЛЬТРОВАНИЕ ЗАПИСИ В CSV ПО ТИПУ СБОРКИ ===
+#if DEBUG
+            // В режиме DEBŪG в файл пишется абсолютно ВСЁ (включая LogType.Test, LogType.Success и т.д.)
+            const bool isAllowWriteToFile = true;
+#else
+            // В режиме RELEASE в файл пишется строго только критически важная и полетная информация
+            bool isAllowWriteToFile = type is LogType.Warning or LogType.Error or LogType.Info;
+#endif
+
+            if (isAllowWriteToFile)
             {
-                // BUG HIGH - Скрытая блокировка логики и I/O Bottleneck. Метод `AppendToFile` вызывается синхронно внутри `lock (_logLock)`. Если диск перегружен, или файл `EVE_Echoes_Bot_log.csv` занят другим процессом для чтения, этот поток зависнет внутри критической секции. Так как лог вызывается воркерами бота на каждом ключевом действии и изменении состояния дерева поведения, зависание записи в файл намертво притормозит или зациклит шаг сценария воркера, имитируя логический тупик. Запись в файл должна производиться асинхронно через фоновый воркер (например, Channels или BlockingCollection) за пределами блокировки UI/потоков ядра бота.
+                // Нативный вызов записи строки в CSV-файл
                 AppendToFile(timestamp, _cachedVersion, type.ToString(), safeAccount, eveSystem, eveShip, callerMethod, message);
             }
+
         }
 
         // КОРРЕКЦИЯ ДЛЯ ВЕБ-ИНТЕРФЕЙСА:
@@ -159,12 +168,12 @@ public static void Log(
         // Заменяем его на атомарный одиночный сброс. Если очередь превысила лимит, 
         // мы выбрасываем строго один старый элемент за один вызов лога. 
         // Это на 100% исключает Spin-Wait клин процессора при параллельном пуллинге из Kestrel.
-        if (_webLogsCache.Count > 15) 
+        if (_webLogsCache.Count > 15)
         {
             _webLogsCache.TryDequeue(out _);
         }
     }
-    
+
     #endregion
 
 

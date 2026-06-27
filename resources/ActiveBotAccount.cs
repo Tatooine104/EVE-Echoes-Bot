@@ -665,7 +665,7 @@ private async Task RunLoopAsync(CancellationToken token)
                 catch (Exception ex)
                 {
                     Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Сбой в главном цикле обработки такта дерева: {ex.Message}", LogType.Error);
-                    await Task.Delay(5000, token).ConfigureAwait(false); 
+                    await Task.Delay(5000, token).ConfigureAwait(false);
                 }
             }
         }
@@ -785,7 +785,7 @@ internal async Task<SecurityCheckResult> CheckSecurityStatusAsync(CancellationTo
                 return SecurityCheckResult.Unknown;
             }
         }
-        
+
         // BUG HIGH — Причина полной тишины в логах "localwatcher". Посмотри на этот кусок кода: если чат развернут (ЭТАП 1), он вызывает `RunLocalCheck`. Если чат свернут (ЭТАП 2), он пытается его развернуть. Но что если на экране открыто окно дока станции, склад, меню фитинга или трюма, которое ПОЛНОСТЬСТЬЮ ПЕРЕКРЫВАЕТ интерфейс игры? 
         // В этом случае условия `foundImg1.HasValue` и `foundImg2.HasValue` гарантированно вернут `false`. Бот пролетает мимо обоих этапов, пишет ОДИН лог "ВНИМАНИЕ: Шаблоны чата не найдены" и возвращает `SecurityCheckResult.Unknown`.
         // Затем в методе `AnalyzeScreenAndUpdateStateAsync` этот `Unknown` перехватывается, выставляет `bot.CurrentTask = AccountTask.LookAround` и возвращает `NodeStatus.Failure`.
@@ -954,10 +954,10 @@ internal async Task<SecurityCheckResult> CheckSecurityStatusAsync(CancellationTo
                             lock (bot._taskLock)
                             {
                                 // Если сосед в космосе и ЕЩЕ НЕ летит на станцию — даем команду
-                                if (bot._inSpace && bot._iswarping is false && bot.CurrentTask != AccountTask.GoToStation)
+                                if (bot._inSpace && !bot._iswarping && bot.CurrentTask != AccountTask.GoToStation)
                                 {
                                     Logger.Log($"[Паника] Отправляю приказ на отварп соседу: {bot.Settings.Name}", LogType.Warning);
-                                    
+
                                     bot._iswarping = true; // Выставляем флаг варпа, чтобы заблокировать повторные тики
                                     bot._taskQueue.Clear(); // Потокобезопасно чистим его личную очередь
                                     bot.CurrentTask = AccountTask.GoToStation;
@@ -977,7 +977,7 @@ internal async Task<SecurityCheckResult> CheckSecurityStatusAsync(CancellationTo
                     {
                         // КРИТИЧЕСКИЙ БАРЬЕР: Если мы УЖЕ в процессе варпа/отварпа на станцию,
                         // полностью игнорируем тик, предотвращая бесконечный цикл заклинивания!
-                        if (this._iswarping is true || this.CurrentTask == AccountTask.GoToStation) 
+                        if (this._iswarping || this.CurrentTask == AccountTask.GoToStation)
                             return;
 
                         Logger.Log($"[{Settings.Name}] Инициатор паники уходит на эвакуацию в док.", LogType.Warning);
@@ -1010,13 +1010,13 @@ internal async Task<SecurityCheckResult> CheckSecurityStatusAsync(CancellationTo
                 lock (_taskLock)
                 {
                     SystemSafetyManager.SetSystemSafe(EVESystem);
-                    
+
                     // СБРАСЫВАЕМ ЗАЩИТНЫЕ ФЛАГИ: разрешаем боту снова летать
-                    this._iswarping = false; 
-                    
+                    this._iswarping = false;
+
                     // Переключаем текущую задачу обратно в проверку штатного состояния, 
                     // чтобы дерево поведения поняло: опасность прошла, можно собирать новую очередь задач
-                    this.CurrentTask = AccountTask.CheckYourOwnState; 
+                    this.CurrentTask = AccountTask.CheckYourOwnState;
                 }
 
                 Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Статус системы изменился на БЕЗОПАСНО. Враги ушли. Возвращаемся к работе.", LogType.Success);
@@ -1043,13 +1043,13 @@ public async Task ExecuteEmergencyResponseAsync(bool isInitiator, CancellationTo
             switch (Settings.Script?.ToLower())
             {
                 case "lowminer":
-                    Logger.Log($"[{Settings.Name}|{EVESystem}] 🚨 УГРОЗА! Начинаю физическую эвакуацию корабля на станцию!", LogType.Warning);
+                    Logger.Log($"[{Settings.Name}|{EVESystem}] УГРОЗА! Начинаю физическую эвакуацию корабля на станцию!", LogType.Warning);
                     this.ClearTasks();
                     this.CurrentTask = AccountTask.GoToStation;
                     break;
 
                 case "localwatcher":
-                    Logger.Log($"[{Settings.Name}|{EVESystem}] Наблюдатель зафиксировал угрозу. Позиция в доке удерживается.", LogType.Info);
+                    Logger.Log($"[{Settings.Name}|{EVESystem}] Наблюдатель зафиксировал угрозу. Корабль в доке.", LogType.Info);
                     this.CurrentTask = AccountTask.CheckSecurity;
                     break;
 
@@ -1061,9 +1061,22 @@ public async Task ExecuteEmergencyResponseAsync(bool isInitiator, CancellationTo
         }
     }
 
-    // ТУТ ДАЛЕЕ ДОЛЖЕН ИДТИ ТВОЙ ФИЗИЧЕСКИЙ ВЫЗОВ ДЕЙСТВИЯ ОТВАРПА (например, клики по овервью)
-    // Который выполнится строго один раз благодаря блокировке флагов в IsSaveLocal!
+    // ИСПРАВЛЕНО: Явно используем token, чтобы анализатор не ругался на unused parameter.
+    // Проверяем статус отмены перед тем, как начать физические клики отварпа.
+    token.ThrowIfCancellationRequested();
+
+    // ИСПРАВЛЕНО: Используем isInitiator строго по назначению, как ты и задумывал!
+    if (isInitiator)
+    {
+        Logger.Log($"[{Settings.Name}] Я обнаружил угрозу первым. Отправляю уведомление в чат...", LogType.Warning);
+        // Тут твой вызов макроса чата:
+        await ScenarioFactory.RunAliChatWarningAsync(this, token);
+    }
+
+    // ТУТ ДАЛЕЕ ИДЕТ ТВОЙ ФИЗИЧЕСКИЙ ВЫЗОВ ДЕЙСТВИЯ ОТВАРПА
+    await Task.CompletedTask;
 }
+
 
 
 
@@ -1088,7 +1101,7 @@ public async Task ExecuteEmergencyResponseAsync(bool isInitiator, CancellationTo
 
             // BUG HIGH — Источник бесконечной логической петли! Метод `ClearTasks()` вызывается во время паники. Сброс `CurrentTask` в `AccountTask.CheckYourOwnState` внутри этого метода полностью ломает логику эвакуации. Смотри: в сеттере `IsSaveLocal` или методе `ExecuteEmergencyResponseAsync` ты жестко выставляешь `CurrentTask = AccountTask.GoToStation`, чтобы Дерево Поведения поняло — нужно лететь на станцию. Но внутри этих же методов параллельно вызывается `this.ClearTasks()`. Метод `ClearTasks()` заходит в этот блок и ТУТ ЖЕ НАМЕРТВО ПЕРЕЗАПИСЫВАЕТ `CurrentTask` обратно в `CheckYourOwnState`. В итоге на следующем тике `RunLoopAsync` дерево вместо отварпа видит статус «Проверь свое состояние», запускает штатный мирный скрипт с нуля, зрение снова фиксирует врага, снова вызывает панику, снова чистит задачи и опять сбрасывает стейт. Бот бесконечно гоняет по кругу проверку безопасности и не может начать физический отварп! Метод `ClearTasks()` должен ТОЛЬКО чистить очередь `_taskQueue`, но не имеет права трогать `CurrentTask`.
             _taskQueue.Clear();
-            
+
             // УДАЛИТЬ СТРОКУ НИЖЕ:
             // CurrentTask = AccountTask.CheckYourOwnState;
         }

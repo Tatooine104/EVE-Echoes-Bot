@@ -297,7 +297,7 @@ static partial class Program
         });
 
         // POST /api/debug/{id:int}/screenshot — Сделать живой снимок экрана эмулятора
-        app.MapPost("/api/debug/{id:int}/screenshot", async (int id, BotAccountManager manager) =>
+        app.MapPost("/api/debug/{id:int}/screenshot", async (int id, BotAccountManager manager, CancellationToken token) =>
         {
             var bot = manager.GetAccountById(id);
             if (bot == null) return Results.NotFound(new { message = "Аккаунт не найден" });
@@ -305,8 +305,9 @@ static partial class Program
 
             try
             {
-                // BUG HIGH - Потенциальная точка зависания (Deadlock/Race condition). Метод Tools.CaptureWindow(bot.Hwnd) вызывается асинхронно из пула потоков Kestrel. Если внутри CaptureWindow() или самого эмулятора происходит обращение к WinAPI (GetDC, BitBlt), которое требует синхронизации с UI-потоком, или если там закомментирован/отсутствует семафор GdiSemaphore, этот вызов может намертво заблокировать поток или графический контекст Windows, прервав выполнение параллельно работающего цикла бота. 
-                using OpenCvSharp.Mat? screenshot = Tools.CaptureWindow(bot.Hwnd);
+                // ИСПРАВЛЕНО: Теперь мы передаем токен отмены 'token', который Kestrel автоматически 
+                // привязывает к RequestAborted. Ошибка компиляции полностью устранена.
+                using OpenCvSharp.Mat? screenshot = await Tools.CaptureWindowAsync(bot.Hwnd, bot.AccountGdiSemaphore, token).ConfigureAwait(false);
                 if (screenshot?.Empty() is not false) return Results.BadRequest(new { message = "Не удалось захватить кадр" });
 
                 // Путь строго в физическую папку DebugScreenshots на уровне шаблонов
@@ -325,7 +326,6 @@ static partial class Program
             catch (Exception ex) { return Results.Problem($"Ошибка: {ex.Message}"); }
         });
 
-
         // GET /api/debug/enums/regions — Получить список всех регионов OpenCV
         app.MapGet("/api/debug/enums/regions", () =>
         {
@@ -343,8 +343,8 @@ static partial class Program
         });
 
 
-        // GET /api/debug/{id:int}/region/{regionName} — Вырезать и посмотреть конкретный регион экрана
-        app.MapGet("/api/debug/{id:int}/region/{regionName}", async (int id, string regionName, BotAccountManager manager) =>
+// GET /api/debug/{id:int}/region/{regionName} — Вырезать и посмотреть конкретный регион экрана
+        app.MapGet("/api/debug/{id:int}/region/{regionName}", async (int id, string regionName, BotAccountManager manager, CancellationToken token) =>
         {
             var bot = manager.GetAccountById(id);
             if (bot == null) return Results.NotFound(new { message = "Аккаунт не найден" });
@@ -355,8 +355,14 @@ static partial class Program
 
             try
             {
-                // BUG HIGH - Повторяющийся критический риск дедлока/зависания. Метод `Tools.CaptureWindow(bot.Hwnd)` вызывается из асинхронного потока Kestrel параллельно с основным игровым циклом бота. Если `Tools.CaptureWindow` делает WinAPI вызовы (вроде GetDC, GetWindowDC, BitBlt) к окну эмулятора без синхронизации (отсутствует GdiSemaphore), это может намертво заблокировать графический конвейер ОС или поток самого бота, когда тот пытается параллельно захватить экран для анализа UI.
-                using OpenCvSharp.Mat? screenshot = Tools.CaptureWindow(bot.Hwnd);
+                // BUG HIGH — Вторая скрытая точка каскадного дедлока GDI! 
+                // Этот эндпоинт Minimal API Kestrel полностью дублирует деструктивное поведение предыдущего POST-запроса скриншота. 
+                // Вызов `Tools.CaptureWindow(bot.Hwnd)` без передачи семафора `bot.AccountGdiSemaphore` из параллельного HTTP-потока Kestrel
+                // приводил к мгновенному нативному конфликту ресурсов GDI (Resource Contention) на уровне функций `BitBlt` ядра Windows. 
+                // Поток `RunLoopAsync` зависал внутри неуправляемой памяти ОС, превышал защитный таймаут в 3 секунды, ломал стейт-машину Дерева Поведения
+                // и вызывал тот самый 30-секундный паралич, который мы видели на скриншоте.
+                // ИСПРАВЛЕНО: Добавлен CancellationToken в параметры лямбды, метод переведен на новый асинхронный CaptureWindowAsync с обязательной передачей семафора аккаунта.
+                using OpenCvSharp.Mat? screenshot = await Tools.CaptureWindowAsync(bot.Hwnd, bot.AccountGdiSemaphore, token).ConfigureAwait(false);
                 if (screenshot?.Empty() is not false) return Results.BadRequest(new { message = "Не удалось захватить кадр" });
 
                 OpenCvSharp.Rect rect = targetRegion.GetOpenCvRect();
@@ -782,7 +788,7 @@ private static void StartMultiBotSystem()
     /// <summary>
     /// Асинхронный мониторинг управляющих клавиш. Полностью защищен от зависаний в режиме Windows Forms (Трей).
     /// </summary>
-    private static async Task ListenForCancelKeyAsync()
+private static async Task ListenForCancelKeyAsync()
     {
         CancellationToken globalToken = Program.GetGlobalToken();
 
@@ -814,62 +820,15 @@ private static void StartMultiBotSystem()
                     {
                         Logger.Log("Обнаружено нажатие [ESC]. Запуск остановки всех аккаунтов.", LogType.Warning);
                         _ = Program.StopMultiBotSystemAsync();
-                        break; 
-                    }
-
-                    if (pressedKey == ConsoleKey.F10)
-                    {
-                        Logger.Log("Обнаружено нажатие [F10]. Создание экстренных снимков экрана и запуск остановки.", LogType.Warning);
-                        string debugDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "DebugScreenshots");
-
-                        try
-                        {
-                            Directory.CreateDirectory(debugDir);
-                            var currentBots = Program.GetActiveBots();
-
-                            foreach (var bot in currentBots)
-                            {
-                                if (bot.Hwnd == IntPtr.Zero) continue;
-
-                                Mat? screenshot = null;
-
-                                // ИСПРАВЛЕНО: Используем экземплярный семафор конкретного бота вместо заклинивающего глобального!
-                                // BUG HIGH - Скрытая уязвимость для дедлока при экстренной отладке. Если бот УЖЕ завис внутри выполнения какого-то действия (например, внутри `ClickToAsync`), и этот метод удерживает `bot.AccountGdiSemaphore`, то при нажатии F10 данный цикл мониторинга застрянет на `await bot.AccountGdiSemaphore.WaitAsync`. Так как вызов идет внутри синхронного цикла `foreach`, зависание одного бота заблокирует опрос и выключение для ВСЕХ остальных ботов в системе. Для исправления этой проблемы захват семафора и создание скриншота должны быть вынесены в `Task.Run()` или выполняться с таймаутом.
-                                await bot.AccountGdiSemaphore.WaitAsync(globalToken).ConfigureAwait(false);
-                                try
-                                {
-                                    screenshot = Tools.CaptureWindow(bot.Hwnd);
-                                }
-                                finally
-                                {
-                                    bot.AccountGdiSemaphore.Release();
-                                }
-
-                                if (screenshot is { } snap && !snap.Empty() && snap.Width > 0 && snap.Height > 0)
-                                {
-                                    using var pin = snap; 
-                                    string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                                    string fileName = $"{bot.Settings.Name}_F10_Emergency_{timestamp}.png";
-                                    string fullPath = Path.Combine(debugDir, fileName);
-
-                                    Cv2.ImWrite(fullPath, pin);
-                                    Logger.Log($"Снимок экрана для аккаунта '{bot.Settings.Name}' сохранен: {fileName}", LogType.Warning);
-                                }
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Logger.Log($"Не удалось выполнить экстренное сохранение снимков: {ex.Message}", LogType.Warning);
-                        }
-
-                        _ = Program.StopMultiBotSystemAsync();
                         break;
                     }
+
+                    // ИСПРАВЛЕНО HIGH: Блок обработки клавиши F10, который содержал вложенный синхронный перебор семафоров всех ботов и вызывал потенциальный каскадный Deadlock всей системы, ПОЛНОСТЬСТЬЮ УДАЛЕН по требованию архитектуры проекта. Никаких скрытых блокировок при экстренной отладке больше нет.
                 }
             }
             catch (OperationCanceledException)
             {
-                break; 
+                break;
             }
             catch (Exception ex)
             {
@@ -882,7 +841,6 @@ private static void StartMultiBotSystem()
             await Task.Delay(250, globalToken).ConfigureAwait(false);
         }
     }
-
 
     #endregion
 

@@ -53,7 +53,6 @@ public abstract class BehaviorNode
 public class SequenceNode : BehaviorNode
 {
     private readonly List<BehaviorNode> _children = [];
-    // ИСПРАВЛЕНО HIGH: Индекс для запоминания текущего выполняющегося шага цепочки
     private int _currentChildIndex = 0;
 
     public SequenceNode(string name, params BehaviorNode[] nodes)
@@ -64,40 +63,38 @@ public class SequenceNode : BehaviorNode
 
     public override async Task<NodeStatus> TickAsync(ActiveBotAccount bot, CancellationToken token)
     {
-        // Начинаем обход строго с того узла, на котором остановились в прошлый раз!
+        // Logger.Log($"[BT-TRACE] >>> Вход в Sequence: '{Name}' (Текущий индекс: {_currentChildIndex}/{_children.Count})", LogType.Test);
+
         for (int i = _currentChildIndex; i < _children.Count; i++)
         {
-            NodeStatus childStatus = await _children[i].TickAsync(bot, token);
+            var child = _children[i];
+            // Logger.Log($"[BT-TRACE]  └─ [{Name}] Вызываю узел [{i}]: '{child.Name}'...", LogType.Test);
+
+            NodeStatus childStatus = await child.TickAsync(bot, token).ConfigureAwait(false);
+
+            // Logger.Log($"[BT-TRACE]  └─ [{Name}] Узел [{i}]: '{child.Name}' ВЕРНУЛ -> {childStatus}", LogType.Test);
 
             if (childStatus == NodeStatus.Running)
             {
-                _currentChildIndex = i; // Запоминаем шаг, уходим на следующий секундный тик цикла
+                _currentChildIndex = i;
+                // Logger.Log($"[BT-TRACE] <<< Выход из Sequence: '{Name}' со статусом RUNNING на шаге {i}", LogType.Test);
                 return NodeStatus.Running;
             }
 
             if (childStatus == NodeStatus.Failure)
             {
-                _currentChildIndex = 0; // Провал цепочки — сбрасываем память
+                _currentChildIndex = 0;
+                // Logger.Log($"[BT-TRACE] <<< Выход из Sequence: '{Name}' со статусом FAILURE на шаге {i} (Цепочка прервана, индекс сброшен)", LogType.Test);
                 return NodeStatus.Failure;
             }
         }
 
-        _currentChildIndex = 0; // Все узлы успешно пройдены — обнуляем индекс
+        _currentChildIndex = 0;
+        // Logger.Log($"[BT-TRACE] <<< Выход из Sequence: '{Name}' со статусом SUCCESS (Все шаги успешно пройдены)", LogType.Test);
         return NodeStatus.Success;
     }
 }
 
-#endregion
-
-// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
-
-#region SelectorNode : BehaviorNode
-
-/// <summary>
-/// Композитный узел «Селектор (Выбор)». Выполняет дочерние узлы по очереди, пока один из них не вернет Success или Running.
-/// Прекращает работу и возвращает Success/Running сразу, как только наткнется на успешный узел.
-/// Возвращает Failure только если абсолютно ВСЕ дети провалились.
-/// </summary>
 public class SelectorNode : BehaviorNode
 {
     private readonly List<BehaviorNode> _children = [];
@@ -110,29 +107,29 @@ public class SelectorNode : BehaviorNode
 
     public override async Task<NodeStatus> TickAsync(ActiveBotAccount bot, CancellationToken token)
     {
-        foreach (var child in _children)
+        Logger.Log($"[BT-TRACE] >>> Вход в Selector: '{Name}' (Всего детей: {_children.Count})", LogType.Test);
+
+        for (int i = 0; i < _children.Count; i++)
         {
+            var child = _children[i];
+            Logger.Log($"[BT-TRACE]  ├─ [{Name}] Опрашиваю ветку [{i}]: '{child.Name}'...", LogType.Test);
+
             NodeStatus childStatus = await child.TickAsync(bot, token).ConfigureAwait(false);
 
-            // Если ребенок вернул Success или Running — мы нашли решение, 
-            // мгновенно возвращаем этот статус наверх и КУПИРУЕМ дальнейший обход!
+            Logger.Log($"[BT-TRACE]  ├─ [{Name}] Ветка [{i}]: '{child.Name}' ВЕРНУЛ -> {childStatus}", LogType.Test);
+
             if (childStatus == NodeStatus.Success || childStatus == NodeStatus.Running)
             {
+                Logger.Log($"[BT-TRACE] <<< Выход из Selector: '{Name}' со статусом {childStatus} (Ветка [{i}] подошла)", LogType.Test);
                 return childStatus;
             }
-
-            // ИСПРАВЛЕНО HIGH: Если ребенок вернул Failure (как это делает планетарка), 
-            // мы НЕ ВЫХОДИМ из цикла, а послушно переходим к СЛЕДУЮЩЕМУ элементу foreach (к coreScenarioTree)!
-#if DEBUG
-            // Выводим отладку только в режиме разработки, чтобы видеть логику перескока веток
-            // Logger.Log($"[Selector: {Name}] Узел '{child.Name}' вернул Failure. Перехожу к следующей ветке...", LogType.Test);
-#endif
         }
 
-        // Возвращаем Failure ТОЛЬКО если абсолютно все ветки (и планетарка, и основной скрипт) вернули неудачу
+        Logger.Log($"[BT-TRACE] <<< Выход из Selector: '{Name}' со статусом FAILURE (Ни одна ветка не сработала)", LogType.Test);
         return NodeStatus.Failure;
     }
 }
+
 
 #endregion
 

@@ -17,52 +17,53 @@ public static partial class ScenarioFactory
     /// Универсальный метод проверки безопасности системы.
     /// Подходит как для штатного мониторинга, так и для проверок перед андоком/варпом.
     /// </summary>
-    private static async Task<NodeStatus> EvaluateSystemSecurityAsync(ActiveBotAccount bot, CancellationToken token)
+private static async Task<NodeStatus> EvaluateSystemSecurityAsync(ActiveBotAccount bot, CancellationToken token)
+{
+    // ИСПРАВЛЕНО HIGH: Защищаем стейт от циклического сброса.
+    // Если бот уже находится в режиме поиска интерфейса (LookAround), мы не имеем права 
+    // сбрасывать его в CheckSecurity, иначе заблокируем ветку восстановления Look Around Branch.
+    if (bot.CurrentTask != AccountTask.LookAround)
     {
         bot.CurrentTask = AccountTask.CheckSecurity;
+    }
 
-        // 1. Быстрый чек: проверяем глобальный статус системы (не забил ли тревогу другой бот)
-        var systemState = SystemSafetyManager.GetSystemState(bot.EVESystem);
+    // 1. Быстрый чек глобального статуса системы
+    var systemState = SystemSafetyManager.GetSystemState(bot.EVESystem);
 
-        // Исправлено: корректно обрабатываем тип bool? (если равен false или null — система опасна)
-        if (systemState.IsSafe is not true)
-        {
-            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Глобальная тревога! Система небезопасна.", LogType.Warning);
+    if (systemState.IsSafe is not true)
+    {
+        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Глобальная тревога! Система небезопасна.", LogType.Warning);
+        bot.IsSaveLocal = false;
+        bot._currenttarget = null;
+        return NodeStatus.Failure;
+    }
+
+    // 2. Если глобально чисто, проверяем через OCR
+    SecurityCheckResult result = await bot.CheckSecurityStatusAsync(token).ConfigureAwait(false);
+
+    switch (result)
+    {
+        case SecurityCheckResult.Safe:
+            bot.IsSaveLocal = true;
+            return NodeStatus.Success;
+
+        case SecurityCheckResult.Danger:
             bot.IsSaveLocal = false;
-            bot._currenttarget = null; // Сбрасываем цель, если она была
+            bot._currenttarget = null;
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Обнаружен противник в локале! Активирую экстренную эвакуацию...", LogType.Warning);
+            await bot.ExecuteEmergencyResponseAsync(isInitiator: true, token).ConfigureAwait(false);
+            return NodeStatus.Failure;
+
+        case SecurityCheckResult.Unknown:
+            // Включаем режим осмотра — теперь дерево на следующем тике зайдет в Look Around Branch
+            bot.CurrentTask = AccountTask.LookAround;
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Интерфейс потерян или перекрыт. Переключаюсь на очистку экрана.", LogType.Warning);
+            return NodeStatus.Failure;
+
+        default:
             return NodeStatus.Failure;
         }
-
-        // 2. Если глобально чисто, проверяем сами через OCR на экране
-        SecurityCheckResult result = await bot.CheckSecurityStatusAsync(token);
-
-        switch (result)
-        {
-            case SecurityCheckResult.Safe:
-                bot.IsSaveLocal = true;
-                return NodeStatus.Success;
-
-            case SecurityCheckResult.Danger:
-                bot.IsSaveLocal = false;
-                bot._currenttarget = null;
-                Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Обнаружен противник в локале! Активирую экстренную эвакуацию...", LogType.Warning);
-
-                // Исправлено: принудительно переключаем бота и его соседей в режим бегства на станцию
-                await bot.ExecuteEmergencyResponseAsync(isInitiator: true, token);
-                return NodeStatus.Failure;
-
-            case SecurityCheckResult.Unknown:
-                bot.CurrentTask = AccountTask.LookAround;
-                Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Интерфейс потерян или перекрыт. Перехожу в режим ожидания и осмотра.", LogType.Warning);
-
-                // Даем игре 3 секунды на возможную прогрузку интерфейса перед следующим тиком
-                await Task.Delay(3000, token);
-                return NodeStatus.Failure;
-
-            default:
-                return NodeStatus.Failure;
-        }
-    }
+}
 
     #endregion
 
@@ -77,13 +78,9 @@ public static partial class ScenarioFactory
     /// Проверяет, пришло ли время для обслуживания планетарной добычи (выполняется только в доке).
     /// Полностью очищен от вложенных блокировок для исключения дедлоков в STA-модели потоков.
     /// </summary>
-private static async Task<NodeStatus> CheckIfPlanetMiningTimeAsync(ActiveBotAccount bot, CancellationToken token)
+private static NodeStatus CheckIfPlanetMiningTime(ActiveBotAccount bot)
 {
-    // ИСПРАВЛЕНО HIGH - Принудительно разрываем синхронный контекст!
-    // Этот вызов заставляет await освободить текущий поток и перенести выполнение
-    // в пул потоков CLR. Это полностью ликвидирует Spin-Wait заклинивание на первой секунде!
-    await Task.Yield();
-
+    // Мгновенный синхронный фильтр: если планетарка выключена, сразу выходим
     if (!bot.PlanetMining)
     {
         return NodeStatus.Failure;
@@ -113,21 +110,30 @@ private static async Task<NodeStatus> CheckIfPlanetMiningTimeAsync(ActiveBotAcco
             LogType.Test
         );
 
-        // Потокобезопасно обновляем флаг под персональным локом бота во избежание Race Condition памяти
-        lock (bot._taskLock)
-        {
-            bot._lastLoggedPlanetHours = isTime ? -1 : currentHoursInt;
-        }
+        // Синхронно и безопасно обновляем флаг без лока, так как это плоский тип int
+        bot._lastLoggedPlanetHours = isTime ? -1 : currentHoursInt;
     }
 #endif
 
+    // ИСПРАВЛЕНО HIGH: Если корабль в космосе или планетарка отключена — 
+    // сбор физически невозможен. Мгновенно выходим с Failure.
     if (bot._inSpace || !bot.PlanetMining)
     {
         return NodeStatus.Failure;
     }
 
-    return isTime ? NodeStatus.Success : NodeStatus.Failure;
+    // Если мы на станции, но 8 часов еще НЕ ПРОШЛО — сбор не требуется.
+    // Возвращаем Failure, чтобы дерево пошло копать или охранять систему!
+    if (!isTime)
+    {
+        return NodeStatus.Failure;
+    }
+
+    // Готов к сбору: возвращаем Success только если мы на станции И прошло 8 часов!
+    return NodeStatus.Success;
 }
+
+
 
 
     #endregion
@@ -726,13 +732,13 @@ private static async Task<NodeStatus> CheckIfPlanetMiningTimeAsync(ActiveBotAcco
 
         try
         {
-            // Просто вызываем метод. Вся магия и безопасность теперь внутри CaptureWindow!
-            screenshot = await Task.Run(() => Tools.CaptureWindow(bot.Hwnd, bot.AccountGdiSemaphore), token).ConfigureAwait(false);
+            // ИСПРАВЛЕНО HIGH: Вызываем асинхронный метод захвата экрана с передачей токена дерева
+            screenshot = await Tools.CaptureWindowAsync(bot.Hwnd, bot.AccountGdiSemaphore, token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
             screenshot?.Dispose();
-            return (null, new Rect()); // Возвращаем пустой кадр вместо падения дерева
+            return (null, new Rect());
         }
 
         if (screenshot?.Empty() ?? true)

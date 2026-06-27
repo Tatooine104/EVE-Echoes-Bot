@@ -17,100 +17,102 @@ public static partial class ScenarioFactory
     /// Собирает дерево поведения для сценария «Шахтер в лоу-секах» (LowMiner).
     /// Сценарий управляет полным циклом добычи руды, логистикой на станцию и безопасностью.
     /// </summary>
-    internal static SelectorNode BuildMinerTree()
-    {
-        return new SelectorNode("LowMiner Root",
+internal static SelectorNode BuildMinerTree()
+{
+    return new SelectorNode("LowMiner Root",
 
-            // =========================================================================
-            // ПРИОРИТЕТ №1: БЛОК ЭКСТРЕННОЙ ЭВАКУАЦИИ (Срабатывает мгновенно при угрозе)
-            // =========================================================================
-            new SequenceNode("Emergency Evacuation Branch",
-                // Проверяет, выставлена ли задача бегства (this.CurrentTask == AccountTask.GoToStation)
-                new ActionNode("Is Panic State Active", CheckIsPanicStateActiveAsync),
-                new SelectorNode("Panic Actions",
-                    // Если мы уже на станции — задача паники выполнена успешно
-                    new ActionNode("Is Already Safe Docked", CheckIsDockedAsync),
-                    // Если в космосе — берем разгон и варпаем на станцию (возвращает Running пока летим)
-                    new ActionNode("Execute Emergency Warp To Base", WarpToBaseAsync)
-                )
-            ),
+        // =========================================================================
+        // ПРИОРИТЕТ №1: БЛОК АВТОМАТИЧЕСКОЙ ПЛАНЕТАРНОЙ ДОБЫЧИ (Срабатывает раз в 8 часов)
+        // =========================================================================
+        new SequenceNode("Global Planet Mining Branch",
+            new ActionNode("Check Planet Mining Conditions", (b, _) => Task.FromResult(CheckIfPlanetMiningTime(b))),
+            new ActionNode("Execute Planet Mining Macro", ExecutePlanetMiningSequenceAsync)
+        ),
 
-            // =========================================================================
-            // БЛОК СТАНЦИИ: Нахождение в доке и обслуживание
-            // =========================================================================
-            new SequenceNode("Station Hub Branch",
-                new ActionNode("Is Docked Check", CheckIsDockedAsync),
-                // Защита от спама: проверяем, что мы НЕ находимся в процессе андока прямо сейчас
-                new ActionNode("Is NOT Processing Undock", CheckIsNotUndockingAsync),
+        // =========================================================================
+        // ПРИОРИТЕТ №2: БЛОК ЭКСТРЕННОЙ ЭВАКУАЦИИ (Срабатывает мгновенно при угрозе)
+        // =========================================================================
+        new SequenceNode("Emergency Evacuation Branch",
+            new ActionNode("Is Panic State Active", CheckIsPanicStateActiveAsync),
+            new SelectorNode("Panic Actions",
+                new ActionNode("Is Already Safe Docked", CheckIsDockedAsync),
+                new ActionNode("Execute Emergency Warp To Base", WarpToBaseAsync)
+            )
+        ),
 
-                new SelectorNode("Station Actions",
+        // =========================================================================
+        // ПРИОРИТЕТ №3: МОНОЛИТНЫЙ БЛОК СТАНЦИИ (Выполняется строго по пунктам 1-7)
+        // =========================================================================
+        new SequenceNode("Station Monolithic Branch",
+            // 1) Определяем в доке мы или нет (Пункт 1). Если не в доке — сразу Failure (Пункт 5)
+            new ActionNode("Is Docked Check", CheckIsDockedAsync),
+            
+            // Защита от спама повторными кликами во время анимации вылета
+            new ActionNode("Is NOT Processing Undock", CheckIsNotUndockingAsync),
 
-                    // ВЕТКА ВЫГРУЗКИ: Выгружаем руду, если трюм полный
-                    new SequenceNode("Unload Cargo Sequence",
-                        new ActionNode("Is Cargo Full Check", CheckIsCargoFullAsync),
-                        new ActionNode("Unload Ore", UnloadOreToHangarAsync)
-                    ),
+            // Выбираем действие на станции строго на основе заполненности трюма
+            new SelectorNode("Station Action Selector",
 
-                    // ВЕТКА АНДОКА: Вылетаем, если трюм пуст и в системе безопасно
-                    new SequenceNode("Undock Monolithic Sequence",
-                        new ActionNode("Check Cargo Empty Before Undock", CheckIsCargoEmptyAsync),
-                        new ActionNode("Check Safe Before Undock", EvaluateSystemSecurityAsync),
-                        new ActionNode("Execute Undock", ExecuteUndockAsync) // Внутри ставит флаг _isUndocking = true
-                    )
-                )
-            ),
+                // ВЕТКА ВЫГРУЗКИ: Если трюм НЕ пуст — переходим к выгрузке (Пункт 6)
+                new SequenceNode("Unload Ore Sequence",
+                    new ActionNode("Check Cargo Not Empty", async (b, t) => {
+                        NodeStatus emptyCheck = await CheckIsCargoEmptyAsync(b, t);
+                        // Инвертируем: если трюм НЕ пуст (Failure для Empty), значит для выгрузки это Success!
+                        return emptyCheck == NodeStatus.Failure ? NodeStatus.Success : NodeStatus.Failure;
+                    }),
+                    new ActionNode("Unload Ore To Hangar", UnloadOreToHangarAsync)
+                ),
 
-            // =========================================================================
-            // БЛОК КОСМОСА: Полеты, навигация и процесс копки
-            // =========================================================================
-            new SequenceNode("Space Operations Branch",
-                // ИСПРАВЛЕНО: Защита от ложного падения детекции станции. 
-                // Не пускаем бота к полетам, если флаг _inSpace равен false (мы в доке).
-                new ActionNode("Verify Is In Space", (bot, _) => Task.FromResult(bot._inSpace ? NodeStatus.Success : NodeStatus.Failure)),
-
-                new SelectorNode("Space Workflow Selector",
-
-
-                    // ВОЗВРАТ НА БАЗУ: Если трюм заполнился во время добычи
-                    new SequenceNode("Return Full Cargo To Base",
-                        new ActionNode("Is Cargo Full In Space", CheckIsCargoFullAsync),
-                        new ActionNode("Warp To Base", WarpToBaseAsync) // Возвращает Running пока летит
-                    ),
-
-                    // ПЕРЕЛЕТ НА БЕЛТ: Выбор астероидного пояса и прыжок к нему
-                    new SequenceNode("Flight To Belt Sequence",
-                        new ActionNode("Is NOT In Mining Zone", CheckIsNotInMiningZoneAsync),
-
-                        // Выбор пояса (если еще не выбран)
-                        new SelectorNode("Belt Selection Selector",
-                            new ActionNode("Is Belt Already Selected", CheckIsBeltAlreadySelectedAsync),
-                            new ActionNode("Select Asteroid Belt", SelectAsteroidBeltAsync)
-                        ),
-
-                        // Проверка безопасности перед прыжком и сам варп
-                        new ActionNode("Check Safe Before Warp", EvaluateSystemSecurityAsync),
-                        new ActionNode("Warp To Selected Belt", WarpToSelectedBeltAsync) // Возвращает Running пока летит
-                    ),
-
-                    // АКТИВНАЯ ДОБЫЧА: Захват целей и удержание цикла работы лазеров
-                    new SequenceNode("Active Mining Sequence",
-                        new ActionNode("Clear Flight State On Arrival", ClearFlightStateOnArrivalAsync),
-
-                        // Логика лазеров (активируем только если они отключены)
-                        new SelectorNode("Targeting and Activation Selector",
-                            new ActionNode("Check If Mining Is Active", CheckIfMiningIsActiveAsync),
-                            new SequenceNode("Lock And Mine Sequence",
-                                new ActionNode("Target Asteroid", TargetAsteroidAsync),
-                                new ActionNode("Activate Lasers", ActivateLasersAsync)
-                            )
-                        ),
-
-                        new ActionNode("Mining Monitor State", MiningMonitorStateAsync)
-                    )
+                // ВЕТКА АНДОКА: Если трюм пуст (Пункт 2) И в системе безопасно (Пункт 3) -> вылетаем (Пункт 4)
+                new SequenceNode("Undock Execution Sequence",
+                    // 2) Проверяем пустой ли трюм (Пункт 2). Если пуст — вернет Success
+                    new ActionNode("Verify Cargo Is Empty Before Undock", CheckIsCargoEmptyAsync),
+                    
+                    // 3) Проверяем безопасно ли в системе (Пункт 3). Если опасно — вернет Failure и будем ждать (Пункт 7)
+                    new ActionNode("Verify System Is Safe Before Undock", EvaluateSystemSecurityAsync),
+                    
+                    // 4) Если везде ДА — инициируем выход из дока (Пункт 4)
+                    new ActionNode("Execute Undock Action", ExecuteUndockAsync)
                 )
             )
-        );
-    }
+        ),
+
+        // =========================================================================
+        // ПРИОРИТЕТ №4: БЛОК КОСМОСА (Полеты, навигация и процесс копки)
+        // =========================================================================
+        new SequenceNode("Space Operations Branch",
+            new ActionNode("Verify Is In Space", (bot, _) => Task.FromResult(bot._inSpace ? NodeStatus.Success : NodeStatus.Failure)),
+            new SelectorNode("Space Workflow Selector",
+                new SequenceNode("Return Full Cargo To Base",
+                    new ActionNode("Is Cargo Full In Space", CheckIsCargoFullAsync),
+                    new ActionNode("Warp To Base", WarpToBaseAsync)
+                ),
+                new SequenceNode("Flight To Belt Sequence",
+                    new ActionNode("Is NOT In Mining Zone", CheckIsNotInMiningZoneAsync),
+                    new SelectorNode("Belt Selection Selector",
+                        new ActionNode("Is Belt Already Selected", CheckIsBeltAlreadySelectedAsync),
+                        new ActionNode("Select Asteroid Belt", SelectAsteroidBeltAsync)
+                    ),
+                    new ActionNode("Check Safe Before Warp", EvaluateSystemSecurityAsync),
+                    new ActionNode("Warp To Selected Belt", WarpToSelectedBeltAsync)
+                ),
+                new SequenceNode("Active Mining Sequence",
+                    new ActionNode("Clear Flight State On Arrival", ClearFlightStateOnArrivalAsync),
+                    new SelectorNode("Targeting and Activation Selector",
+                        new ActionNode("Check If Mining Is Active", CheckIfMiningIsActiveAsync),
+                        new SequenceNode("Lock And Mine Sequence",
+                            new ActionNode("Target Asteroid", TargetAsteroidAsync),
+                            new ActionNode("Activate Lasers", ActivateLasersAsync)
+                        )
+                    ),
+                    new ActionNode("Mining Monitor State", MiningMonitorStateAsync)
+                )
+            )
+        )
+    );
+}
+
+
 
 
     #endregion
@@ -125,7 +127,7 @@ public static partial class ScenarioFactory
     public static async Task<NodeStatus> CheckIsDockedAsync(ActiveBotAccount bot, CancellationToken token)
     {
 
-        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] !!!!!!", LogType.Warning);
+        // Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] !!!!!!", LogType.Warning);
         try
         {
             // ИСПРАВЛЕНО: Вызываем родной экземплярный метод скриншотов конкретного бота.
@@ -150,26 +152,36 @@ public static partial class ScenarioFactory
 
             if (foundPos.HasValue)
             {
-                // Кнопка выхода из дока найдена -> фиксируем нахождение на станции.
-                // ИСПРАВЛЕНО: тип лога изменен на Warning, чтобы он 100% пробил фильтры вашей панели диспетчера!
                 Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Кнопка imgUndock1 НАЙДЕНА. Робот находится на СТАНЦИИ.", LogType.Warning);
 
-                lock (bot)
+                lock (bot._taskLock)
                 {
                     bot._inSpace = false;
+                    bot._isUndocking = false;
+
+                    // ИСПРАВЛЕНО HIGH: Если бот находился в режиме паники/эвакуации (GoToStation),
+                    // но зрение ЖЕСТКО подтвердило, что корабль уже сидит на станции — 
+                    // задача эвакуации полностью ВЫПОЛНЕНА. Сбрасываем стейт паники в CheckSecurity,
+                    // чтобы на следующем тике дерево пропустило выполнение в мирный блок обслуживания и андока!
+                    if (bot.CurrentTask == AccountTask.GoToStation)
+                    {
+                        Logger.Log($"[{bot.Settings.Name}] Эвакуация завершена. Сбрасываю стейт паники. Возврат к штатной рутине.", LogType.Info);
+                        bot.CurrentTask = AccountTask.CheckSecurity;
+                    }
                 }
                 return NodeStatus.Success;
             }
 
-            // Кнопка не обнаружена -> фиксируем нахождение персонажа в открытом космосе
-            // ИСПРАВЛЕНО: тип лога изменен на Warning для гарантированного пробития фильтров при тестах!
+
             Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Кнопка imgUndock1 НЕ найдена. Робот находится в КОСМОСЕ.", LogType.Warning);
 
-            lock (bot)
+            // ИСПРАВЛЕНО HIGH: Убираем lock(bot) и здесь
+            lock (bot._taskLock)
             {
                 bot._inSpace = true;
             }
             return NodeStatus.Failure;
+
         }
         catch (Exception ex)
         {
@@ -188,61 +200,72 @@ public static partial class ScenarioFactory
     /// <summary>
     /// Проверяет, заполнен ли рудный трюм корабля (Узел Дерева Поведения).
     /// </summary>
-    private static async Task<NodeStatus> CheckIsCargoFullAsync(ActiveBotAccount bot, CancellationToken token)
+private static async Task<NodeStatus> CheckIsCargoFullAsync(ActiveBotAccount bot, CancellationToken token)
+{
+    // ИСПРАВЛЕНО HIGH: Если бот находится на станции, физический интерфейс трюма скрыт.
+    // Опираемся на закэшированное значение из DTO/памяти во избежание слепоты дерева!
+    if (!bot._inSpace)
     {
-        // 1. Делаем снимок зоны фаст-меню
-        var (screenshot, safeRegion) = await bot.PrepareScreenshotRegionAsync(GameRegions.FastMenu, token);
-        if (screenshot == null) return NodeStatus.Failure;
-
-        using var screenshotScope = screenshot;
-        var currentSnap = screenshot;
-
-        string pathCargoIcon = Path.Combine(Program.TemplatesDir, "imgCargoHoldIcon.png");
-        string pathCargo100 = Path.Combine(Program.TemplatesDir, "imgCargoFold100.png");
-
-        // Шаг 1: Ищем сам факт наличия иконки трюма на экране
-        Point? foundCargoIcon = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathCargoIcon, safeRegion, 0.85), token);
-
-        if (foundCargoIcon.HasValue)
-        {
-            // Шаг 2: Иконка на месте -> проверяем, заполнен ли он на 100%
-            Point? foundFull = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathCargo100, safeRegion, 0.85), token);
-            if (foundFull.HasValue)
-            {
-                Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Трюм полностью заполнен. Пора на станцию.", LogType.Info);
-                return NodeStatus.Success;
-            }
-
-            return NodeStatus.Failure; // Трюм виден, но он не заполнен до упора
-        }
-
-        // Шаг 3: Иконки трюма нет -> проверяем, не перекрыта ли она флагами флота
-        string pathFleet = Path.Combine(Program.TemplatesDir, "imgFleetFlags.png");
-        Point? foundFleet = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathFleet, safeRegion, 0.85), token);
-
-        if (!foundFleet.HasValue)
-        {
-            // Шаг 5: Иконки нет, флагов нет — интерфейс сломан или перекрыт. Даем сигнал дереву "Осмотреться".
-            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Ошибка: Панель трюма отсутствует, флаги флота не найдены. Сбой UI.", LogType.Warning);
-            return NodeStatus.Failure;
-        }
-
-        // Шаг 4: Флаг флота нашли — сдвигаем панель влево
-        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Панель сдвинута флагом флота. Выполняю корректирующий свайп.", LogType.Test);
-        await bot.ScrollLeftAsync(GameUI.FastMenu1, 50, token);
-        await Task.Delay(600, token);
-
-        // Делаем повторный снимок после свайпа
-        var (retryScreenshot, retryRegion) = await bot.PrepareScreenshotRegionAsync(GameRegions.FastMenu, token);
-        if (retryScreenshot == null) return NodeStatus.Failure;
-
-        using var retryScope = retryScreenshot;
-        var currentRetrySnap = retryScreenshot;
-
-        // Финальная проверка на полный трюм на сдвинутом экране
-        Point? foundFullRetry = await Task.Run(() => Tools.FindTemplateInRegion(currentRetrySnap, pathCargo100, retryRegion, 0.85), token);
-        return foundFullRetry.HasValue ? NodeStatus.Success : NodeStatus.Failure;
+        // Если бот придокался, мы считаем статус заполненности на основе флага _isfullore.
+        // Это позволит ветке выгрузки руды успешно запуститься на станции!
+        return bot._isfullore is true ? NodeStatus.Success : NodeStatus.Failure;
     }
+
+    // 1. Делаем снимок зоны фаст-меню (выполняется только в космосе)
+    var (screenshot, safeRegion) = await bot.PrepareScreenshotRegionAsync(GameRegions.FastMenu, token).ConfigureAwait(false);
+    if (screenshot == null) return NodeStatus.Failure;
+
+    using var screenshotScope = screenshot;
+    var currentSnap = screenshot;
+
+    string pathCargoIcon = Path.Combine(Program.TemplatesDir, "imgCargoHoldIcon.png");
+    string pathCargo100 = Path.Combine(Program.TemplatesDir, "imgCargoHold100.png"); // Исправлена опечатка Fold -> Hold
+
+    // Шаг 1: Ищем сам факт наличия иконки трюма на экране
+    Point? foundCargoIcon = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathCargoIcon, safeRegion, 0.85), token).ConfigureAwait(false);
+
+    if (foundCargoIcon.HasValue)
+    {
+        Point? foundFull = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathCargo100, safeRegion, 0.85), token).ConfigureAwait(false);
+        if (foundFull.HasValue)
+        {
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Трюм полностью заполнен. Пора на станцию.", LogType.Info);
+            lock (bot._taskLock) { bot._isfullore = true; } // Фиксируем стейт
+            return NodeStatus.Success;
+        }
+
+        lock (bot._taskLock) { bot._isfullore = false; }
+        return NodeStatus.Failure; 
+    }
+
+    // Шаг 3: Проверка на флаги флота
+    string pathFleet = Path.Combine(Program.TemplatesDir, "imgFleetFlags.png");
+    Point? foundFleet = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathFleet, safeRegion, 0.85), token).ConfigureAwait(false);
+
+    if (!foundFleet.HasValue)
+    {
+        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Ошибка: Панель трюма отсутствует в космосе. Сбой UI.", LogType.Warning);
+        return NodeStatus.Failure;
+    }
+
+    // Шаг 4: Корректирующий свайп
+    Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Панель сдвинута флагом флота. Выполняю корректирующий свайп.", LogType.Test);
+    await bot.ScrollLeftAsync(GameUI.FastMenu1, 50, token).ConfigureAwait(false);
+    await Task.Delay(600, token).ConfigureAwait(false);
+
+    var (retryScreenshot, retryRegion) = await bot.PrepareScreenshotRegionAsync(GameRegions.FastMenu, token).ConfigureAwait(false);
+    if (retryScreenshot == null) return NodeStatus.Failure;
+
+    using var retryScope = retryScreenshot;
+    Point? foundFullRetry = await Task.Run(() => Tools.FindTemplateInRegion(retryScreenshot, pathCargo100, retryRegion, 0.85), token).ConfigureAwait(false);
+    
+    if (foundFullRetry.HasValue)
+    {
+        lock (bot._taskLock) { bot._isfullore = true; }
+        return NodeStatus.Success;
+    }
+    return NodeStatus.Failure;
+}
 
 
     #endregion
@@ -254,62 +277,74 @@ public static partial class ScenarioFactory
     /// <summary>
     /// Проверяет, пуст ли рудный трюм корабля (необходим перед вылетом).
     /// </summary>
-    private static async Task<NodeStatus> CheckIsCargoEmptyAsync(ActiveBotAccount bot, CancellationToken token)
+private static async Task<NodeStatus> CheckIsCargoEmptyAsync(ActiveBotAccount bot, CancellationToken token)
+{
+
+    // Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] СТАРТ CheckIsCargoEmptyAsync", LogType.Test);
+    // ИСПРАВЛЕНО HIGH: Защита интерфейса дока станции.
+    // Находясь на станции, мы физически не видим иконку трюма. 
+    // Если флаг полной руды сброшен (равен false или null) — считаем трюм пустым и готовым к андоку!
+    if (!bot._inSpace)
     {
-        // 1. Делаем снимок зоны фаст-меню
-        var (screenshot, safeRegion) = await bot.PrepareScreenshotRegionAsync(GameRegions.FastMenu, token);
-        if (screenshot == null) return NodeStatus.Failure;
-
-        using var screenshotScope = screenshot;
-        var currentSnap = screenshot;
-
-        string pathCargoIcon = Path.Combine(Program.TemplatesDir, "imgCargoHoldIcon.png");
-        string pathCargo0 = Path.Combine(Program.TemplatesDir, "imgCargoHold0.png");
-
-        // Шаг 1: Ищем сам факт наличия иконки трюма на экране
-        Point? foundCargoIcon = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathCargoIcon, safeRegion, 0.85), token);
-
-        if (foundCargoIcon.HasValue)
-        {
-            // Шаг 2: Иконка на месте -> проверяем, пустой ли он (0%)
-            Point? foundEmpty = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathCargo0, safeRegion, 0.85), token);
-            if (foundEmpty.HasValue)
-            {
-                Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Трюм идеально пуст", LogType.Test);
-                return NodeStatus.Success; // Трюм идеально пуст
-            }
-
-            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Трюм виден, но в нем что-то лежит", LogType.Test);
-            return NodeStatus.Failure; // Трюм виден, но в нем что-то лежит
-        }
-
-        // Шаг 3: Иконки трюма нет -> проверяем, не перекрыта ли она флагами флота
-        string pathFleet = Path.Combine(Program.TemplatesDir, "imgFleetFlags.png");
-        Point? foundFleet = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathFleet, safeRegion, 0.85), token);
-
-        if (!foundFleet.HasValue)
-        {
-            // Шаг 5: Иконки нет, флагов нет — интерфейс сломан или перекрыт. Даем сигнал дереву "Осмотреться".
-            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Ошибка: Панель трюма отсутствует, флаги флота не найдены. Сбой UI.", LogType.Warning);
-            return NodeStatus.Failure;
-        }
-
-        // Шаг 4: Флаг флота нашли — сдвигаем панель влево
-        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Панель сдвинута флагом флота. Выполняю корректирующий свайп.", LogType.Test);
-        await bot.ScrollLeftAsync(GameUI.FastMenu1, 50, token);
-        await Task.Delay(600, token);
-
-        // Делаем повторный снимок после свайпа
-        var (retryScreenshot, retryRegion) = await bot.PrepareScreenshotRegionAsync(GameRegions.FastMenu, token);
-        if (retryScreenshot == null) return NodeStatus.Failure;
-
-        using var retryScope = retryScreenshot;
-        var currentRetrySnap = retryScreenshot;
-
-        // Финальная проверка на пустой трюм на сдвинутом экране
-        Point? foundEmptyRetry = await Task.Run(() => Tools.FindTemplateInRegion(currentRetrySnap, pathCargo0, retryRegion, 0.85), token);
-        return foundEmptyRetry.HasValue ? NodeStatus.Success : NodeStatus.Failure;
+        return bot._isfullore is not true ? NodeStatus.Success : NodeStatus.Failure;
     }
+
+    // 1. Делаем снимок зоны фаст-меню (Отработает строго в космосе)
+    var (screenshot, safeRegion) = await bot.PrepareScreenshotRegionAsync(GameRegions.FastMenu, token).ConfigureAwait(false);
+    if (screenshot == null) return NodeStatus.Failure;
+
+    using var screenshotScope = screenshot;
+    var currentSnap = screenshot;
+
+    string pathCargoIcon = Path.Combine(Program.TemplatesDir, "imgCargoHoldIcon.png");
+    string pathCargo0 = Path.Combine(Program.TemplatesDir, "imgCargoHold0.png");
+
+    // Шаг 1: Ищем сам факт наличия иконки трюма на экране
+    Point? foundCargoIcon = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathCargoIcon, safeRegion, 0.85), token).ConfigureAwait(false);
+
+    if (foundCargoIcon.HasValue)
+    {
+        Point? foundEmpty = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathCargo0, safeRegion, 0.85), token).ConfigureAwait(false);
+        if (foundEmpty.HasValue)
+        {
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Трюм идеально пуст", LogType.Test);
+            lock (bot._taskLock) { bot._isfullore = false; }
+            return NodeStatus.Success;
+        }
+
+        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Трюм виден, но в нем что-то лежит", LogType.Test);
+        return NodeStatus.Failure;
+    }
+
+    // Шаг 3: Проверка на флаги флота
+    string pathFleet = Path.Combine(Program.TemplatesDir, "imgFleetFlags.png");
+    Point? foundFleet = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathFleet, safeRegion, 0.85), token).ConfigureAwait(false);
+
+    if (!foundFleet.HasValue)
+    {
+        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Ошибка: Панель трюма отсутствует в космосе. Сбой UI.", LogType.Warning);
+        return NodeStatus.Failure;
+    }
+
+    // Шаг 4: Сдвигаем панель
+    Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Панель сдвинута флагом флота. Выполняю корректирующий свайп.", LogType.Test);
+    await bot.ScrollLeftAsync(GameUI.FastMenu1, 50, token).ConfigureAwait(false);
+    await Task.Delay(600, token).ConfigureAwait(false);
+
+    var (retryScreenshot, retryRegion) = await bot.PrepareScreenshotRegionAsync(GameRegions.FastMenu, token).ConfigureAwait(false);
+    if (retryScreenshot == null) return NodeStatus.Failure;
+
+    using var retryScope = retryScreenshot;
+    Point? foundEmptyRetry = await Task.Run(() => Tools.FindTemplateInRegion(retryScreenshot, pathCargo0, retryRegion, 0.85), token).ConfigureAwait(false);
+    
+    if (foundEmptyRetry.HasValue)
+    {
+        lock (bot._taskLock) { bot._isfullore = false; }
+        return NodeStatus.Success;
+    }
+    return NodeStatus.Failure;
+}
+
 
     #endregion
 
@@ -321,71 +356,78 @@ public static partial class ScenarioFactory
     /// <summary>
     /// Выполняет разгрузку руды на склад текущей станции (Узел Дерева Поведения).
     /// </summary>
-    private static async Task<NodeStatus> UnloadOreToHangarAsync(ActiveBotAccount bot, CancellationToken token)
+private static async Task<NodeStatus> UnloadOreToHangarAsync(ActiveBotAccount bot, CancellationToken token)
+{
+    Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Трюм заполнен. Выгрузка руды на склад станции.", LogType.Info);
+
+    // ========================================================
+    // ШАГ 1-2: ОТКРЫТИЕ МЕНЮ И ПОДГОТОВКА СКЛАДА
+    // ========================================================
+    (GameUI Element, int DelayMs)[] initialSteps = [
+        (GameUI.FastMenu1, 800),
+        (GameUI.CollapseStation, 800)
+    ];
+
+    foreach (var (element, delayMs) in initialSteps)
     {
-        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Трюм заполнен. Выгрузка руды на склад станции.", LogType.Info);
-
-        // ========================================================
-        // ШАГ 1-2: ОТКРЫТИЕ МЕНЮ И ПОДГОТОВКА СКЛАДА (Zero Allocation)
-        // ========================================================
-        (GameUI Element, int DelayMs)[] initialSteps = [
-            (GameUI.FastMenu1, 800),
-            (GameUI.CollapseStation, 800)
-        ];
-
-        foreach (var (element, delayMs) in initialSteps)
-        {
-            await bot.ClickToAsync(element, token);
-            await Task.Delay(delayMs, token);
-        }
-
-        // ========================================================
-        // ШАГ 3: ДИНАМИЧЕСКИЙ ПОИСК ИКОНКИ РУДНОГО ОТСЕКА
-        // ========================================================
-        // ИСПРАВЛЕНО: ищем в регионе инвентаря/меню, а не в левом углу локал-чата!
-        var (screenshot, safeRegion) = await PrepareScreenshotRegionAsync(bot, GameRegions.LocalChat, token);
-        if (screenshot == null) return NodeStatus.Failure;
-
-        using var screenshotScope = screenshot;
-
-        // ОПТИМИЗИРОВАНО: берем путь из кэша ядра Program
-        string pathOreHold = Path.Combine(Program.TemplatesDir, "imgOreHold.png");
-
-        var currentScreenshot = screenshot;
-        Point? foundOreHold = await Task.Run(() => Tools.FindTemplateInRegion(currentScreenshot, pathOreHold, safeRegion, 0.85), token);
-
-        if (!foundOreHold.HasValue)
-        {
-            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Иконка рудного отсека не найдена.", LogType.Error);
-            return NodeStatus.Failure;
-        }
-
-        // Кликаем по найденной точке рудного отсека
-        await bot.ClickPointAsync(foundOreHold.Value, token, minSec: 1, maxSec: 3, offset: 3);
-        await Task.Delay(800, token);
-
-        // ========================================================
-        // ШАГ 4-6: ВЫДЕЛЕНИЕ, ПЕРЕНОС В АНГАР И ЗАКРЫТИЕ (Zero Allocation)
-        // ========================================================
-        (GameUI Element, int DelayMs)[] finalSteps = [
-            (GameUI.SelectAll, 900),
-            (GameUI.ItemHangar, 1500),
-            (GameUI.XButton, 0)
-        ];
-
-
-        foreach (var (element, delayMs) in finalSteps)
-        {
-            await bot.ClickToAsync(element, token);
-            if (delayMs > 0)
-            {
-                await Task.Delay(delayMs, token);
-            }
-        }
-
-        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Выгрузка руды успешно завершена.", LogType.Success);
-        return NodeStatus.Success;
+        await bot.ClickToAsync(element, token).ConfigureAwait(false);
+        await Task.Delay(delayMs, token).ConfigureAwait(false);
     }
+
+    // ========================================================
+    // ШАГ 3: ДИНАМИЧЕСКИЙ ПОИСК ИКОНКИ РУДНОГО ОТСЕКА
+    // ========================================================
+    // ИСПРАВЛЕНО HIGH: Изменен регион поиска с LocalChat на FastMenu (или твой регион окна инвентаря),
+    // чтобы OpenCV физически видел иконку отсека на экране склада!
+    var (screenshot, safeRegion) = await PrepareScreenshotRegionAsync(bot, GameRegions.FastMenu, token).ConfigureAwait(false);
+    if (screenshot == null) return NodeStatus.Failure;
+
+    using var screenshotScope = screenshot;
+    string pathOreHold = Path.Combine(Program.TemplatesDir, "imgOreHold.png");
+
+    Point? foundOreHold = await Task.Run(() => Tools.FindTemplateInRegion(screenshot, pathOreHold, safeRegion, 0.85), token).ConfigureAwait(false);
+
+    if (!foundOreHold.HasValue)
+    {
+        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Иконка рудного отсека не найдена. Сброс окон.", LogType.Error);
+        await bot.ClickToAsync(GameUI.XButton, token).ConfigureAwait(false); // Страхуем и закрываем интерфейс
+        return NodeStatus.Failure;
+    }
+
+    // Кликаем по найденной точке рудного отсека
+    await bot.ClickPointAsync(foundOreHold.Value, token, minSec: 1, maxSec: 2, offset: 3).ConfigureAwait(false);
+    await Task.Delay(800, token).ConfigureAwait(false);
+
+    // ========================================================
+    // ШАГ 4-6: ВЫДЕЛЕНИЕ, ПЕРЕНОС В АНГАР И ЗАКРЫТИЕ
+    // ========================================================
+    (GameUI Element, int DelayMs)[] finalSteps = [
+        (GameUI.SelectAll, 900),
+        (GameUI.ItemHangar, 1500),
+        (GameUI.XButton, 0)
+    ];
+
+    foreach (var (element, delayMs) in finalSteps)
+    {
+        await bot.ClickToAsync(element, token).ConfigureAwait(false);
+        if (delayMs > 0)
+        {
+            await Task.Delay(delayMs, token).ConfigureAwait(false);
+        }
+    }
+
+    // ИСПРАВЛЕНО HIGH: Атомарно сбрасываем флаги заполненности трюма!
+    // Теперь на следующем тике дерево поймет, что корабль ПУСТ, и штатно отправит его на андок!
+    lock (bot._taskLock)
+    {
+        bot._isfullore = false;
+        bot._isfullmain = false;
+    }
+
+    Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Выгрузка руды успешно завершена. Трюм очищен.", LogType.Success);
+    return NodeStatus.Success;
+}
+
 
     #endregion
 
@@ -396,76 +438,61 @@ public static partial class ScenarioFactory
     /// <summary>
     /// Выполняет команду выхода из дока станции (андок) в космос.
     /// </summary>
-    private static async Task<NodeStatus> ExecuteUndockAsync(ActiveBotAccount bot, CancellationToken token)
+private static async Task<NodeStatus> ExecuteUndockAsync(ActiveBotAccount bot, CancellationToken token)
+{
+    // Защита от отмены
+    token.ThrowIfCancellationRequested();
+
+    // Если мы уже физически зафиксировали космос на прошлых тиках — задача успешно выполнена!
+    if (bot._inSpace)
+    {
+        bot._isUndocking = false;
+        return NodeStatus.Success;
+    }
+
+    // ПЕРВЫЙ ВХОД: Кликаем по кнопке и взводим стартовый таймер анимации
+    if (!bot._isUndocking)
     {
         Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] В системе чисто. Инициирую выход из дока.", LogType.Info);
-
-        // Взводим флаг для защиты от повторного входа в метод на время анимации
         bot._isUndocking = true;
+        
+        // Фиксируем точное время начала андока, чтобы проверять длительность анимации
+        bot._lastLoggedPlanetHours = 0; // Используем свободное поле как маркер или введи DateTime поле
 
-        try
+        await bot.ClickToAsync(GameUI.UndockButton, token).ConfigureAwait(false);
+        
+        // Даем 5 секунд первичного ожидания, чтобы экран гарантированно потемнел
+        await Task.Delay(5000, token).ConfigureAwait(false);
+        return NodeStatus.Running; // Возвращаем Running, отдавая управление в цикл!
+    }
+
+    // ПОВТОРНЫЕ ТИКИ (Проверка прогрузки космоса каждую секунду без блокировки дерева)
+    string pathEyeImg = Path.Combine(Program.TemplatesDir, "imgEyeIcon.png");
+    var (screenshot, safeRegion) = await bot.PrepareScreenshotRegionAsync(GameRegions.EyeIconClose, token).ConfigureAwait(false);
+
+    if (screenshot != null)
+    {
+        using var scope = screenshot;
+        Point? foundEye = await Task.Run(() => Tools.FindTemplateInRegion(screenshot, pathEyeImg, safeRegion, 0.82), token).ConfigureAwait(false);
+
+        if (foundEye.HasValue)
         {
-            // Кликаем по кнопке Андока
-            await bot.ClickToAsync(GameUI.UndockButton, token);
-
-            // Даем игре 6 секунд — это базовое минимальное время на запуск анимации вылета
-            await Task.Delay(13000, token);
-
-            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Анимация вылета запущена. Ожидаю появление интерфейса космоса.", LogType.Info);
-
-            // Путь к маркеру открытого космоса (глаз овервью)
-            string pathEyeImg = Path.Combine(Program.TemplatesDir, "imgEyeIcon.png");
-
-            // Делаем до 5 динамических попыток сканирования экрана с шагом в 2 секунды (итого даем до 10 секунд на прогрузку)
-            for (int i = 1; i <= 5; i++)
-            {
-                token.ThrowIfCancellationRequested();
-
-                // Используем наш эталонный метод расширения для захвата и обрезки региона
-                var (screenshot, safeRegion) = await bot.PrepareScreenshotRegionAsync(GameRegions.EyeIconClose, token);
-
-                if (screenshot != null)
-                {
-                    using var scope = screenshot; // Автоматически чистим unmanaged-память
-                    var currentSnap = screenshot;
-
-                    // Ищем иконку глаза в фоновом пуле
-                    Point? foundEye = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathEyeImg, safeRegion, 0.82), token);
-
-                    if (foundEye.HasValue)
-                    {
-                        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Интерфейс космоса успешно прогружен. Вылет подтвержден!", LogType.Success);
-                        bot._inSpace = true;
-
-                        // Исправлено: вызываем наш новый универсальный метод настройки экрана в космосе
-                        bool interfaceReady = await bot.PrepareSpaceInterfaceAsync(token);
-
-                        if (!interfaceReady)
-                        {
-                            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Предупреждение: Не удалось настроить овервью/зум, но корабль в космосе.", LogType.Warning);
-                        }
-
-                        return NodeStatus.Success;
-                    }
-                }
-
-                Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Космос еще загружается. Попытка валидации {i}/5", LogType.Test);
-                await Task.Delay(5000, token);
-            }
-
-            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Ошибка андока: Время ожидания истекло, интерфейс космоса не появился.", LogType.Error);
-            return NodeStatus.Failure;
-        }
-        catch (Exception ex)
-        {
-            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Ошибка при выполнении андока аккаунта: {ex.Message}", LogType.Error);
-            return NodeStatus.Failure;
-        }
-        finally
-        {
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Интерфейс космоса успешно прогружен. Вылет подтвержден!", LogType.Success);
+            bot._inSpace = true;
             bot._isUndocking = false;
+
+            // Настраиваем овервью в космосе
+            _ = Task.Run(async () => await bot.PrepareSpaceInterfaceAsync(Program.GetGlobalToken()));
+            return NodeStatus.Success;
         }
     }
+
+    Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Ожидаю появление интерфейса космоса (Корабль в процессе андока)...", LogType.Info);
+    
+    // Возвращаем Running, чтобы дерево продолжало удерживать эту ветку на следующих тиках
+    return NodeStatus.Running;
+}
+
 
     #endregion
 
@@ -1333,16 +1360,27 @@ public static partial class ScenarioFactory
     /// <summary>
     /// Проверяет, находится ли бот в состоянии экстренной паники/эвакуации.
     /// </summary>
-    private static Task<NodeStatus> CheckIsPanicStateActiveAsync(ActiveBotAccount bot, CancellationToken token)
+    private static Task<NodeStatus> CheckIsPanicStateActiveAsync(ActiveBotAccount bot, CancellationToken _)
     {
-        token.ThrowIfCancellationRequested();
+        // ИСПРАВЛЕНО HIGH: Защита Наблюдателя от заклинивания в режиме эвакуации!
+        // Если скрипт бота — LocalWatcher (Наблюдатель), и его CurrentTask по какой-то причине 
+        // равен GoToStation, мы принудительно сбрасываем его в CheckSecurity прямо здесь.
+        // Наблюдателю не нужно никуда лететь, он уже на месте!
+        if (bot.Settings.Script?.ToLower() == "localwatcher" && bot.CurrentTask == AccountTask.GoToStation)
+        {
+            lock (bot._taskLock)
+            {
+                Logger.Log($"[{bot.Settings.Name}] Наблюдатель обнаружил заклинивший стейт паники на станции. Сбрасываю в CheckSecurity.", LogType.Info);
+                bot.CurrentTask = AccountTask.CheckSecurity;
+            }
+        }
 
-        // Если бэкенд выставил задачу бегства к станции — узел возвращает Success,
-        // заставляя дерево немедленно зайти в ветку экстренного отварпа.
+        // Штатная проверка флага эвакуации для остальных полетных кораблей (майнеров)
         bool isPanic = bot.CurrentTask == AccountTask.GoToStation;
-
         return Task.FromResult(isPanic ? NodeStatus.Success : NodeStatus.Failure);
     }
+
+
 
     #endregion
 

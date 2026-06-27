@@ -14,11 +14,11 @@ public static class Tools
 
     #region Globals
 
-    /// <summary>
-    /// Глобальный генератор случайных чисел для симуляции задержек и действий пользователя.
-    /// </summary>
-    // BUG MEDIUM - Потенциальная проблема с многопоточностью при генерации случайных чисел. Класс `System.Random` по умолчанию НЕ является потокобезопасным. Если несколько фоновых потоков одновременно вызовут `_random.Next()` внутри `Tools.SmartClick` для расчета случайного смещения `offset` или секунд задержки, внутреннее состояние генератора может разрушиться, из-за чего он начнет бесконечно возвращать `0`. Это приведет к полной потере человекоподобного рандома (клики пойдут в одну точку). Для .NET 9+ правильнее использовать потокобезопасный `Random.Shared.Next()`.
-    private static readonly Random _random = new();
+    // /// <summary>
+    // /// Глобальный генератор случайных чисел для симуляции задержек и действий пользователя.
+    // /// </summary>
+    // // BUG MEDIUM - Потенциальная проблема с многопоточностью при генерации случайных чисел. Класс `System.Random` по умолчанию НЕ является потокобезопасным. Если несколько фоновых потоков одновременно вызовут `_random.Next()` внутри `Tools.SmartClick` для расчета случайного смещения `offset` или секунд задержки, внутреннее состояние генератора может разрушиться, из-за чего он начнет бесконечно возвращать `0`. Это приведет к полной потере человекоподобного рандома (клики пойдут в одну точку). Для .NET 9+ правильнее использовать потокобезопасный `Random.Shared.Next()`.
+    // private static readonly Random _random = new();
 
     /// <summary>
     /// Потокобезопасное множество аккаунтов, для которых уже был изменен размер игрового окна.
@@ -37,8 +37,8 @@ public static class Tools
     /// В режиме отладки (DEBUG) автоматически сохраняет снимок в папку проекта.
     /// </summary>
     /// <param name="hWnd">Дескриптор (Handle) целевого окна эмулятора.</param>
-    /// <returns>Матрица <see cref="Mat"/> с изображением в формате BGRA (4 канала), или <c>null</c> в случае ошибки.</returns>
-public static Mat? CaptureWindow(IntPtr hWnd, System.Threading.SemaphoreSlim? gdiSemaphore = null)
+    /// <returns>Матрица <see cref="Mat"/> с изображением в формате BGRA (4 канала), или <c>null</c> в случае ошибки.</returns>// ИСПРАВЛЕНО HIGH: Переводим метод в async Task и пробрасываем CancellationToken из дерева
+public static async Task<Mat?> CaptureWindowAsync(IntPtr hWnd, System.Threading.SemaphoreSlim? gdiSemaphore = null, CancellationToken token = default)
 {
     if (hWnd == IntPtr.Zero) return null;
 
@@ -48,11 +48,16 @@ public static Mat? CaptureWindow(IntPtr hWnd, System.Threading.SemaphoreSlim? gd
     IntPtr hOldBmp = IntPtr.Zero;
     Mat? mat = null;
 
-    // ЖЕСТКИЙ БАРЬЕР: Захватываем замок ДО входа в основной блок, гарантируя его освобождение в finally!
-    gdiSemaphore?.Wait();
-
     try
     {
+        // ИСПРАВЛЕНО HIGH: Захватываем замок асинхронно с поддержкой токена отмены дерева!
+        // Если такт дерева отменится по таймауту, этот вызов мгновенно выбросит OperationCanceledException
+        // и поток ОПТИМАЛЬНО вернется в пул, вообще не создавая дедлоков и очередей заклинивания!
+        if (gdiSemaphore != null)
+        {
+            await gdiSemaphore.WaitAsync(token).ConfigureAwait(false);
+        }
+
         if (!WinAPI.GetClientRect(hWnd, out WinAPI.RECT rect)) return null;
 
         int width = rect.Right - rect.Left;
@@ -101,14 +106,13 @@ public static Mat? CaptureWindow(IntPtr hWnd, System.Threading.SemaphoreSlim? gd
         if (hBitmap != IntPtr.Zero) WinAPI.DeleteObject(hBitmap);
         if (hdcWindow != IntPtr.Zero)
         {
-            _ = WinAPI.ReleaseDC(hWnd, hdcWindow); // Исправлено LOW: утилизируем HRESULT через discard
+            _ = WinAPI.ReleaseDC(hWnd, hdcWindow);
         }
 
-        // ГАРАНТИРОВАННЫЙ СБРОС ЗАМКА: Теперь он отпустит поток при любом исходе!
+        // Гарантированно отпускаем замок семафора
         gdiSemaphore?.Release();
     }
 }
-
 
     #endregion
 
@@ -203,25 +207,25 @@ public static Mat? CaptureWindow(IntPtr hWnd, System.Threading.SemaphoreSlim? gd
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
-    // ПОПРАВКА HIGH - Инфраструктура для мгновенного кэширования шаблонов OpenCV в ОЗУ
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Mat> _cachedTemplates = new();
+    // // ПОПРАВКА HIGH - Инфраструктура для мгновенного кэширования шаблонов OpenCV в ОЗУ
+    // private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Mat> _cachedTemplates = new();
 
-    /// <summary>
-    /// Потокобезопасный метод получения матрицы шаблона из кэша оперативной памяти.
-    /// Если картинки в памяти еще нет — она загружается один раз и сохраняется на всю сессию.
-    /// </summary>
-    private static Mat GetOrCreateTemplate(string templatePath)
-    {
-        return _cachedTemplates.GetOrAdd(templatePath, path =>
-        {
-            Mat mat = Cv2.ImRead(path, ImreadModes.Color);
-            if (mat.Empty())
-            {
-                throw new FileNotFoundException($"[КЭШ ОБРАЗОВ] Критическая ошибка! Не удалось загрузить шаблон: {path}");
-            }
-            return mat;
-        });
-    }
+    // /// <summary>
+    // /// Потокобезопасный метод получения матрицы шаблона из кэша оперативной памяти.
+    // /// Если картинки в памяти еще нет — она загружается один раз и сохраняется на всю сессию.
+    // /// </summary>
+    // private static Mat GetOrCreateTemplate(string templatePath)
+    // {
+    //     return _cachedTemplates.GetOrAdd(templatePath, path =>
+    //     {
+    //         Mat mat = Cv2.ImRead(path, ImreadModes.Color);
+    //         if (mat.Empty())
+    //         {
+    //             throw new FileNotFoundException($"[КЭШ ОБРАЗОВ] Критическая ошибка! Не удалось загрузить шаблон: {path}");
+    //         }
+    //         return mat;
+    //     });
+    // }
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
@@ -302,7 +306,7 @@ public static Mat? CaptureWindow(IntPtr hWnd, System.Threading.SemaphoreSlim? gd
                 // чтобы не находить один и тот же объект на соседних пикселях. Стираем в радиусе размера шаблона.
                 int startX = Math.Max(0, maxLoc.X - (matTemplate.Width / 2));
                 int startY = Math.Max(0, maxLoc.Y - (matTemplate.Height / 2));
-                
+
                 // BUG MEDIUM - Потенциальный выход за границы матрицы (IndexOutOfRangeException / OpenCvSharpException). При расчете `endX` и `endY` используется деление сторон шаблона пополам, но не проверяется, не превышают ли финальные координаты `result.Cols` и `result.Rows`. Несмотря на использование `Math.Min`, если `roiToErase` сформируется с некорректным размером из-за округления, вызов `new Mat(result, roiToErase)` выбросит исключение прямо посреди цикла детекции, обрушив итерацию сценария. Безопаснее использовать метод `Tools.ClampRegion` или жестко валидировать ширину и высоту Rect.
                 int endX = Math.Min(result.Cols, maxLoc.X + (matTemplate.Width / 2));
                 int endY = Math.Min(result.Rows, maxLoc.Y + (matTemplate.Height / 2));
