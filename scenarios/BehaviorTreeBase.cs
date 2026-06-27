@@ -53,6 +53,8 @@ public abstract class BehaviorNode
 public class SequenceNode : BehaviorNode
 {
     private readonly List<BehaviorNode> _children = [];
+    // ИСПРАВЛЕНО HIGH: Индекс для запоминания текущего выполняющегося шага цепочки
+    private int _currentChildIndex = 0;
 
     public SequenceNode(string name, params BehaviorNode[] nodes)
     {
@@ -62,17 +64,25 @@ public class SequenceNode : BehaviorNode
 
     public override async Task<NodeStatus> TickAsync(ActiveBotAccount bot, CancellationToken token)
     {
-        foreach (var child in _children)
+        // Начинаем обход строго с того узла, на котором остановились в прошлый раз!
+        for (int i = _currentChildIndex; i < _children.Count; i++)
         {
-            NodeStatus childStatus = await child.TickAsync(bot, token);
+            NodeStatus childStatus = await _children[i].TickAsync(bot, token);
 
-            // Если ребенок занят или провалился — останавливаем всю цепочку шагов
-            if (childStatus != NodeStatus.Success)
+            if (childStatus == NodeStatus.Running)
             {
-                return childStatus;
+                _currentChildIndex = i; // Запоминаем шаг, уходим на следующий секундный тик цикла
+                return NodeStatus.Running;
+            }
+
+            if (childStatus == NodeStatus.Failure)
+            {
+                _currentChildIndex = 0; // Провал цепочки — сбрасываем память
+                return NodeStatus.Failure;
             }
         }
 
+        _currentChildIndex = 0; // Все узлы успешно пройдены — обнуляем индекс
         return NodeStatus.Success;
     }
 }
@@ -102,15 +112,24 @@ public class SelectorNode : BehaviorNode
     {
         foreach (var child in _children)
         {
-            NodeStatus childStatus = await child.TickAsync(bot, token);
+            NodeStatus childStatus = await child.TickAsync(bot, token).ConfigureAwait(false);
 
-            // Если нашли рабочее решение или узел выполняется — возвращаем его статус наверх
-            if (childStatus != NodeStatus.Failure)
+            // Если ребенок вернул Success или Running — мы нашли решение, 
+            // мгновенно возвращаем этот статус наверх и КУПИРУЕМ дальнейший обход!
+            if (childStatus == NodeStatus.Success || childStatus == NodeStatus.Running)
             {
                 return childStatus;
             }
+
+            // ИСПРАВЛЕНО HIGH: Если ребенок вернул Failure (как это делает планетарка), 
+            // мы НЕ ВЫХОДИМ из цикла, а послушно переходим к СЛЕДУЮЩЕМУ элементу foreach (к coreScenarioTree)!
+#if DEBUG
+            // Выводим отладку только в режиме разработки, чтобы видеть логику перескока веток
+            // Logger.Log($"[Selector: {Name}] Узел '{child.Name}' вернул Failure. Перехожу к следующей ветке...", LogType.Test);
+#endif
         }
 
+        // Возвращаем Failure ТОЛЬКО если абсолютно все ветки (и планетарка, и основной скрипт) вернули неудачу
         return NodeStatus.Failure;
     }
 }

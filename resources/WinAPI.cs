@@ -111,6 +111,18 @@ internal static partial class WinAPI
 
     #endregion
 
+    #region Kernel32 Imports
+
+    /// <summary>
+    /// Извлекает дескриптор окна (HWND), используемого текущим консольным процессом.
+    /// Если приложение запущено без консоли (режим WinExe, системный трей), метод вернет <see cref="IntPtr.Zero"/>.
+    /// </summary>
+    /// <returns>Дескриптор окна консоли или <see cref="IntPtr.Zero"/>, если реальное окно консоли отсутствует.</returns>
+    [LibraryImport("kernel32.dll", EntryPoint = "GetConsoleWindow")]
+    public static partial IntPtr GetConsoleWindow();
+
+    #endregion
+
     #region Windows Management API (User32 / DwmApi)
 
     /// <summary>
@@ -192,6 +204,7 @@ internal static partial class WinAPI
     /// <param name="lpClassName">Целевой буфер строк для записи.</param>
     /// <param name="nMaxCount">Максимальная длина буфера выделения.</param>
     /// <returns>Количество успешно скопированных символов.</returns>
+    // BUG LOW - Ошибка компиляции (Missing Type / Namespace). Метод использует тип `StringBuilder`, но в директивах `using` файла `Program.cs` (где объявлен `partial class Program`) или этого файла отсутствует пространство имен `System.Text`. Если проект компилируется, значит `using System.Text` объявлен глобально в `GlobalUsings.cs`, иначе здесь упадет сборка.
     internal static int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount)
     {
         if (lpClassName == null || nMaxCount <= 0) return 0;
@@ -347,6 +360,14 @@ internal static partial class WinAPI
         return mainHWnd;
     }
 
+    /// <summary>
+    /// Переносит пиксели цветовых данных из исходного контекста устройства в целевой.
+    /// Работает на уровне видеокарты, полностью исключая зависания PrintWindow в многопоточном режиме.
+    /// </summary>
+    // BUG LOW - Импорт метода BitBlt оформлен абсолютно верно. Мое предыдущее замечание о его отсутствии снимается, так как partial-структура класса воссоединила этот метод с вызовом внутри CaptureWindow. Ошибок здесь нет.
+    [LibraryImport("gdi32.dll", EntryPoint = "BitBlt")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool BitBlt(IntPtr hdcDest, int nXDest, int nYDest, int nWidth, int nHeight, IntPtr hdcSrc, int nXSrc, int nYSrc, uint dwRop);
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 

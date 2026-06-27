@@ -27,7 +27,7 @@ public static partial class ScenarioFactory
         // Исправлено: корректно обрабатываем тип bool? (если равен false или null — система опасна)
         if (systemState.IsSafe is not true)
         {
-            Logger.Log($"[{bot.Settings.Name}] Глобальная тревога! Система небезопасна.", LogType.Warning);
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Глобальная тревога! Система небезопасна.", LogType.Warning);
             bot.IsSaveLocal = false;
             bot._currenttarget = null; // Сбрасываем цель, если она была
             return NodeStatus.Failure;
@@ -45,7 +45,7 @@ public static partial class ScenarioFactory
             case SecurityCheckResult.Danger:
                 bot.IsSaveLocal = false;
                 bot._currenttarget = null;
-                Logger.Log($"[{bot.Settings.Name}] Обнаружен противник в локале! Активирую экстренную эвакуацию...", LogType.Warning);
+                Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Обнаружен противник в локале! Активирую экстренную эвакуацию...", LogType.Warning);
 
                 // Исправлено: принудительно переключаем бота и его соседей в режим бегства на станцию
                 await bot.ExecuteEmergencyResponseAsync(isInitiator: true, token);
@@ -53,7 +53,7 @@ public static partial class ScenarioFactory
 
             case SecurityCheckResult.Unknown:
                 bot.CurrentTask = AccountTask.LookAround;
-                Logger.Log($"[{bot.Settings.Name}] Интерфейс потерян или перекрыт. Перехожу в режим ожидания и осмотра.", LogType.Warning);
+                Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Интерфейс потерян или перекрыт. Перехожу в режим ожидания и осмотра.", LogType.Warning);
 
                 // Даем игре 3 секунды на возможную прогрузку интерфейса перед следующим тиком
                 await Task.Delay(3000, token);
@@ -71,42 +71,64 @@ public static partial class ScenarioFactory
 
     /// <summary>
     /// Проверяет, пришло ли время для обслуживания планетарной добычи (выполняется только в доке).
+    /// Выводит диагностику в лог строго один раз в час для защиты от спама на тиках дерева.
     /// </summary>
-    private static Task<NodeStatus> CheckIfPlanetMiningTimeAsync(ActiveBotAccount bot, CancellationToken _)
+    /// <summary>
+    /// Проверяет, пришло ли время для обслуживания планетарной добычи (выполняется только в доке).
+    /// Полностью очищен от вложенных блокировок для исключения дедлоков в STA-модели потоков.
+    /// </summary>
+private static async Task<NodeStatus> CheckIfPlanetMiningTimeAsync(ActiveBotAccount bot, CancellationToken token)
+{
+    // ИСПРАВЛЕНО HIGH - Принудительно разрываем синхронный контекст!
+    // Этот вызов заставляет await освободить текущий поток и перенести выполнение
+    // в пул потоков CLR. Это полностью ликвидирует Spin-Wait заклинивание на первой секунде!
+    await Task.Yield();
+
+    if (!bot.PlanetMining)
     {
-        // МГНОВЕННЫЙ ФИЛЬТР: если планетарка выключена в JSON, сразу выходим без спама в логи
-        if (!bot.PlanetMining)
-        {
-            return Task.FromResult(NodeStatus.Failure);
-        }
+        return NodeStatus.Failure;
+    }
 
-        // 1. Считаем триггер времени и округляем прошедшие часы для лога
-        bool isTime = !bot._planetassembly.HasValue || (DateTime.Now - bot._planetassembly.Value).TotalHours >= 8;
+    bool isTime = !bot._planetassembly.HasValue || (DateTime.Now - bot._planetassembly.Value).TotalHours >= 8;
 
+    double currentHours = bot._planetassembly.HasValue
+        ? (DateTime.Now - bot._planetassembly.Value).TotalHours
+        : 99.0;
 
-        double hoursSinceLastAssembly = bot._planetassembly.HasValue
-            ? Math.Round((DateTime.Now - bot._planetassembly.Value).TotalHours, 2)
-            : 99.0;
+    int currentHoursInt = (int)Math.Floor(currentHours);
 
 #if DEBUG
-        // 2. Выводим детальный диагностический лог для отладки условий на каждом тике дерева
+    bool isNewHour = currentHoursInt != bot._lastLoggedPlanetHours;
+    bool shouldLog = isTime || isNewHour;
+
+    if (shouldLog)
+    {
+        double logHoursDisplay = bot._planetassembly.HasValue ? Math.Round(currentHours, 2) : 99.0;
+
         Logger.Log(
-            $"[PLANET-CHECK] [{bot.Settings.Name}] " +
+            $"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] " +
             $"Флаг PlanetMining: {(bot.PlanetMining ? "ВКЛ" : "ВЫКЛ")} | " +
             $"На станции (В доке): {(!bot._inSpace ? "ДА" : "НЕТ (В космосе)")} | " +
-            $"Прошло часов: {hoursSinceLastAssembly}/8.00 (Доступно по времени: {(isTime ? "ДА" : "НЕТ")})",
+            $"Прошло часов: {logHoursDisplay}/8.00 (Доступно по времени: {(isTime ? "ДА" : "НЕТ")})",
             LogType.Test
         );
+
+        // Потокобезопасно обновляем флаг под персональным локом бота во избежание Race Condition памяти
+        lock (bot._taskLock)
+        {
+            bot._lastLoggedPlanetHours = isTime ? -1 : currentHoursInt;
+        }
+    }
 #endif
 
-        // 3. Финальная проверка условий для пропуска к макросу
-        if (bot._inSpace || !bot.PlanetMining)
-        {
-            return Task.FromResult(NodeStatus.Failure);
-        }
-
-        return Task.FromResult(isTime ? NodeStatus.Success : NodeStatus.Failure);
+    if (bot._inSpace || !bot.PlanetMining)
+    {
+        return NodeStatus.Failure;
     }
+
+    return isTime ? NodeStatus.Success : NodeStatus.Failure;
+}
+
 
     #endregion
 
@@ -120,78 +142,98 @@ public static partial class ScenarioFactory
     /// </summary>
     private static async Task<NodeStatus> ExecutePlanetMiningSequenceAsync(ActiveBotAccount bot, CancellationToken token)
     {
-        Logger.Log($"[{bot.Settings.Name}] Инициация входа в интерфейс планетарной добычи...", LogType.Info);
+        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Инициация входа в интерфейс планетарной добычи...", LogType.Info);
 
-        // ========================================================
-        // ЭТАП 1: НАВИГАЦИЯ (Вход в интерфейс)
-        // ========================================================
-        NodeStatus navStatus = await TryClickPlanetShortcutAsync(bot, token);
-
-        if (navStatus == NodeStatus.Failure)
+        try
         {
-            Logger.Log($"[{bot.Settings.Name}] Быстрый путь недоступен. Переход на резервный путь через меню.", LogType.Warning);
+            // ========================================================
+            // ЭТАП 1: НАВИГАЦИЯ (Вход в интерфейс)
+            // ========================================================
+            NodeStatus navStatus = await TryClickPlanetShortcutAsync(bot, token);
 
-            if (await OpenMainMenuAsync(bot, token) == NodeStatus.Success)
+            if (navStatus == NodeStatus.Failure)
             {
-                navStatus = await ClickPlanetButtonInMenuAsync(bot, token);
+                Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Быстрый путь недоступен. Переход на резервный путь через меню.", LogType.Warning);
+
+                if (await OpenMainMenuAsync(bot, token) == NodeStatus.Success)
+                {
+                    navStatus = await ClickPlanetButtonInMenuAsync(bot, token);
+                }
             }
-        }
 
-        if (navStatus != NodeStatus.Success)
-        {
-            Logger.Log($"[{bot.Settings.Name}] Критическая ошибка: Не удалось войти в интерфейс планетарки.", LogType.Error);
-            return NodeStatus.Failure;
-        }
-
-        await Task.Delay(2000, token);
-
-        // ========================================================
-        // ЭТАП 2: ОПТИМИЗИРОВАННАЯ СЕРИЯ КЛИКОВ (ЧЕРЕЗ ЦИКЛ)
-        // ========================================================
-        Logger.Log($"[{bot.Settings.Name}] Интерфейс открыт. Запуск циклической цепочки перезапуска...", LogType.Info);
-
-        // Описываем шаги: какой элемент нажать и сколько миллисекунд подождать ПОСЛЕ клика
-        // Используем синтаксис коллекций C# 12+ [ ... ]
-        // Исправлено: заменено на массив для безопасного пересечения асинхронного await
-        (GameUI Element, int DelayMs, string LogMessage)[] miningSteps = [
-            (GameUI.FirstPlanet,   1200, "Выбор первой планеты в списке..."),
-            (GameUI.PlanetTimer,   1500, "Отправка команды на перезапуск таймера..."),
-            (GameUI.ConfirmButton, 1500, "Ожидание и отправка подтверждения диалога...")
-        ];
-
-        // Выполняем шаги в едином компактном цикле
-        foreach (var (element, delayMs, logMessage) in miningSteps)
-        {
-            Logger.Log($"[{bot.Settings.Name}] {logMessage}", LogType.Info);
-
-            await bot.ClickToAsync(element, token);
-            await Task.Delay(delayMs, token);
-        }
-
-        // ========================================================
-        // ЭТАП 3: ДОПОЛНИТЕЛЬНЫЕ МОДУЛИ И ЗАКРЫТИЕ
-        // ========================================================
-        if (bot.POS)
-        {
-            Logger.Log($"[{bot.Settings.Name}] Обнаружена привязка к ПОС. Запуск подмодуля сбора...", LogType.Info);
-
-            // Исправлено: если сбор ресурсов на ПОС провалился — прерываем выполнение макроса
-            if (await CollectPlanetToPosAsync(bot, token) == NodeStatus.Failure)
+            if (navStatus != NodeStatus.Success)
             {
+                Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Критическая ошибка: Не удалось войти в интерфейс планетарки.", LogType.Error);
                 return NodeStatus.Failure;
             }
+
+            await Task.Delay(2000, token);
+
+            // ========================================================
+            // ЭТАП 2: ОПТИМИЗИРОВАННАЯ СЕРИЯ КЛИКОВ (ЧЕРЕЗ ЦИКЛ)
+            // ========================================================
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Интерфейс открыт. Запуск циклической цепочки перезапуска...", LogType.Info);
+
+            // Описываем шаги: какой элемент нажать и сколько миллисекунд подождать ПОСЛЕ клика
+            (GameUI Element, int DelayMs, string LogMessage)[] miningSteps = [
+                (GameUI.FirstPlanet,   1200, "Выбор первой планеты в списке..."),
+                (GameUI.PlanetTimer,   1500, "Отправка команды на перезапуск таймера..."),
+                (GameUI.ConfirmButton, 1500, "Ожидание и отправка подтверждения диалога...")
+            ];
+
+            // Выполняем шаги в едином компактном цикле
+            foreach (var (element, delayMs, logMessage) in miningSteps)
+            {
+                token.ThrowIfCancellationRequested();
+                Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] {logMessage}", LogType.Info);
+
+                await bot.ClickToAsync(element, token);
+                await Task.Delay(delayMs, token);
+            }
+
+            // ========================================================
+            // ЭТАП 3: ДОПОЛНИТЕЛЬНЫЕ МОДУЛИ И ЗАКРЫТИЕ
+            // ========================================================
+            if (bot.POS)
+            {
+                Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Обнаружена привязка к ПОС. Запуск подмодуля сбора...", LogType.Info);
+
+                // Если сбор ресурсов на ПОС провалился — прерываем выполнение макроса
+                if (await CollectPlanetToPosAsync(bot, token) == NodeStatus.Failure)
+                {
+                    return NodeStatus.Failure;
+                }
+            }
+
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Завершение макроса. Закрытие интерфейса планетарной добычи...", LogType.Info);
+
+            // Последний шаг закрытия окна выносим отдельно
+            await bot.ClickToAsync(GameUI.XButton, token);
+            await Task.Delay(3500, token);
+
+            // ИСПРАВЛЕНО: Записываем число -1 вместо ложного false, так как тип поля строго int
+            lock (bot._taskLock)
+            {
+                bot._planetassembly = DateTime.Now;
+                bot._lastLoggedPlanetHours = -1; // Сбрасываем почасовой счетчик для нового 8-часового цикла
+            }
+
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Цикл планетарной добычи успешно обработан. Ветка закрыта на 8 часов.", LogType.Success);
+            return NodeStatus.Success;
         }
+        catch (Exception ex)
+        {
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Критическая ошибка во время выполнения макроса планетарки: {ex.Message}", LogType.Error);
 
-        Logger.Log($"[{bot.Settings.Name}] Завершение макроса. Закрытие интерфейса планетарной добычи...", LogType.Info);
-
-        // Последний шаг закрытия окна выносим отдельно, так как после него идет фиксация стейта
-        await bot.ClickToAsync(GameUI.XButton, token);
-        await Task.Delay(3500, token);
-
-        bot._planetassembly = DateTime.Now;
-        Logger.Log($"[{bot.Settings.Name}] Цикл планетарной добычи успешно обработан.", LogType.Success);
-
-        return NodeStatus.Success;
+            // ПРЕДОХРАНИТЕЛЬ: При сбое сдвигаем таймер на 15 минут в будущее под internal Lock
+            // ИСПРАВЛЕНО: Сюда также передаем число -1
+            lock (bot._taskLock)
+            {
+                bot._planetassembly = DateTime.Now.AddHours(-7.75);
+                bot._lastLoggedPlanetHours = -1;
+            }
+            return NodeStatus.Failure;
+        }
     }
 
 
@@ -207,7 +249,7 @@ public static partial class ScenarioFactory
     /// </summary>
     private static async Task<NodeStatus> CollectPlanetToPosAsync(ActiveBotAccount bot, CancellationToken token)
     {
-        Logger.Log($"[{bot.Settings.Name}] Поиск кнопки запуска сбора ресурсов на ПОС...", LogType.Info);
+        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Поиск кнопки запуска сбора ресурсов на ПОС...", LogType.Info);
 
         string launchPathImg = Path.Combine(Program.TemplatesDir, "imgLaunchButton.png");
         Point? foundLaunchBtn = null;
@@ -233,7 +275,7 @@ public static partial class ScenarioFactory
         // ========================================================
         if (!foundLaunchBtn.HasValue)
         {
-            Logger.Log($"[{bot.Settings.Name}] Кнопка запуска не видна на первом экране. Выполняю прокрутку вниз...", LogType.Warning);
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Кнопка запуска не видна на первом экране. Выполняю прокрутку вниз...", LogType.Warning);
 
             await Task.Delay(500, token);
             await bot.ScrollDownAsync(GameUI.ResList, 200, token);
@@ -256,7 +298,7 @@ public static partial class ScenarioFactory
         // ========================================================
         if (foundLaunchBtn.HasValue)
         {
-            Logger.Log($"[{bot.Settings.Name}] Кнопка запуска сбора успешно обнаружена.", LogType.Info);
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Кнопка запуска сбора успешно обнаружена.", LogType.Info);
 
             await bot.ClickPointAsync(foundLaunchBtn.Value, token, minSec: 1, maxSec: 2, offset: 2);
             await Task.Delay(2000, token); // Ожидаем реакцию интерфейса
@@ -267,7 +309,7 @@ public static partial class ScenarioFactory
             return NodeStatus.Success;
         }
 
-        Logger.Log($"[{bot.Settings.Name}] Ошибка: Кнопка 'imgLaunchButton.png' не найдена даже после скролла.", LogType.Error);
+        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Ошибка: Кнопка 'imgLaunchButton.png' не найдена даже после скролла.", LogType.Error);
         return NodeStatus.Failure;
     }
 
@@ -309,11 +351,11 @@ public static partial class ScenarioFactory
                 if (currentProcess?.WaitForExit(3000) is false)
                 {
                     currentProcess.Kill();
-                    Logger.Log($"[{bot.Settings.Name}] Команда ADB скролла убита по таймауту.", LogType.Warning);
+                    Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Команда ADB скролла убита по таймауту.", LogType.Warning);
                 }
     #if DEBUG
 
-                Logger.Log($"[{bot.Settings.Name}] Отправлен свайп от {startElement} (X={startX}, Y={startY}) вверх на {distance}px.", LogType.Test);
+                Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Отправлен свайп от {startElement} (X={startX}, Y={startY}) вверх на {distance}px.", LogType.Test);
     #endif
             }
             catch (Exception ex)
@@ -359,10 +401,10 @@ public static partial class ScenarioFactory
                 if (currentProcess?.WaitForExit(3000) is false)
                 {
                     currentProcess.Kill();
-                    Logger.Log($"[{bot.Settings.Name}] Команда ADB горизонтального скролла убита по таймауту.", LogType.Warning);
+                    Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Команда ADB горизонтального скролла убита по таймауту.", LogType.Warning);
                 }
 #if DEBUG
-                Logger.Log($"[{bot.Settings.Name}] Отправлен свайп от {startElement} (X={startX}, Y={startY}) влево на {distance}px.", LogType.Test);
+                Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Отправлен свайп от {startElement} (X={startX}, Y={startY}) влево на {distance}px.", LogType.Test);
 #endif
             }
             catch (Exception ex)
@@ -383,11 +425,11 @@ public static partial class ScenarioFactory
     /// </summary>
     private static async Task<NodeStatus> TryClickPlanetShortcutAsync(ActiveBotAccount bot, CancellationToken token)
     {
-        Logger.Log($"[{bot.Settings.Name}] Поиск иконки доступа планетарки на экране...", LogType.Info);
+        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Поиск иконки доступа планетарки на экране...", LogType.Info);
 
         if (bot.Hwnd == IntPtr.Zero)
         {
-            Logger.Log($"[{bot.Settings.Name}] Окно целевой программы не найдено.", LogType.Error);
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Окно целевой программы не найдено.", LogType.Error);
             return NodeStatus.Failure;
         }
 
@@ -414,7 +456,7 @@ public static partial class ScenarioFactory
 
             if (foundPos.HasValue)
             {
-                Logger.Log($"[{bot.Settings.Name}] Иконка доступа найдена. Клик...", LogType.Test);
+                Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Иконка доступа найдена. Клик...", LogType.Test);
 
                 // Используем созданный эталонный метод расширения для динамического клика
                 await bot.ClickPointAsync(foundPos.Value, token, minSec: 1, maxSec: 2, offset: 2);
@@ -430,11 +472,11 @@ public static partial class ScenarioFactory
         }
         catch (Exception ex)
         {
-            Logger.Log($"[{bot.Settings.Name}] Сбой при анализе быстрого интерфейса планетарки: {ex.Message}", LogType.Error);
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Сбой при анализе быстрого интерфейса планетарки: {ex.Message}", LogType.Error);
             return NodeStatus.Failure;
         }
 
-        Logger.Log($"[{bot.Settings.Name}] Иконка быстрого доступа не обнаружена.", LogType.Test);
+        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Иконка быстрого доступа не обнаружена.", LogType.Test);
         return NodeStatus.Failure;
     }
 
@@ -451,7 +493,7 @@ public static partial class ScenarioFactory
     /// </summary>
     private static async Task<NodeStatus> OpenMainMenuAsync(ActiveBotAccount bot, CancellationToken token)
     {
-        Logger.Log($"[{bot.Settings.Name}] Открытие главного меню игры (кликом по CharMenu)...", LogType.Info);
+        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Открытие главного меню игры (кликом по CharMenu)...", LogType.Info);
 
         // Исправлено: Прокинули сквозной токен отмены в метод расширения клика
         await bot.ClickToAsync(GameUI.CharMenu, token);
@@ -473,11 +515,11 @@ public static partial class ScenarioFactory
     /// </summary>
     private static async Task<NodeStatus> ClickPlanetButtonInMenuAsync(ActiveBotAccount bot, CancellationToken token)
     {
-        Logger.Log($"[{bot.Settings.Name}] Поиск пункта меню 'Планетарная добыча' внутри главного меню...", LogType.Info);
+        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Поиск пункта меню 'Планетарная добыча' внутри главного меню...", LogType.Info);
 
         if (bot.Hwnd == IntPtr.Zero)
         {
-            Logger.Log($"[{bot.Settings.Name}] Окно целевой программы не найдено.", LogType.Error);
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Окно целевой программы не найдено.", LogType.Error);
             return NodeStatus.Failure;
         }
 
@@ -486,7 +528,7 @@ public static partial class ScenarioFactory
 
         if (!File.Exists(pathImg))
         {
-            Logger.Log($"[{bot.Settings.Name}] Файл шаблона '{Path.GetFileName(pathImg)}' отсутствует на диске!", LogType.Error);
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Файл шаблона '{Path.GetFileName(pathImg)}' отсутствует на диске!", LogType.Error);
             return NodeStatus.Failure;
         }
 
@@ -510,7 +552,7 @@ public static partial class ScenarioFactory
 
             if (foundPos.HasValue)
             {
-                Logger.Log($"[{bot.Settings.Name}] Кнопка планетарной добычи найдена. Переход в интерфейс...", LogType.Info);
+                Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Кнопка планетарной добычи найдена. Переход в интерфейс...", LogType.Info);
 
                 // Используем наш эталонный асинхронный метод расширения для динамического клика
                 await bot.ClickPointAsync(foundPos.Value, token, minSec: 1, maxSec: 2, offset: 2);
@@ -526,11 +568,11 @@ public static partial class ScenarioFactory
         }
         catch (Exception ex)
         {
-            Logger.Log($"[{bot.Settings.Name}] Сбой при сканировании главного меню: {ex.Message}", LogType.Error);
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Сбой при сканировании главного меню: {ex.Message}", LogType.Error);
             return NodeStatus.Failure;
         }
 
-        Logger.Log($"[{bot.Settings.Name}] Ошибка: Пункт 'Планетарная добыча' не найден в главном меню.", LogType.Error);
+        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Ошибка: Пункт 'Планетарная добыча' не найден в главном меню.", LogType.Error);
         return NodeStatus.Failure;
     }
 
@@ -675,69 +717,35 @@ public static partial class ScenarioFactory
 
     #region PrepareScreenshotRegionAsync
 
-    // Глобальный или статический семафор на уровне сервиса захвата для синхронизации GDI вызовов
-    private static readonly System.Threading.SemaphoreSlim _gdiSemaphore = new(1, 1);
 
-    /// <summary>
-    /// Универсальный метод захвата экрана и подготовки безопасной области поиска.
-    /// Возвращает кортеж (screenshot, safeRegion). Если захват не удался, возвращает (null, safeRegion с нулевыми размерами).
-    /// </summary>
-    // Исправлено: сделали метод публичным методом расширения (добавлено слово this)
     public static async Task<(Mat? Screenshot, Rect SafeRegion)> PrepareScreenshotRegionAsync(this ActiveBotAccount bot, GameRegions region, CancellationToken token)
     {
-        if (bot.Hwnd == IntPtr.Zero)
-        {
-            Logger.Log($"[{bot.Settings.Name}] Окно целевой программы не найдено.", LogType.Error);
-            return (null, new Rect());
-        }
+        if (bot.Hwnd == IntPtr.Zero) return (null, new Rect());
 
         Mat? screenshot = null;
 
-        // Сначала занимаем очередь. Если токен отменится ТУТ, поток вылетит ДО блока try, 
-        // не вызывая ложного и опасного Release() в блоке finally.
-        await Program.GdiSemaphore.WaitAsync(token);
-
         try
         {
-            // Выполняем захват в фоновом потоке
-            screenshot = await Task.Run(() => Tools.CaptureWindow(bot.Hwnd), token);
+            // Просто вызываем метод. Вся магия и безопасность теперь внутри CaptureWindow!
+            screenshot = await Task.Run(() => Tools.CaptureWindow(bot.Hwnd, bot.AccountGdiSemaphore), token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
-            // Если токен отменился во время ожидания семафора или выполнения Task.Run,
-            // гарантированно чистим screenshot, если он успел создаться под капотом.
             screenshot?.Dispose();
-            throw;
-        }
-        finally
-        {
-            // Исправлено: освобождаем именно тот глобальный семафор, который заняли перед блоком try
-            Program.GdiSemaphore.Release();
+            return (null, new Rect()); // Возвращаем пустой кадр вместо падения дерева
         }
 
-        // Использование условного доступа ?. и явного сравнения с true
         if (screenshot?.Empty() ?? true)
         {
-            Logger.Log($"[{bot.Settings.Name}] Не удалось выполнить захват окна эмулятора.", LogType.Error);
             screenshot?.Dispose();
             return (null, new Rect());
         }
 
-        // 4. Получаем и корректируем регион под размеры окна
         Rect searchRegion = region.GetOpenCvRect();
         Rect safeRegion = Tools.ClampRegion(searchRegion, screenshot.Width, screenshot.Height);
 
-        if (safeRegion.Width <= 0 || safeRegion.Height <= 0)
-        {
-            Logger.Log($"[{bot.Settings.Name}] Область поиска [{region}] выходит за рамки окна.", LogType.Error);
-            screenshot.Dispose();
-            return (null, new Rect());
-        }
-
-        Logger.Log($"[{bot.Settings.Name}] Скриншот подготовлен.", LogType.Test);
         return (screenshot, safeRegion);
     }
-
 
     #endregion
 
@@ -747,7 +755,7 @@ public static partial class ScenarioFactory
 
     public static async Task<bool> PrepareSpaceInterfaceAsync(this ActiveBotAccount bot, CancellationToken token)
     {
-        Logger.Log($"[{bot.Settings.Name}] Инициализация космического интерфейса: отдаление камеры и открытие грида...", LogType.Info);
+        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Инициализация космического интерфейса: отдаление камеры и открытие грида...", LogType.Info);
 
         try
         {
@@ -763,12 +771,12 @@ public static partial class ScenarioFactory
             // Симуляция быстрого жеста отдаления (в зависимости от разрешения, настроим базовый жест)
             // Для универсальности нажмем горячую клавишу или выполним свайпы. 
             // Но так как ты просил нажать на ДВЕ ТОЧКИ — мы будем использовать твои элементы GameUI!
-            Logger.Log($"[{bot.Settings.Name}] Отдаляю камеру корабля на максимум...", LogType.Test);
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Отдаляю камеру корабля на максимум...", LogType.Test);
             await bot.ClickToAsync(GameUI.CoreInSpace, token);
             await Task.Delay(800, token);
 
             // 2. Открытие меню локального грида (овервью)
-            Logger.Log($"[{bot.Settings.Name}] Открываю панель локального овервью/грида...", LogType.Test);
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Открываю панель локального овервью/грида...", LogType.Test);
             await bot.ClickToAsync(GameUI.EyeIconClose, token);
             await Task.Delay(1200, token); // Даем анимации списка открыться
 

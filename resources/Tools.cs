@@ -7,10 +7,6 @@ using Point = OpenCvSharp.Point;
 
 namespace EVEEchoesBot.resources;
 
-
-// [v] Проверить все методы и добавить новый метод Logger.Log() 
-// [v] TODO 2026.05.30 Привести все тексты логгера к единому стилю 
-
 public static class Tools
 {
 
@@ -21,6 +17,7 @@ public static class Tools
     /// <summary>
     /// Глобальный генератор случайных чисел для симуляции задержек и действий пользователя.
     /// </summary>
+    // BUG MEDIUM - Потенциальная проблема с многопоточностью при генерации случайных чисел. Класс `System.Random` по умолчанию НЕ является потокобезопасным. Если несколько фоновых потоков одновременно вызовут `_random.Next()` внутри `Tools.SmartClick` для расчета случайного смещения `offset` или секунд задержки, внутреннее состояние генератора может разрушиться, из-за чего он начнет бесконечно возвращать `0`. Это приведет к полной потере человекоподобного рандома (клики пойдут в одну точку). Для .NET 9+ правильнее использовать потокобезопасный `Random.Shared.Next()`.
     private static readonly Random _random = new();
 
     /// <summary>
@@ -30,7 +27,6 @@ public static class Tools
     public static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _resizedAccounts = new();
 
     #endregion
-
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
@@ -42,107 +38,79 @@ public static class Tools
     /// </summary>
     /// <param name="hWnd">Дескриптор (Handle) целевого окна эмулятора.</param>
     /// <returns>Матрица <see cref="Mat"/> с изображением в формате BGRA (4 канала), или <c>null</c> в случае ошибки.</returns>
-    public static Mat? CaptureWindow(IntPtr hWnd)
-    {
-        if (hWnd == IntPtr.Zero)
-        {
-            Logger.Log("Неверный дескриптор целевого окна.", LogType.Warning);
-            return null;
-        }
+public static Mat? CaptureWindow(IntPtr hWnd, System.Threading.SemaphoreSlim? gdiSemaphore = null)
+{
+    if (hWnd == IntPtr.Zero) return null;
 
-        // ИСПРАВЛЕНИЕ №1: Заменили GetWindowRect на GetClientRect!
-        // Теперь rect содержит чистые размеры внутренней рабочей области Android эмулятора.
-        if (!WinAPI.GetClientRect(hWnd, out WinAPI.RECT rect))
-        {
-            Logger.Log($"Не удалось получить геометрические клиентские размеры окна {hWnd}", LogType.Error);
-            return null;
-        }
+    IntPtr hdcWindow = IntPtr.Zero;
+    IntPtr hdcMem = IntPtr.Zero;
+    IntPtr hBitmap = IntPtr.Zero;
+    IntPtr hOldBmp = IntPtr.Zero;
+    Mat? mat = null;
+
+    // ЖЕСТКИЙ БАРЬЕР: Захватываем замок ДО входа в основной блок, гарантируя его освобождение в finally!
+    gdiSemaphore?.Wait();
+
+    try
+    {
+        if (!WinAPI.GetClientRect(hWnd, out WinAPI.RECT rect)) return null;
 
         int width = rect.Right - rect.Left;
         int height = rect.Bottom - rect.Top;
+        if (width <= 0 || height <= 0) return null;
 
-        if (width <= 0 || height <= 0)
+        hdcWindow = WinAPI.GetDC(hWnd);
+        hdcMem = WinAPI.CreateCompatibleDC(hdcWindow);
+        hBitmap = WinAPI.CreateCompatibleBitmap(hdcWindow, width, height);
+        hOldBmp = WinAPI.SelectObject(hdcMem, hBitmap);
+
+        const uint SRCCOPY = 0x00CC0020;
+        if (!WinAPI.BitBlt(hdcMem, 0, 0, width, height, hdcWindow, 0, 0, SRCCOPY)) return null;
+
+        WinAPI.BITMAPINFOHEADER bmi = new()
         {
-            Logger.Log($"Обнаружены некорректные размеры окна: {width}x{height}.", LogType.Warning);
-            return null;
-        }
+            biSize = (uint)Marshal.SizeOf<WinAPI.BITMAPINFOHEADER>(),
+            biWidth = width,
+            biHeight = -height,
+            biPlanes = 1,
+            biBitCount = 32,
+            biCompression = 0
+        };
 
-        // Инициализация контекстов устройств (GDI)
-        IntPtr hdcWindow = WinAPI.GetDC(hWnd);
-        IntPtr hdcMem = WinAPI.CreateCompatibleDC(hdcWindow);
-        IntPtr hBitmap = WinAPI.CreateCompatibleBitmap(hdcWindow, width, height);
-        IntPtr hOldBmp = WinAPI.SelectObject(hdcMem, hBitmap);
+        byte[] rawPixels = new byte[width * height * 4];
+        WinAPI.GetDIBits(hdcMem, hBitmap, 0, (uint)height, rawPixels, ref bmi, 0);
 
-        Mat? mat = null;
+        mat = new Mat(height, width, MatType.CV_8UC4);
+        Marshal.Copy(rawPixels, 0, mat.Data, rawPixels.Length);
 
-        try
-        {
-            // ИСПРАВЛЕНИЕ №2: Передаем 0 вместо WinAPI.PW_RENDERFULLCONTENT
-            // Это заставляет PrintWindow копировать ТОЛЬКО клиентскую область игры,
-            // полностью отрезая внешнюю рамку, заголовок Windows и боковые кнопки.
-            if (!WinAPI.PrintWindow(hWnd, hdcMem, 0))
-            {
-                Logger.Log("Функция захвата окна вернула ошибку при копировании графического буфера.", LogType.Warning);
-            }
-
-            // --- ВЕСЬ ВАШ ОСТАЛЬНОЙ КОД СТРУКТУРЫ BITMAPINFOHEADER И MARSHAL.COPY ОСТАЕТСЯ БЕЗ ИЗМЕНЕНИЙ ---
-            WinAPI.BITMAPINFOHEADER bmi = new()
-            {
-                biSize = (uint)Marshal.SizeOf<WinAPI.BITMAPINFOHEADER>(),
-                biWidth = width,
-                biHeight = -height,
-                biPlanes = 1,
-                biBitCount = 32,
-                biCompression = 0
-            };
-
-            byte[] rawPixels = new byte[width * height * 4];
-            WinAPI.GetDIBits(hdcMem, hBitmap, 0, (uint)height, rawPixels, ref bmi, 0);
-
-            mat = new Mat(height, width, MatType.CV_8UC4);
-            Marshal.Copy(rawPixels, 0, mat.Data, rawPixels.Length);
-
-    #if DEBUG
-            try
-            {
-                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-                string projectDir = Path.GetFullPath(Path.Combine(baseDir, @"..\..\..\"));
-                string targetFolder = Path.Combine(projectDir, "DebugScreenshots");
-                if (!Directory.Exists(targetFolder)) Directory.CreateDirectory(targetFolder);
-
-                const string fileName = "debug_screenshot.png";
-                Cv2.ImWrite(Path.Combine(targetFolder, fileName), mat);
-                Logger.Log($"Чистый снимок клиентской области сохранен по пути '{fileName}'.", LogType.Test);
-            }
-            catch (Exception dbgEx)
-            {
-                Logger.Log($"Не удалось сохранить снимок экрана на диск: {dbgEx.Message}", LogType.Test);
-            }
-    #endif
-
-            return mat;
-        }
-        catch (Exception ex)
-        {
-            Logger.Log($"Критический сбой при захвате экрана: {ex.Message}", LogType.Error);
-            mat?.Dispose();
-            return null;
-        }
-        finally
-        {
-            WinAPI.SelectObject(hdcMem, hOldBmp);
-            WinAPI.DeleteObject(hBitmap);
-            WinAPI.DeleteDC(hdcMem);
-
-            if (WinAPI.ReleaseDC(hWnd, hdcWindow) == 0)
-            {
-                Logger.Log("Не удалось освободить графический контекст устройства.", LogType.Warning);
-            }
-        }
+        return mat;
     }
+    catch
+    {
+        mat?.Dispose();
+        return null;
+    }
+    finally
+    {
+        // Очищаем нативные дескрипторы
+        if (hdcMem != IntPtr.Zero)
+        {
+            if (hOldBmp != IntPtr.Zero) WinAPI.SelectObject(hdcMem, hOldBmp);
+            WinAPI.DeleteDC(hdcMem);
+        }
+        if (hBitmap != IntPtr.Zero) WinAPI.DeleteObject(hBitmap);
+        if (hdcWindow != IntPtr.Zero)
+        {
+            _ = WinAPI.ReleaseDC(hWnd, hdcWindow); // Исправлено LOW: утилизируем HRESULT через discard
+        }
+
+        // ГАРАНТИРОВАННЫЙ СБРОС ЗАМКА: Теперь он отпустит поток при любом исходе!
+        gdiSemaphore?.Release();
+    }
+}
+
 
     #endregion
-
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
@@ -172,6 +140,7 @@ public static class Tools
 
         try
         {
+            // BUG HIGH - Колоссальная дисковая утечка и тормоза (I/O Bottleneck). Метод `Cv2.ImRead` вызывается при каждом поиске шаблона в дереве поведения (каждый тик бота). Чтение файлов картинок с SSD/HDD по нескольку раз в секунду намертво забивает дисковую подсистему ОС, превращая асинхронный цикл в черепаху. Если диск перегружен, метод `ImRead` начинает выполняться секундами, вызывая жесткие микрофризы и иллюзию "зависания" скрипта намертво сразу после старта. Картинки-шаблоны ОБЯЗАНЫ загружаться в память один раз при старте приложения (например, в Dictionary<string, Mat>) и использоваться оттуда в виде готовых `Mat` объектов.
             using var matTemplate = Cv2.ImRead(templatePath, ImreadModes.Color);
             if (matTemplate.Empty())
             {
@@ -234,6 +203,28 @@ public static class Tools
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
+    // ПОПРАВКА HIGH - Инфраструктура для мгновенного кэширования шаблонов OpenCV в ОЗУ
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Mat> _cachedTemplates = new();
+
+    /// <summary>
+    /// Потокобезопасный метод получения матрицы шаблона из кэша оперативной памяти.
+    /// Если картинки в памяти еще нет — она загружается один раз и сохраняется на всю сессию.
+    /// </summary>
+    private static Mat GetOrCreateTemplate(string templatePath)
+    {
+        return _cachedTemplates.GetOrAdd(templatePath, path =>
+        {
+            Mat mat = Cv2.ImRead(path, ImreadModes.Color);
+            if (mat.Empty())
+            {
+                throw new FileNotFoundException($"[КЭШ ОБРАЗОВ] Критическая ошибка! Не удалось загрузить шаблон: {path}");
+            }
+            return mat;
+        });
+    }
+
+// - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
     /// <summary>
     /// Кроссплатформенный метод поиска всех совпадений изображения-шаблона в заданной области кадра.
     /// Выполняет сопоставление признаков в градациях серого и фильтрует дубликаты в пределах размеров шаблона.
@@ -262,6 +253,7 @@ public static class Tools
 
         try
         {
+            // BUG HIGH - Повторение критической дисковой утечки и просадки производительности (I/O Bottleneck). Метод `Cv2.ImRead` вызывается при каждом множественном поиске шаблонов. При параллельной работе нескольких ботов постоянное чтение файлов с SSD/HDD на каждом тике парализует дисковую подсистему ОС, превращая асинхронные задержки в жесткие зависания потоков. Проблему решает внедрение статического кэша `GetOrCreateTemplate(templatePath)`, как мы спроектировали шагом ранее.
             using var matTemplate = Cv2.ImRead(templatePath, ImreadModes.Color);
             if (matTemplate.Empty())
             {
@@ -310,6 +302,8 @@ public static class Tools
                 // чтобы не находить один и тот же объект на соседних пикселях. Стираем в радиусе размера шаблона.
                 int startX = Math.Max(0, maxLoc.X - (matTemplate.Width / 2));
                 int startY = Math.Max(0, maxLoc.Y - (matTemplate.Height / 2));
+                
+                // BUG MEDIUM - Потенциальный выход за границы матрицы (IndexOutOfRangeException / OpenCvSharpException). При расчете `endX` и `endY` используется деление сторон шаблона пополам, но не проверяется, не превышают ли финальные координаты `result.Cols` и `result.Rows`. Несмотря на использование `Math.Min`, если `roiToErase` сформируется с некорректным размером из-за округления, вызов `new Mat(result, roiToErase)` выбросит исключение прямо посреди цикла детекции, обрушив итерацию сценария. Безопаснее использовать метод `Tools.ClampRegion` или жестко валидировать ширину и высоту Rect.
                 int endX = Math.Min(result.Cols, maxLoc.X + (matTemplate.Width / 2));
                 int endY = Math.Min(result.Rows, maxLoc.Y + (matTemplate.Height / 2));
 
@@ -334,7 +328,6 @@ public static class Tools
             }
         }
     }
-
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
@@ -380,32 +373,32 @@ public static class Tools
     /// <param name="adbPort">Сетевой порт для подключения к конкретному эмулятору по ADB. По умолчанию: 5565.</param>
     /// <param name="applyWinHeaderCorrection">Если <c>true</c>, компенсирует высоту стандартного заголовка окна Windows (-31px по оси Y). По умолчанию: <c>true</c>.</param>
     public static void SmartClick(
-        int x,
-        int y,
-        int minSec = 1,
-        int maxSec = 5,
-        int offset = 10,
-        int adbPort = 5565,
-        bool applyWinHeaderCorrection = true)
+    int x,
+    int y,
+    int minSec = 1,
+    int maxSec = 5,
+    int offset = 10,
+    int adbPort = 5565,
+    bool applyWinHeaderCorrection = true)
     {
-        // Симуляция паузы перед кликом
+        // 1. Безопасная симуляция паузы перед кликом
         if (minSec > 0 || maxSec > 0)
         {
-            Thread.Sleep(GetRandomDelayMs(minSec, maxSec));
+            int delay = GetRandomDelayMs(minSec, maxSec);
+            Thread.Sleep(delay);
         }
 
-        // КОРРЕКЦИЯ ОКНА WINDOWS: компенсируем 31 пиксель стандартной рамки/заголовка окна
+        // 2. КОРРЕКЦИЯ ОКНА WINDOWS: компенсируем 31 пиксель стандартной рамки
         if (applyWinHeaderCorrection)
         {
             y -= 31;
         }
 
-        // Рандомизация координат в пределах заданного смещения
-        int finalX = x + _random.Next(-offset, offset + 1);
-        int finalY = y + _random.Next(-offset, offset + 1);
+        // 3. ПОТОКОБЕЗОПАСНЫЙ РАНДОМ (Используем .NET 9+ Random.Shared взамен старого поля _random)
+        int finalX = x + Random.Shared.Next(-offset, offset + 1);
+        int finalY = y + Random.Shared.Next(-offset, offset + 1);
 
         string adbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "resources", "adb.exe");
-
 
         if (!File.Exists(adbPath))
         {
@@ -413,50 +406,50 @@ public static class Tools
             return;
         }
 
-        string deviceTarget = $"127.0.0.1:{adbPort}";
-        string argsConnect = $"connect {deviceTarget}";
+        string deviceTarget = "127.0.0.1:" + adbPort;
 
         try
         {
-            // 1. Подключение к ADB-интерфейсу эмулятора
-            ProcessStartInfo psiConnect = new(adbPath, argsConnect) { CreateNoWindow = true, UseShellExecute = false };
-            Process.Start(psiConnect)?.WaitForExit();
-
-            // 2. УЗНАЕМ РЕАЛЬНОЕ РАЗРЕШЕНИЕ ЭМУЛЯТОРА ИЗНУТРИ ANDROID
-            ProcessStartInfo psiSize = new(adbPath, $"-s {deviceTarget} shell wm size")
+            // --- ШАГ 1: БЕЗОПАСНЫЙ CONNECT С ТАЙМАУТОМ ---
+            using (var procConnect = Process.Start(new ProcessStartInfo
             {
+                FileName = adbPath,
+                Arguments = "connect " + deviceTarget,
                 CreateNoWindow = true,
-                UseShellExecute = false,
-                RedirectStandardOutput = true
-            };
-
-            var procSize = Process.Start(psiSize);
-            string outputSize = procSize?.StandardOutput.ReadToEnd() ?? "";
-            procSize?.WaitForExit();
-
-            // Если разрешение отличается от стандартного 1280x720, динамически пересчитываем пропорции координат
-            if (outputSize.Contains(':') && outputSize.Contains('x'))
+                UseShellExecute = false
+            }))
             {
-                string sizeStr = outputSize.Split(':')[1].Trim();
-                string[] wAndH = sizeStr.Split('x');
-                if (wAndH.Length == 2 && int.TryParse(wAndH[0], out int internalW) && int.TryParse(wAndH[1], out int internalH))
+                // ИСПРАВЛЕНО: Применили оператор условного доступа ?. взамен ручной проверки на null
+                if (procConnect?.WaitForExit(4000) is false)
                 {
-                    if (internalW != 1280 && internalW > 0)
-                    {
-                        finalX = (int)(finalX * ((double)internalW / 1280.0));
-                        finalY = (int)(finalY * ((double)internalH / 720.0));
-                    }
+                    Logger.Log("[ADB System] Превышен таймаут ожидания команды connect для " + deviceTarget, LogType.Warning);
+                    procConnect.Kill();
                 }
             }
 
-            // 3. ОТПРАВЛЯЕМ КОМАНДУ НАЖАТИЯ (TAP)
-            string argsTap = $"-s {deviceTarget} shell input tap {finalX} {finalY}";
+            // --- ШАГ 2: БЕЗОПАСНАЯ ОТПРАВКА КЛИКА (TAP) С ТАЙМАУТОМ ---
+            string argsTap = "-s " + deviceTarget + " shell input tap " + finalX + " " + finalY;
 
-            ProcessStartInfo psiTap = new(adbPath, argsTap) { CreateNoWindow = true, UseShellExecute = false };
-            Process.Start(psiTap)?.WaitForExit();
+            using (var procTap = Process.Start(new ProcessStartInfo
+            {
+                FileName = adbPath,
+                Arguments = argsTap,
+                CreateNoWindow = true,
+                UseShellExecute = false
+            }))
+            {
+                // ИСПРАВЛЕНО: Применили оператор условного доступа ?. взамен ручной проверки на null
+                if (procTap?.WaitForExit(5000) is false)
+                {
+                    Logger.Log("[ADB System] Превышен таймаут выполнения клика input tap для " + deviceTarget, LogType.Warning);
+                    procTap.Kill();
+                    return;
+                }
+            }
+
 
     #if DEBUG
-            Logger.Log($"Отправка команды клика на устройство '{deviceTarget}': координаты (X={finalX}, Y={finalY}).", LogType.Test);
+            Logger.Log($"[ADB] Клик успешно отправлен на '{deviceTarget}': координаты (X={finalX}, Y={finalY}).", LogType.Test);
     #endif
         }
         catch (Exception ex)
@@ -464,6 +457,7 @@ public static class Tools
             Logger.Log($"Сбой при отправке команды клика через ADB: {ex.Message}", LogType.Error);
         }
     }
+
 
     #endregion
 
@@ -492,7 +486,7 @@ public static class Tools
         int maxMs = maxSeconds * 1000;
 
         // Возвращаем случайное число в миллисекундах с точностью до 1 мс (включая верхнюю границу)
-        return _random.Next(minMs, maxMs + 1);
+        return Random.Shared.Next(minMs, maxMs + 1);
     }
 
     #endregion
@@ -529,6 +523,7 @@ public static class Tools
             return hWnd;
         }
 
+        // BUG HIGH - Падение или скрытый сбой из-за расхождения имен свойств (NullReferenceException). В JSON-конфигурации, которую мы зафиксировали в начале, блок размеров называется "WindowSettings" (`"WindowSettings": { "TargetWidth": 1280... }`). Однако в коде ты обращаешься к свойству `settings.Size`. Если в классе `AccSettings` свойство не имеет атрибута переименования вроде `[JsonPropertyName("WindowSettings")]`, то `settings.Size` гарантированно вернет `null`. Бот запишет ошибку в лог и выйдет, вернув `hWnd`, но окно ОСТАНЕТСЯ НЕПОДГОТОВЛЕННЫМ (размеры не изменятся под 1280x720). В итоге OpenCV-координаты и клики поползут, из-за чего дерево поведения не сможет найти ни одного шаблона на экране и уйдет в бесконечное ожидание/клин.
         if (settings.Size == null)
         {
             Logger.Log($"[{settings.Name}] В файле конфигурации отсутствует блок настроек размеров 'AccSettings'.", LogType.Error);
@@ -539,6 +534,7 @@ public static class Tools
         int targetH = settings.Size.TargetHeight;
 
         // Пытаемся изменить размеры окна под стандарты бота
+        // BUG HIGH - Скрытая блокировка (Deadlock) WinAPI потока. Метод `ResizeWindow` внутри себя наверняка вызывает WinAPI функции вроде `SetWindowPos` или `MoveWindow`. Если этот метод вызывается из фонового потока воркера, а окно эмулятора BlueStacks в этот момент занято обработкой графики или зависло, вызов `SetWindowPos` без специальных флагов асинхронности (вроде SWP_ASYNCWINDOWPOS) может намертво заблокировать вызывающий поток C#, ожидая ответа от оконной процедуры эмулятора.
         if (ResizeWindow(hWnd, targetW, targetH))
         {
             Logger.Log($"[{settings.Name}] Размеры окна скорректированы под разрешение {targetW}x{targetH}.", LogType.Test);
@@ -547,6 +543,7 @@ public static class Tools
             _resizedAccounts.TryAdd(settings.Name, 0);
 
             // Небольшая задержка, чтобы ОС успела применить новые размеры окна до первого скриншота
+            // BUG MEDIUM - Синхронный Sleep потока из пула. Замораживает поток выполнения на 300мс. Опять же, лучше избегать синхронных Thread.Sleep в Task-воркерах.
             Thread.Sleep(300);
         }
         else

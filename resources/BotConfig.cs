@@ -52,10 +52,14 @@ public class AccSettings
     /// <summary>
     /// Параметры целевого физического размера окна.
     /// </summary>
+    // BUG HIGH - Найдено несовпадение с физическим JSON-файлом конфигурации! В самом первом JSON-файле, который ты прислал для запоминания, этот блок называется `"WindowSettings"`:
+    // `"WindowSettings": { "TargetWidth": 1280, "TargetHeight": 720 }`
+    // Однако здесь в атрибуте указано `[JsonPropertyName("Size")]`. Из-за этого при чтении конфигурации свойство `Size` гарантированно останется NULL. Как результат, в методе `Tools.GetWindow` срабатывает условие `if (settings.Size == null)`, которое полностью отменяет ресайз окна эмулятора! Окно не сбрасывается в 1280x720, OpenCV ищет картинки не по тем пикселям, возвращает null, и дерево поведения бесконечно долбит первый попавшийся шаг, думая, что клик не прошел. Чтобы это исправить, измените атрибут на `[JsonPropertyName("WindowSettings")]`.
     [JsonPropertyName("Size")] // Исправлено: маппим на корректное имя поля в JSON
     public TargetSize? Size { get; set; }
 
 }
+
 
 #endregion
 
@@ -213,10 +217,12 @@ public class BotAccountManager
     /// <summary>
     /// Формирует актуальный снимок состояния всех ботов для отправки в веб-интерфейс.
     /// </summary>
+    // BUG LOW - Дублирование XML-комментария <summary> над методом GetAccountsState. На работу не влияет, но засоряет код.
     public List<BotWebResponseDto> GetAccountsState()
     {
         var bots = Program.GetActiveBots();
 
+        // BUG MEDIUM - Использование неэффективного и небезопасного объекта блокировки внутри LINQ. Вызов `lock (Program.ActiveBotsLock)` внутри итератора `Select` для чтения полей конкретного бота — это избыточный оверхед. Во-первых, `Program.ActiveBotsLock` предназначен для защиты целостности самого *списка* `_activeBots`, а не внутренних полей каждого отдельного класса бота. Во-вторых, секундный веб-опрос дергает этот лок из пула потоков Kestrel и конкурирует с методом `Main`. При этом сами свойства вроде `bot._eveSystem` или `bot._iswarping` внутри `RunLoopAsync` изменяются БЕЗ этого лока. Намертво это логику не циклирует, но создает ложные блокировки (contention) между веб-сервером и потоком инициализации. Поля стейта внутри бота должны защищаться его собственным экземплярным объектом синхронизации (например, `_taskLock`, как упоминалось в архитектурном мемо).
         return [.. bots.Select((bot, index) => {
             AccountStateDto extended;
 
@@ -270,6 +276,7 @@ public class BotAccountManager
         switch (action.ToLower())
         {
             case "start":
+                // BUG HIGH - Смертельная гонка и сброс токена для ВСЕХ ботов при старте ОДНОГО. Когда ты нажимаешь кнопку "Старт" для БОТА №2, метод HandleCommand вызывает `Program.ResetGlobalToken()`. Этот метод пересоздает ОДИН ОБЩИЙ `CancellationTokenSource` для всего приложения. Если в этот момент БОТ №1 уже успешно работал, его токен отмены становится инвалидным или генерирует сигнал отмены (`IsCancellationRequested`). В итоге, запуск любого нового бота ломает, сбрасывает или вводит в бесконечный логический ступор выполнение `RunLoopAsync` у всех остальных параллельно запущенных аккаунтов. Токен отмены ОБЯЗАН быть строго экземплярным для каждого класса `ActiveBotAccount`, а не глобальным статическим на уровне всего `Program`.
                 Program.ResetGlobalToken();
                 targetBot.Start(Program.GetGlobalToken());
                 break;
@@ -282,6 +289,7 @@ public class BotAccountManager
         }
     }
 }
+
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
@@ -418,6 +426,7 @@ public static class ConfigManager
         };
     }
 
+
     #endregion
 
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
@@ -442,6 +451,7 @@ public static class ConfigManager
             string json = JsonSerializer.Serialize(config, _options);
 
             // Защищаем файл от одновременной записи из разных HTTP-потоков веб-панели
+            // BUG MEDIUM - Захват глобального лока `Program.ActiveBotsLock` для обычной записи JSON-файла на диск — это избыточный lock contention. Этот лок спроектирован для защиты системного списка живых ботов в памяти, а не для синхронизации I/O диска. Если в этот момент Kestrel через HTTP-поток начнет сохранять конфиг, а Main будет в цикле инициализировать ботов, возникнет микрофриз всей системы. Для сохранения файлов конфигурации правильнее использовать свой локальный `private static readonly object _fileConfigLock = new();`.
             lock (Program.ActiveBotsLock)
             {
                 // Для надежности используем явную UTF-8 кодировку, как и при чтении
@@ -459,6 +469,7 @@ public static class ConfigManager
             Logger.Log($"Не удалось сохранить конфигурацию в файл '{ConfigPath}': {ex.Message}", LogType.Error);
         }
     }
+
 
     #endregion
 
@@ -525,6 +536,7 @@ public static partial class WindowEnumerator
                     string title = new string(buffer, 0, length).Trim();
                     if (!string.IsNullOrEmpty(title))
                     {
+                        // BUG HIGH - Скрытое состояние гонки и InvalidOperationException в многопоточном режиме. Локальная функция `FilterWindow` выступает в качестве callback-метода для нативного WinAPI-метода `EnumWindows`. Если в процессе работы этого перечисления (которое выполняется на вызывающем потоке) другой асинхронный воркер или HTTP-поток Kestrel параллельно дернет метод `ConfigManager.CreateDefaultConfig()`, который обращается к этому же методу, несколько потоков начнут конкурентно писать элементы в один и тот же экземпляр `List<string> titles`. Так как `List<T>` не является потокобезопасным, это приведет к разрушению внутренних индексов массива, порче памяти или случайным вылетам приложения. Добавление элементов в `titles` внутри callback должно быть защищено локальным локом или использовать `ConcurrentBag<string>`.
                         titles.Add(title);
                     }
                 }
@@ -538,6 +550,7 @@ public static partial class WindowEnumerator
         return titles;
     }
 }
+
 
 #endregion
 

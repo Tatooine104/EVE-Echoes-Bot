@@ -19,6 +19,7 @@ public static class SystemSafetyManager
     /// <returns>True, если статус РЕАЛЬНО изменился с безопасного на опасный</returns>
     public static bool TrySetSystemDanger(string systemName)
     {
+        // BUG HIGH - Потенциальный Lock Order Inversion Deadlock (Взаимная блокировка из-за нарушения порядка захвата локов). Внутри `lock (_globalLock)` ты вызываешь метод `GetSystemState(systemName)`, который лезет в `ConcurrentDictionary.GetOrAdd()`. Если в этот же момент словарь `_systems` под капотом расширяет свои корзины (resize), а другой поток запрашивает стейт, рантайм может устроить клин между внутренним локом словаря и твоим внешним `_globalLock`. Но самое страшное дальше: внутри этого же лока вызывается `state.IsSafe` и `state.SetDanger()`, которые захватывают ЛОКАЛЬНЫЙ `_lock` конкретного объекта `SystemSafetyState`. Если в каком-то другом файле (например, в логике паники бота или в эндпоинтах Kestrel) сначала захватывается локальный лок объекта состояния, а затем идет обращение к глобальному менеджеру, вы получите классический мертвый замок (Deadlock) на стыке первого же опасного тика. Метод `GetSystemState` необходимо вызывать ДО захвата `lock (_globalLock)`, а вложенные блокировки убрать.
         lock (_globalLock)
         {
             var state = GetSystemState(systemName);
@@ -32,6 +33,7 @@ public static class SystemSafetyManager
 
     public static void SetSystemSafe(string systemName)
     {
+        // BUG HIGH - Дублирование риска дедлока. Вызов `GetSystemState` внутри `lock (_globalLock)` с последующим заходом в `state.SetSafe()`, который внутри себя захватывает `_lock` третьего уровня. Нарушается иерархия захвата ресурсов. Сначала нужно получить объект из словаря БЕЗ лока, а затем работать с его внутренним атомарным или изолированным локом. Внешний `_globalLock` здесь вообще избыточен, так как сам словарь `ConcurrentDictionary` уже потокобезопасен.
         lock (_globalLock)
         {
             var state = GetSystemState(systemName);

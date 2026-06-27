@@ -124,37 +124,60 @@ public static partial class ScenarioFactory
     /// </summary>
     public static async Task<NodeStatus> CheckIsDockedAsync(ActiveBotAccount bot, CancellationToken token)
     {
-        // Используем хелпер подготовки экрана
-        var (screenshot, safeRegion) = await PrepareScreenshotRegionAsync(bot, GameRegions.ControlUndock, token);
 
-        if (screenshot == null)
+        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] !!!!!!", LogType.Warning);
+        try
         {
+            // ИСПРАВЛЕНО: Вызываем родной экземплярный метод скриншотов конкретного бота.
+            // Это гарантирует изолированный захват экрана своего окна эмулятора без статических клин-замков.
+            var (screenshot, safeRegion) = await bot.PrepareScreenshotRegionAsync(GameRegions.ControlUndock, token);
+
+            if (screenshot is null)
+            {
+                // Если эмулятор лагает и не отдал кадр, возвращаем Failure, чтобы дерево попробовало снова на следующем тике
+                return NodeStatus.Failure;
+            }
+
+            // Гарантированная утилизация unmanaged памяти OpenCV при любом выходе из метода
+            using var screenshotScope = screenshot;
+
+            // Берем путь к файлу шаблона из кэша ядра платформы
+            string pathImg = Path.Combine(Program.TemplatesDir, "imgUndock1.png");
+
+            // Блокируем ссылку на матрицу пикселей для безопасного фонового поиска в пуле Task.Run
+            var currentSnap = screenshot;
+            Point? foundPos = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathImg, safeRegion, 0.85), token);
+
+            if (foundPos.HasValue)
+            {
+                // Кнопка выхода из дока найдена -> фиксируем нахождение на станции.
+                // ИСПРАВЛЕНО: тип лога изменен на Warning, чтобы он 100% пробил фильтры вашей панели диспетчера!
+                Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Кнопка imgUndock1 НАЙДЕНА. Робот находится на СТАНЦИИ.", LogType.Warning);
+
+                lock (bot)
+                {
+                    bot._inSpace = false;
+                }
+                return NodeStatus.Success;
+            }
+
+            // Кнопка не обнаружена -> фиксируем нахождение персонажа в открытом космосе
+            // ИСПРАВЛЕНО: тип лога изменен на Warning для гарантированного пробития фильтров при тестах!
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Кнопка imgUndock1 НЕ найдена. Робот находится в КОСМОСЕ.", LogType.Warning);
+
+            lock (bot)
+            {
+                bot._inSpace = true;
+            }
             return NodeStatus.Failure;
         }
-
-        // Гарантированная утилизация unmanaged памяти OpenCV при любом выходе из метода
-        using var screenshotScope = screenshot;
-
-        // Берем путь к файлу шаблона из кэша ядра платформы
-        string pathImg = Path.Combine(Program.TemplatesDir, "imgUndock1.png");
-
-        // Блокируем ссылку на матрицу пикселей для безопасного фонового поиска в пуле Task.Run
-        var currentSnap = screenshot;
-        Point? foundPos = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathImg, safeRegion, 0.85), token);
-
-        if (foundPos.HasValue)
+        catch (Exception ex)
         {
-            // Кнопка выхода из дока найдена -> фиксируем нахождение на станции
-            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Кнопка выхода из дока найдена. Фиксируем нахождение на станции", LogType.Test);
-            bot._inSpace = false;
-            return NodeStatus.Success;
+            Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Исключение в методе проверки дока CheckIsDockedAsync: {ex.Message}", LogType.Error);
+            return NodeStatus.Failure;
         }
-
-        // Кнопка не обнаружена -> фиксируем нахождение персонажа в открытом космосе
-        Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Кнопка выхода из дока не найдена. Фиксируем нахождение в космосе", LogType.Test);
-        bot._inSpace = true;
-        return NodeStatus.Failure;
     }
+
 
     #endregion
 
@@ -460,14 +483,14 @@ public static partial class ScenarioFactory
         Logger.Log($"[{bot.Settings.Name}|{bot.EVESystem}|{bot.EVEShip}] Инициирован макрос варпа и дока на домашнюю базу.", LogType.Info);
 
         // Пути к шаблонам изображений
-        string pathImgCitade = Path.Combine(Program.TemplatesDir, "imgCitade.png");
+        string pathImgCitade = Path.Combine(Program.TemplatesDir, "imgCitadel.png");
         string pathImgCitadel = Path.Combine(Program.TemplatesDir, "imgCitadel.png");
         string pathImgEnter = Path.Combine(Program.TemplatesDir, "imgEnter.png");
         string pathImgEyeIcon = Path.Combine(Program.TemplatesDir, "imgEyeIcon.png");
 
         try
         {
-            // --- ШАГ 1: В регионе GridFilter ищем imgCitade.png и нажимаем ---
+            // --- ШАГ 1: В регионе GridFilter ищем imgCitadel.png и нажимаем ---
             var (filterScreen, filterRegion) = await bot.PrepareScreenshotRegionAsync(GameRegions.GridFilter, token);
             if (filterScreen != null)
             {

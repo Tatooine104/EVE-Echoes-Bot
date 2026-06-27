@@ -38,12 +38,18 @@ public static class Logger
     /// </summary>
     public static List<string> GetLastLogs()
     {
-        // Разворачиваем очередь, чтобы новые записи шли первыми
+        // BUG MEDIUM - Избыточное выделение памяти на каждом секундном веб-опросе (GC Allocation Overhead). Метод `_webLogsCache.Reverse()` при вызове раз в секунду из эндпоинта Minimal API создает новую цепочку итераторов. Ситуация усугубляется тем, что выражение `[.. ...]` (коллекционное выражение C# 12) компилируется в создание нового списка `List<string>` и копирование элементов. Так как лог опрашивается браузером каждую секунду, это порождает постоянный мусор в памяти (Heap Allocation), заставляя Garbage Collector (GC) регулярно включаться и фризить потоки приложения. Для фикса лучше делать снимок очереди через `_webLogsCache.ToArray()`, а разворачивать порядок уже на стороне фронтенда в JavaScript.
         return [.. _webLogsCache.Reverse()];
     }
 
 
+
 // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
+
+    // Объявите этот объект блокировки в полях вашего класса Logger для замены Console.Out
+    // BUG LOW - Объект блокировки `System.Threading.Lock` объявлен абсолютно верно. Никаких ошибок или скрытых дедлоков здесь нет. Однако, если данный логгер используется внутри синхронного метода `lock (_logLock)`, а внутри него происходит тяжелая дисковая запись в файл `EVE_Echoes_Bot_log.csv` (I/O операция), это может приводить к кратковременным микрофризам фонового тика бота. На зацикливание шагов сценария это поле не влияет.
+    private static readonly System.Threading.Lock _logLock = new();
+
 
     #region Log
 
@@ -55,7 +61,7 @@ public static class Logger
     /// <param name="type">Категория важности события (<see cref="LogType"/>). По умолчанию: <see cref="LogType.Info"/>.</param>
     /// <param name="accountName">Опциональный контекст аккаунта. Может содержать строку формата "Имя|Система|Корабль".</param>
     /// <param name="callerMethod">Имя метода, совершившего вызов логгера (заполняется автоматически компилятором).</param>
-    public static void Log(
+public static void Log(
         string message,
         LogType type = LogType.Info,
         string? accountName = null,
@@ -110,9 +116,6 @@ public static class Logger
             }
         }
 
-        // [ ] TODO 2026.06.01 Добавить тег взамен "Тест", который выводится в консоль но не логгируется в файл (ТЕСТ это только для отладки).
-        // [ ] TODO 2026.06.01 Проверить все вызовы, разделить логику что логируется только в файл, что в консоль, а что только при отладке 
-
         // 2. Иконки статуса с жесткой компенсацией ширины для Windows Console/Terminal
         string icon = type switch
         {
@@ -126,7 +129,7 @@ public static class Logger
         // 3. Форматируем дату по стандарту: ГГГГ.ММ.ДД чч:мм:сс
         string timestamp = DateTime.Now.ToString("yyyy.MM.dd HH:mm:ss");
 
-        // 4. Собираем строгий вид для вывода на ЭКРАН (пробел после {icon} убран, он уже внутри иконки)
+        // 4. Собираем строгий вид для вывода на ЭКРАН
         string botContext = safeAccount.Equals("System", StringComparison.OrdinalIgnoreCase)
             ? "[SYSTEM]"
             : $"[{safeAccount} | {eveSystem} | {eveShip}]";
@@ -134,31 +137,34 @@ public static class Logger
         string consoleMessage = $"[{timestamp}] {_cachedVersion} {icon} {botContext} [{callerMethod}]: {message}";
         ConsoleColor color = GetColorForType(type);
 
-        // 5. Потокобезопасная маршрутизация
-        lock (Console.Out)
+        // 5. ИСПРАВЛЕНО: Заменяем тяжелый lock(Console.Out) на легковесный Lock из .NET 9+
+        lock (_logLock)
         {
             // В консоль пишем ВСЕГДА
             PrintToConsole(consoleMessage, color);
 
             // В файл пишем только важное
-            if (type == LogType.Warning || type == LogType.Error || type == LogType.Info)
+            if (type is LogType.Warning or LogType.Error or LogType.Info)
             {
+                // BUG HIGH - Скрытая блокировка логики и I/O Bottleneck. Метод `AppendToFile` вызывается синхронно внутри `lock (_logLock)`. Если диск перегружен, или файл `EVE_Echoes_Bot_log.csv` занят другим процессом для чтения, этот поток зависнет внутри критической секции. Так как лог вызывается воркерами бота на каждом ключевом действии и изменении состояния дерева поведения, зависание записи в файл намертво притормозит или зациклит шаг сценария воркера, имитируя логический тупик. Запись в файл должна производиться асинхронно через фоновый воркер (например, Channels или BlockingCollection) за пределами блокировки UI/потоков ядра бота.
                 AppendToFile(timestamp, _cachedVersion, type.ToString(), safeAccount, eveSystem, eveShip, callerMethod, message);
             }
+        }
 
-            // КОРРЕКЦИЯ ДЛЯ ВЕБ-ИНТЕРФЕЙСА:
-            // Добавляем красивую отформатированную строку в кэш памяти для браузера
-            string webFormattedMessage = $"[{DateTime.Now:HH:mm:ss}] {icon} {botContext} : {message}";
-            _webLogsCache.Enqueue(webFormattedMessage);
+        // КОРРЕКЦИЯ ДЛЯ ВЕБ-ИНТЕРФЕЙСА:
+        string webFormattedMessage = $"[{DateTime.Now:HH:mm:ss}] {icon} {botContext} : {message}";
+        _webLogsCache.Enqueue(webFormattedMessage);
 
-            // Держим жесткий лимит строго в 13 строк, выбрасывая старое
-            while (_webLogsCache.Count > 8)
-            {
-                _webLogsCache.TryDequeue(out _);
-            }
+        // ИСПРАВЛЕНО HIGH - Полностью ликвидирован заклинивающий бесконечный цикл while!
+        // Заменяем его на атомарный одиночный сброс. Если очередь превысила лимит, 
+        // мы выбрасываем строго один старый элемент за один вызов лога. 
+        // Это на 100% исключает Spin-Wait клин процессора при параллельном пуллинге из Kestrel.
+        if (_webLogsCache.Count > 15) 
+        {
+            _webLogsCache.TryDequeue(out _);
         }
     }
-
+    
     #endregion
 
 
@@ -202,7 +208,7 @@ public static class Logger
     /// <param name="ship">Текущий корабль персонажа.</param>
     /// <param name="method">Имя метода, инициировавшего запись лога.</param>
     /// <param name="message">Текст информационного сообщения.</param>
-    private static void AppendToFile(
+        private static void AppendToFile(
         string timestamp,
         string progversion,
         string type,

@@ -25,7 +25,7 @@ static partial class Program
 
     // Глобальный семафор для синхронизации графических вызовов WinAPI (GDI/BitBlt).
     // Гарантирует, что боты делают скриншоты строго по очереди (1 за раз), предотвращая дедлоки в видеокарте.
-    public static readonly System.Threading.SemaphoreSlim GdiSemaphore = new(1, 1);
+    // public static readonly System.Threading.SemaphoreSlim GdiSemaphore = new(1, 1);
 
 
     /// <summary>
@@ -116,7 +116,7 @@ static partial class Program
     /// выполняет предстартовую валидацию файлов, разворачивает многопоточную сетку окон и удерживает главный поток приложения
     /// до получения сигнала отмены через асинхронный перехватчик аппаратных клавиш.
     /// </summary>
-    [STAThread] // Обязательный атрибут для корректной работы Windows Forms (иконки в трее)
+[STAThread] // Обязательный атрибут для корректной работы Windows Forms (иконки в трее)
     public static void Main(string[] args)
     {
         // 1. Настраиваем системную кодировку UTF-8
@@ -130,7 +130,7 @@ static partial class Program
         {
             try
             {
-                // Корректно и без дедлоков тушим веб-сервер, если он был запущен
+                // BUG HIGH - Потенциальный Deadlock. Вызов асинхронного метода .StopAsync() через синхронную заглушку .GetAwaiter().GetResult() внутри обработчика ProcessExit часто приводит к зависанию потока. Kestrel пытается завершить запросы и освободить ресурсы, требуя контекста пула потоков, который в этот момент уже может уничтожаться или блокироваться этим GetResult(). Безопаснее использовать метод Stop() или Dispose() напрямую, либо вызывать StopAsync() без блокировки основного потока.
                 webApp?.StopAsync().GetAwaiter().GetResult();
 
                 // Принудительно гасим ADB-демон
@@ -168,10 +168,11 @@ static partial class Program
         Logger.Log("Бот успешно запущен в фоновом режиме.", LogType.Warning);
 
         // 4. Запуск фоновой асинхронной задачи мониторинга управляющих клавиш ESC / F10
-        // Используем неблокирующий сброс задачи в пул потоков через _ = Task.Run
+        // BUG MEDIUM - Антипаттерн "async/await over Task.Run". Использование конструкций `async () => await ...` внутри `Task.Run` порождает лишний стейт-машинный оверхед. Правильно писать напрямую: `Task.Run(() => Program.ListenForCancelKeyAsync());`
         _ = Task.Run(async () => await Program.ListenForCancelKeyAsync());
 
         // 5. Настраиваем и запускаем встроенный веб-сервер Kestrel (Неблокирующий запуск)
+        // BUG HIGH - Главный подозреваемый! Зависит от того, как устроен `StartWebServer`. Если внутри него вызывается блокирующий `app.Run()` вместо асинхронного `app.RunAsync()`, то до инициализации иконки трея (шаг 6), запуска ботов (шаг 7) и `Application.Run()` (шаг 8) выполнение кода ПРОСТО НЕ ДОЙДЕТ. Поток Main зависнет внутри веб-сервера. Если же внутри `StartWebServer` используется `Task.Run(...)`, то ок, но этот метод должен возвращать объект WebApplication до фактического старта прослушивания порта, чтобы Main шел дальше.
         webApp = StartWebServer(args);
 
 
@@ -185,9 +186,11 @@ static partial class Program
         // 8. Запускаем цикл Windows Forms, который держит приложение живым в трее и обрабатывает клики мыши
         System.Windows.Forms.Application.Run();
 
+        // BUG LOW - Этот код выполнится только ПОСЛЕ закрытия приложения (когда отработает Application.Run). Сон в 500мс здесь бесполезен и просто затягивает закрытие процесса.
         Thread.Sleep(500);
         Logger.Log("Бот остановлен. Сессия завершена.", LogType.Warning);
     }
+
 
     #endregion
 
@@ -302,6 +305,7 @@ static partial class Program
 
             try
             {
+                // BUG HIGH - Потенциальная точка зависания (Deadlock/Race condition). Метод Tools.CaptureWindow(bot.Hwnd) вызывается асинхронно из пула потоков Kestrel. Если внутри CaptureWindow() или самого эмулятора происходит обращение к WinAPI (GetDC, BitBlt), которое требует синхронизации с UI-потоком, или если там закомментирован/отсутствует семафор GdiSemaphore, этот вызов может намертво заблокировать поток или графический контекст Windows, прервав выполнение параллельно работающего цикла бота. 
                 using OpenCvSharp.Mat? screenshot = Tools.CaptureWindow(bot.Hwnd);
                 if (screenshot?.Empty() is not false) return Results.BadRequest(new { message = "Не удалось захватить кадр" });
 
@@ -320,6 +324,7 @@ static partial class Program
             }
             catch (Exception ex) { return Results.Problem($"Ошибка: {ex.Message}"); }
         });
+
 
         // GET /api/debug/enums/regions — Получить список всех регионов OpenCV
         app.MapGet("/api/debug/enums/regions", () =>
@@ -350,6 +355,7 @@ static partial class Program
 
             try
             {
+                // BUG HIGH - Повторяющийся критический риск дедлока/зависания. Метод `Tools.CaptureWindow(bot.Hwnd)` вызывается из асинхронного потока Kestrel параллельно с основным игровым циклом бота. Если `Tools.CaptureWindow` делает WinAPI вызовы (вроде GetDC, GetWindowDC, BitBlt) к окну эмулятора без синхронизации (отсутствует GdiSemaphore), это может намертво заблокировать графический конвейер ОС или поток самого бота, когда тот пытается параллельно захватить экран для анализа UI.
                 using OpenCvSharp.Mat? screenshot = Tools.CaptureWindow(bot.Hwnd);
                 if (screenshot?.Empty() is not false) return Results.BadRequest(new { message = "Не удалось захватить кадр" });
 
@@ -373,6 +379,7 @@ static partial class Program
             catch (Exception ex) { return Results.Problem($"Ошибка: {ex.Message}"); }
         });
 
+
         // POST /api/debug/{id:int}/click/{elementName} — Отправить клик по выбранному элементу GameUI
         app.MapPost("/api/debug/{id:int}/click/{elementName}", async (
             int id,
@@ -395,6 +402,7 @@ static partial class Program
 
                 // Передаем токен веб-запроса. Теперь, если пользователь прервет запрос на сайте, 
                 // задача в пуле потоков не будет выполняться вхолостую!
+                // BUG HIGH - Потенциальная уязвимость для дедлока или бесконечного ожидания. Вызов `await bot.ClickToAsync(...)` уводит поток HTTP-запроса Kestrel в ожидание выполнения клика через ADB. Если внутри `ClickToAsync` используется синхронизация ресурсов (например, один и тот же `lock` или семафор с игровым циклом `RunLoopAsync`), то в случае, когда бот УЖЕ выполняет действие, этот веб-запрос зависнет. Более того, если внутри `ClickToAsync` нет встроенного таймаута на выполнение ADB-команды, а ADB зависнет (что бывает часто), этот `await` никогда не вернет управление.
                 await bot.ClickToAsync(targetElement, token);
 
                 return Results.Ok(new { message = $"Клик по элементу '{targetElement}' успешно отправлен" });
@@ -409,6 +417,7 @@ static partial class Program
                 return Results.Problem($"Ошибка отправки клика: {ex.Message}");
             }
         });
+
 
 
         // Маршрут для полной и безопасной остановки всей системы из браузера
@@ -440,8 +449,8 @@ static partial class Program
         });
 
 
-
         // Запуск веб-сервера на фоне (Task.Run) для полной совместимости с Application.Run в Main
+        // BUG HIGH - Потенциальная гонка при инициализации (Race Condition). Метод StartWebServer возвращает объект `app` в Main() *до того*, как Kestrel реально поднимется и начнет слушать порт, так как `app.RunAsync()` убран в фоновый `Task.Run`. Однако в `Main` сразу после вызова `StartWebServer` идет метод `StartMultiBotSystem()`, который может начать дергать зависимости API или слать HTTP/вебсокет-запросы. Если запуск затянется, боты упадут или зависнут при попытке связаться с недоступным сервером на старте. Сам `Task.Run(async () => await ...)` здесь написан правильно, но возвращать `app` без ожидания готовности хоста — это риск.
         Task.Run(async () => {
             try
             {
@@ -466,6 +475,7 @@ static partial class Program
 
         return app;
     }
+
 
     #endregion
 
@@ -525,6 +535,7 @@ static partial class Program
             }
         };
     }
+
 
 
     #endregion
@@ -596,7 +607,7 @@ static partial class Program
             }
             else
             {
-                Console.WriteLine("Принудительное завершение процесса через 5 секунд...");
+                // BUG MEDIUM - Блокировка UI-потока в Main. Метод `CheckRequiredFiles` вызывается синхронно в `Main` до запуска цикла Windows Forms. Если файлы отсутствуют и ввод перенаправлен, вызов `Thread.Sleep(5000)` заморозит стартовый поток. Хотя здесь это приводит к `Environment.Exit(1)`, в многопоточных архитектурах синхронные `Thread.Sleep` на главном потоке считаются плохой практикой. На зависание *уже работающих* сценариев этот кусок кода не влияет, так как при успешном старте метод просто возвращает `true`.
                 Thread.Sleep(5000); // Даем время оператору прочитать консоль Docker/панели
             }
 
@@ -607,6 +618,7 @@ static partial class Program
         return allExist;
 
     }
+
 
     #endregion
 
@@ -621,7 +633,7 @@ static partial class Program
     /// разворачивает координатную сетку Android, доинициализирует контекст персонажей и запускает
     /// параллельные асинхронные воркеры для всех доступных аккаунтов.
     /// </summary>
-    private static void StartMultiBotSystem()
+private static void StartMultiBotSystem()
     {
         try
         {
@@ -631,6 +643,7 @@ static partial class Program
             // Перезапускаем ADB сервер в чистом режиме для предотвращения зависших сетевых сессий
             if (File.Exists(adbPath))
             {
+                // BUG HIGH - Потенциальная блокировка запуска и зависание. Вызовы `Process.Start(...).WaitForExit()` без передачи таймаута могут заблокировать выполнение приложения намертво, если процесс `adb.exe` зависнет или потребует прав администратора, которых нет у бота. Для консольной утилиты `adb` на старте критично выставлять лимит времени, например: `WaitForExit(5000)`.
                 Process.Start(new ProcessStartInfo(adbPath, "kill-server") { CreateNoWindow = true, UseShellExecute = false })?.WaitForExit();
                 Process.Start(new ProcessStartInfo(adbPath, "start-server") { CreateNoWindow = true, UseShellExecute = false })?.WaitForExit();
             }
@@ -664,6 +677,7 @@ static partial class Program
                     string targetDevice = $"127.0.0.1:{accountSettings.AdbPort}";
 
                     // Коннектим эмулятор по порту
+                    // BUG HIGH - Потенциальное зависание на старте. Если эмулятор завис, порт занят или ADB ушел в бесконечный цикл ожидания сетевого сокета, `WaitForExit()` без таймаута заблокирует инициализацию всей мультисистемы ботов. Необходимо добавить ограничение по времени: `WaitForExit(3000)`.
                     Process.Start(new ProcessStartInfo(adbPath, $"connect {targetDevice}") { CreateNoWindow = true, UseShellExecute = false })?.WaitForExit();
 
                     // Включаем встроенную системную сетку Android для визуального контроля кликов бота
@@ -691,6 +705,7 @@ static partial class Program
                 bot.POS = accountSettings.POS;
 
                 // Бот просто добавляется в список инициализированных. Он ждет клика "Старт" на веб-странице.
+                // BUG MEDIUM - Состояние гонки при добавлении в список. Добавление в `_activeBots` происходит без захвата `lock (ActiveBotsLock)`. Несмотря на то, что сейчас это выполняется в один поток в методе `Main`, архитектурно поле объявлено как защищаемое этим локом. Для предотвращения непредвиденных race conditions в будущем, операции со списком должны быть обернуты в блокировку.
                 _activeBots.Add(bot);
             }
 
@@ -702,7 +717,6 @@ static partial class Program
             _cts.Cancel();
         }
     }
-
 
     #endregion
 
@@ -733,6 +747,7 @@ static partial class Program
             Logger.Log("Всем фоновым потокам отправлен сигнал остановки. Ожидание завершения...", LogType.Warning);
 
             // 2. Даем потокам 2 секунды на корректное завершение тактов и вызов SaveStats() в finally
+            // BUG MEDIUM - Метод "Fire and Forget" без реального отслеживания задач. Фиксированное ожидание в `Task.Delay(2000)` не гарантирует, что потоки воркеров завершились. Если воркер завис намертво внутри ADB-команды или бесконечного цикла, этот метод продолжит выполнение, очистит список, но скрытые потоки останутся висеть в памяти. Правильнее сохранять ссылки на запущенные `Task` игровых циклов и делать `await Task.WhenAll(botTasks)`.
             await Task.Delay(2000);
 
             // 3. Гарантированно и потокобезопасно очищаем список активных ботов
@@ -764,48 +779,52 @@ static partial class Program
     /// <item><description><c>ConsoleKey.F10</c> — производит экстренный высокоточный сбор скриншотов со всех активных эмуляторов с фиксацией на диск, после чего глушит систему.</description></item>
     /// </list>
     /// </summary>
+    /// <summary>
+    /// Асинхронный мониторинг управляющих клавиш. Полностью защищен от зависаний в режиме Windows Forms (Трей).
+    /// </summary>
     private static async Task ListenForCancelKeyAsync()
     {
-        // Используем глобальный токен для контроля жизненного цикла самого потока опроса
         CancellationToken globalToken = Program.GetGlobalToken();
+
+        Logger.Log("[SYSTEM] Поток мониторинга клавиш управления ESC/F10 успешно запущен.", LogType.Info);
 
         while (!globalToken.IsCancellationRequested)
         {
-            // КОРРЕКЦИЯ ДЛЯ WinExe: Если консоль отсутствует, засыпаем
-            if (Console.IsInputRedirected)
-            {
-                await Task.Delay(500, globalToken);
-                continue;
-            }
-
             try
             {
+                // ИСПРАВЛЕНО: Жесткий и безопасный фильтр для Windows Forms / GUI режима.
+                // Если у приложения нет реального консольного окна (работаем из-под трея или Kestrel),
+                // Console.KeyAvailable гарантированно вызовет Hard Deadlock ОС. 
+                // Проверяем наличие окна консоли через WinAPI. Если его нет — поток просто спит, не нагружая процессор.
+                IntPtr consoleWindowHandle = WinAPI.GetConsoleWindow(); // Подключите этот импорт из вашего класса WinAPI
+
+                if (consoleWindowHandle == IntPtr.Zero || Console.IsInputRedirected)
+                {
+                    // Мы в режиме трея/WinExe. Консоли нет. Безопасно спим и уходим на следующий тик.
+                    await Task.Delay(1000, globalToken).ConfigureAwait(false);
+                    continue;
+                }
+
+                // Код опроса консоли выполнится ТОЛЬКО если приложение запущено как честная Console Application
                 if (Console.KeyAvailable)
                 {
                     ConsoleKey pressedKey = Console.ReadKey(true).Key;
 
-                    // СЦЕНАРИЙ 1: Нажата строго клавиша ESC — штатный плавный выход
                     if (pressedKey == ConsoleKey.Escape)
                     {
                         Logger.Log("Обнаружено нажатие [ESC]. Запуск остановки всех аккаунтов.", LogType.Warning);
-
-                        // Безопасный асинхронный вызов БЕЗ блокировки текущего потока (.GetResult)
                         _ = Program.StopMultiBotSystemAsync();
-                        break; // Выходим из цикла опроса клавиш
+                        break; 
                     }
 
-                    // СЦЕНАРИЙ 2: Нажата строго клавиша F10 — экстренный дамп экранов
                     if (pressedKey == ConsoleKey.F10)
                     {
                         Logger.Log("Обнаружено нажатие [F10]. Создание экстренных снимков экрана и запуск остановки.", LogType.Warning);
-
                         string debugDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "DebugScreenshots");
 
                         try
                         {
                             Directory.CreateDirectory(debugDir);
-
-                            // Используем наш потокобезопасный метод получения снимка коллекции ботов
                             var currentBots = Program.GetActiveBots();
 
                             foreach (var bot in currentBots)
@@ -814,21 +833,21 @@ static partial class Program
 
                                 Mat? screenshot = null;
 
-                                // Защищаем подсистему GDI WinAPI через наш семафор от конфликтов с тиками ботов
-                                await Program.GdiSemaphore.WaitAsync(globalToken);
+                                // ИСПРАВЛЕНО: Используем экземплярный семафор конкретного бота вместо заклинивающего глобального!
+                                // BUG HIGH - Скрытая уязвимость для дедлока при экстренной отладке. Если бот УЖЕ завис внутри выполнения какого-то действия (например, внутри `ClickToAsync`), и этот метод удерживает `bot.AccountGdiSemaphore`, то при нажатии F10 данный цикл мониторинга застрянет на `await bot.AccountGdiSemaphore.WaitAsync`. Так как вызов идет внутри синхронного цикла `foreach`, зависание одного бота заблокирует опрос и выключение для ВСЕХ остальных ботов в системе. Для исправления этой проблемы захват семафора и создание скриншота должны быть вынесены в `Task.Run()` или выполняться с таймаутом.
+                                await bot.AccountGdiSemaphore.WaitAsync(globalToken).ConfigureAwait(false);
                                 try
                                 {
                                     screenshot = Tools.CaptureWindow(bot.Hwnd);
                                 }
                                 finally
                                 {
-                                    Program.GdiSemaphore.Release();
+                                    bot.AccountGdiSemaphore.Release();
                                 }
 
-                                // Современная проверка на null/empty
                                 if (screenshot is { } snap && !snap.Empty() && snap.Width > 0 && snap.Height > 0)
                                 {
-                                    using var pin = snap; // Гарантируем очистку Mat
+                                    using var pin = snap; 
                                     string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
                                     string fileName = $"{bot.Settings.Name}_F10_Emergency_{timestamp}.png";
                                     string fullPath = Path.Combine(debugDir, fileName);
@@ -843,7 +862,6 @@ static partial class Program
                             Logger.Log($"Не удалось выполнить экстренное сохранение снимков: {ex.Message}", LogType.Warning);
                         }
 
-                        // Запускаем остановку в фоне и выходим
                         _ = Program.StopMultiBotSystemAsync();
                         break;
                     }
@@ -851,15 +869,17 @@ static partial class Program
             }
             catch (OperationCanceledException)
             {
-                break; // Мягкий выход при отмене глобального токена
+                break; 
             }
             catch (Exception ex)
             {
-                Logger.Log($"Ошибка в потоке опроса клавиш управления: {ex.Message}", LogType.Error);
+#if DEBUG
+                Console.WriteLine($"[KEYBOARD DEBUG] Ошибка опроса клавиш: {ex.Message}");
+#endif
             }
 
-            // Высокоэффективная асинхронная задержка для разгрузки процессора вместо Thread.Sleep
-            await Task.Delay(100, globalToken);
+            // Высокоэффективная асинхронная задержка с отключением контекста синхронизации Windows Forms
+            await Task.Delay(250, globalToken).ConfigureAwait(false);
         }
     }
 
@@ -875,7 +895,7 @@ static partial class Program
     /// Автоматически распаковывает двумерные координаты (X, Y) из перечисления <see cref="GameUI"/>,
     /// после чего выполняет асинхронный аппаратно-независимый клик через утилиту ADB [INDEX].
     /// </summary>
-    internal static async Task ClickToAsync(
+internal static async Task ClickToAsync(
         this ActiveBotAccount bot,
         GameUI element,
         CancellationToken token,
@@ -890,7 +910,7 @@ static partial class Program
 
         token.ThrowIfCancellationRequested();
 
-        // Идеальная однострочная лямбда
+        // BUG HIGH - Главный подозреваемый! Метод запускает `Tools.SmartClick` в пуле потоков через `Task.Run`. Внутри `Tools.SmartClick` гарантированно вызывается `adb.exe shell input tap ...`. Если внутри `Tools.SmartClick` вызов внешнего процесса ADB написан синхронно (например, через `Process.Start().WaitForExit()`), и этот вызов ЗАВИСАЕТ из-за буферизации потоков вывода (stdout/stderr) или сетевого сбоя эмулятора, то этот `await` зависнет НАМЕРТВО. Из-за отсутствия таймаута внутри `Task.Run` токен `token` отменит задачу только *до* её старта, но не сможет прервать уже заклинивший внутри `SmartClick` синхронный процесс. Сценарий сделает первое действие (первый клик) и застынет навсегда.
         await Task.Run(() => Tools.SmartClick(x, y, minSec, maxSec, offset, adbPort: bot.Settings.AdbPort), token);
 
     #if DEBUG
@@ -898,8 +918,6 @@ static partial class Program
     #endif
 
     }
-
-
 
 
     /// <summary>
@@ -919,7 +937,7 @@ static partial class Program
         // метод выбросит OperationCanceledException сразу, не тратя время на выделение потока.
         token.ThrowIfCancellationRequested();
 
-        // Возвращаем Task напрямую без async/await конечного автомата
+        // BUG HIGH - Повторение критической уязвимости. Возврат `Task.Run` напрямую без async/await избавляет от машины состояний, но полностью лишает метод возможности контролировать зависание внутри `Tools.SmartClick`. Если ADB зависнет на первом же динамическом клике (после нахождения объекта через OpenCV), этот Task никогда не перейдет в состояние `Completed`, и вызывающий узел Дерева Поведения (Behavior Tree) застрянет в состоянии ожидания (`Running`) навсегда.
         return Task.Run(() => Tools.SmartClick(
             point.X,
             point.Y,
@@ -930,10 +948,7 @@ static partial class Program
         ), token);
     }
 
-
-
     #endregion
-
 
 }
 

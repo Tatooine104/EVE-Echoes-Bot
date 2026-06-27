@@ -4,9 +4,6 @@ using EVEEchoesBot.scenarios;
 using Point = OpenCvSharp.Point;
 using System.Text.RegularExpressions;
 
-
-// [v] TODO 2026.05.30 Привести все тексты логгера к единому стилю 
-
 namespace EVEEchoesBot.resources;
 
 
@@ -29,6 +26,7 @@ public partial class ActiveBotAccount
         TimeSpan total;
 
         // Защищаем чтение состояния сессии от изменений из RunLoopAsync
+        // BUG MEDIUM - Использование потенциально неинициализированного или стороннего объекта блокировки. В текущем фрагменте кода поле `_taskLock` используется, но не объявлено. Если оно объявлено в другой partial-части как `private readonly object _taskLock = new();` — всё хорошо. Однако в методе `GetAccountsState` класса `BotAccountManager` мы видели, что чтение свойств защищалось через `lock (Program.ActiveBotsLock)`. Разные локи для одних и тех же полей (`_taskLock` здесь и `ActiveBotsLock` там) приводят к состоянию гонки (Race Condition): Kestrel будет читать несинхронизированные данные прямо в момент их записи из `RunLoopAsync`, что ломает потокобезопасность.
         lock (_taskLock)
         {
             if (State == BotState.Stopped)
@@ -72,6 +70,7 @@ public partial class ActiveBotAccount
     /// <summary>
     /// Публичное свойство для получения общего времени работы данного аккаунта.
     /// </summary>
+    // BUG LOW - Ошибка компиляции (Undefined Field). Свойство ссылается на поле `_accumulatedSeconds`, которое отсутствует в текущей partial-области. Если оно не объявлено в скрытых частях, проект не соберётся.
     public TimeSpan TotalRuntime => TimeSpan.FromSeconds(_accumulatedSeconds);
 
     /// <summary>
@@ -79,6 +78,7 @@ public partial class ActiveBotAccount
     /// </summary>
     public string EVESystem
     {
+        // BUG MEDIUM - Избыточный lock-оверхед при чтении ссылок. Чтение и запись ссылки на строку в C# являются атомарными операциями. Использование `lock (_taskLock)` на свойствах, которые часто запрашиваются из UI и Kestrel, создает лишнее соперничество потоков (lock contention). Для предотвращения дедлоков и фризов на тиках лучше избавиться от лока здесь, сделав поля `_eveSystem` и `_eveShip` обычными свойствами с атомарным доступом, либо обновлять их через потокобезопасный обмен (`Interlocked.Exchange`).
         get { lock (_taskLock) return _eveSystem; }
         set { lock (_taskLock) _eveSystem = value; }
     }
@@ -92,7 +92,8 @@ public partial class ActiveBotAccount
         set { lock (_taskLock) _eveShip = value; }
     }
 
-    // Внутренние переменные игрового контекста персонажа
+
+// Внутренние переменные игрового контекста персонажа
     internal string _eveSystem = "???";
     internal string _eveShip = "???";
     internal bool _isUndocking = false;
@@ -119,7 +120,7 @@ public partial class ActiveBotAccount
     private CancellationTokenSource? _accountCts;
     private double _accumulatedSeconds;
     private readonly string _statsFilePath;
-    private readonly System.Threading.Lock _taskLock = new();
+    internal readonly System.Threading.Lock _taskLock = new();
     private List<string> _taskQueue = [];
 
     /// <summary>
@@ -155,6 +156,7 @@ public partial class ActiveBotAccount
         _statsFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, $"stats_{settings.Name}.json");
 
         // 4. Пытаемся загрузить сохраненную статистику из файла
+        // BUG HIGH - Смертельный Fire-and-Forget вызов во время конструирования объекта. Метод `TryLoadLastStatsAndQueue()` запускается асинхронно без какого-либо ожидания. Это приводит к жесткому Race Condition: конструктор завершает работу, поток Main добавляет бота в систему, а параллельный поток Kestrel через секундный пуллинг начинает вызывать `GetAccountsState()`, пытаясь прочитать `_taskQueue` или настройки. Если метод `TryLoadLastStatsAndQueue` внутри себя обращается к файловой системе или забивает очередь, в то время как другие потоки уже работают с экземпляром класса, это ломает внутренние структуры данных или выбрасывает InvalidOperationException, вводя логический автомат бота в ступор на первом же тике. Асинхронные методы ЗАПРЕЩЕНО вызывать в конструкторах без синхронизации или перевода их в чисто синхронный вид.
         _ = TryLoadLastStatsAndQueue();
 
         // Старая FSM-инициализация очередей удалена. Бот готов к тикам дерева поведения.
@@ -173,9 +175,23 @@ public partial class ActiveBotAccount
     private CancellationTokenSource _delayCts = new();
 
 
+    #pragma warning disable IDE1006 // Отключаем проверку стиля именования для этого свойства
+    /// <summary>
+    /// Хранит последнее целое количество часов ожидания планетарки, которое было выведено в лог.
+    /// Позволяет выводить дебаг-строку строго один раз в час вместо каждого тика дерева.
+    /// </summary>
+    internal int _lastLoggedPlanetHours { get; set; } = -1;
+    #pragma warning restore IDE1006 // Включаем проверку обратно для остального кода
+
+    /// <summary>
+    /// Индивидуальный семафор аккаунта для защиты графического контекста конкретного окна эмулятора.
+    /// Предотвращает перекрестные дедлоки между разными окнами ботов при параллельной работе.
+    /// </summary>
+    internal readonly System.Threading.SemaphoreSlim AccountGdiSemaphore = new(1, 1);
+
     #endregion
 
-    public void SwitchScenario(string newScenarioName)
+public void SwitchScenario(string newScenarioName)
     {
         lock (_scenarioLock)
         {
@@ -190,6 +206,7 @@ public partial class ActiveBotAccount
             Settings.Script = newScenarioName;
 
             // 3. МГНОВЕННО БУДИМ БОТА: отменяем только активный токен
+            // BUG HIGH - Потенциальная вечная блокировка смены сценариев (ObjectDisposedException / Deadlock). Если в основном рабочем цикле `RunLoopAsync` после срабатывания отмены токена `_delayCts` происходит его утилизация (`_delayCts.Dispose()`) и пересоздание без жесткой синхронизации с `_scenarioLock`, то данный метод выбросит исключение ObjectDisposedException прямо посреди критической секции. Хуже того, если в цикле ожидания тика `Task.Delay` не обрабатывается отмена токена должным образом, бот проигнорирует команду, а стейт дерева останется в неопределенном состоянии. Также смена ссылки на `_behaviorTree` происходит под `_scenarioLock`, но сам игровой цикл `RunLoopAsync` при обходе дерева, скорее всего, этот лок НЕ захватывает (или использует `_taskLock`). Это классическое состояние гонки (Race Condition), ломающее проход по узлам дерева.
             if (!_delayCts.IsCancellationRequested)
             {
                 _delayCts.Cancel();
@@ -211,7 +228,7 @@ public partial class ActiveBotAccount
     /// Если <c>true</c>, задачи вставляются в самое начало очереди (с высоким приоритетом, сохраняя свой исходный порядок).
     /// Если <c>false</c>, задачи приписываются в самый конец текущей очереди. По умолчанию: <c>false</c>.
     /// </param>
-    public void EnqueueTasks(IEnumerable<string> tasks, bool addToFront = false)
+public void EnqueueTasks(IEnumerable<string> tasks, bool addToFront = false)
     {
         if (tasks == null) return;
 
@@ -231,9 +248,11 @@ public partial class ActiveBotAccount
                 _taskQueue.AddRange(materializedTasks);
             }
 
+            // BUG HIGH - Скрытая дисковая блокировка и зацикливание шагов. Метод `SaveStats()` вызывается синхронно внутри `lock (_taskLock)` на КАЖДОЕ добавление задач. В архитектуре Дерева Поведения (BT) узлы могут проверять условия и перестраивать очередь задач по нескольку раз за один единственный тик. Из-за этого бот начинает долбить по жесткому диску (SSD/HDD), пытаясь перезаписать JSON-файл статистики прямо посреди выполнения игрового шага. Поток воркера банально зависает на I/O-операциях внутри лока, не успевая вовремя вернуть статус в дерево поведения или пропустить тик анимации. Запись статистики на диск должна быть строго асинхронной (Fire-and-Forget или через фоновую очередь) и вынесена за пределы критических секций логики бота.
             SaveStats();
         }
     }
+
 
     #endregion
 
@@ -249,7 +268,7 @@ public partial class ActiveBotAccount
     /// безопасный интерактивный опрос оператора через консоль ввода.
     /// </summary>
     /// <returns>Возвращает <c>true</c>, если файл состояния существовал и был успешно прочитан; иначе <c>false</c>.</returns>
-    private bool TryLoadLastStatsAndQueue()
+private bool TryLoadLastStatsAndQueue()
     {
         if (!File.Exists(_statsFilePath)) return false;
 
@@ -302,6 +321,7 @@ public partial class ActiveBotAccount
 
         return false;
     }
+
 
     #endregion
 
@@ -370,10 +390,10 @@ public partial class ActiveBotAccount
                     HasTarget      = _hastarget,
                     WeaponryActive = _weaponryactive,
                     PlanetAssembly = _planetassembly,
-                    
+
                     // ИСПРАВЛЕНО: Убран .ToString(). Передаем чистый Point? напрямую в Point? свойства DTO
                     CurrentTarget  = _currenttarget,
-                    
+
                     IsFullMain     = _isfullmain,
                     IsFullOre      = _isfullore
                 };
@@ -382,6 +402,7 @@ public partial class ActiveBotAccount
 
             // Сериализация и дисковая запись выполняются за пределами lock, чтобы не блокировать процессор
             string json = JsonSerializer.Serialize(dto, _jsonOptions);
+            // BUG HIGH - Скрытая дисковая блокировка потока воркера (I/O Bottleneck). Хотя ты абсолютно правильно вынес сериализацию и метод `File.WriteAllText` за пределы критической секции `lock (_taskLock)`, сам по себе этот вызов остается СИНХРОННЫМ. Метод `SaveStats` вызывается внутри логики добавления задач `EnqueueTasks`, которая работает на текущем тике Дерева Поведения. Если операционная система в этот момент занята (или SSD перегружен нативным С++ от OCR/OpenCV), поток воркера застынет на строчке `File.WriteAllText` на несколько сотен миллисекунд. Из-за этого нарушаются тайминги адаптивных тиков `RunLoopAsync`, игра успевает уйти по анимации вперед, зрение бота считывает устаревший кадр на следующем шаге, условия BT ломаются и бот начинает гонять одно и то же действие по кругу. Запись на диск должна быть асинхронной: `await File.WriteAllTextAsync(_statsFilePath, json);`, а сам метод `SaveStats` должен быть переведен в `async Task`.
             File.WriteAllText(_statsFilePath, json);
         }
         catch (Exception ex)
@@ -391,38 +412,61 @@ public partial class ActiveBotAccount
         }
     }
 
+
     #endregion
 
     // - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + - + -
 
     #region Start
 
+    private readonly System.Threading.Lock _startLock = new();
+
     /// <summary>
-    /// Инициализирует и запускает асинхронный рабочий цикл автоматизации для текущего игрового аккаунта.
-    /// Создает связанный токен отмены на основе глобального токена приложения для поддержки каскадной остановки.
+    /// Запускает логический воркер аккаунта в изолированном фоновом потоке.
+    /// Полностью изолирован от перекрестных блокировок с веб-интерфейсом Kestrel.
     /// </summary>
-    /// <param name="globalToken">Глобальный токен отмены приложения (<see cref="CancellationToken"/>), сигнализирующий о закрытии бота.</param>
-    public void Start(CancellationToken globalToken)
+    public void Start(CancellationToken token)
     {
-        // 1. Взводим правильный статус для веб-панели
-        this.State = BotState.Running;
+        bool shouldStart = false;
+        CancellationToken workerToken = CancellationToken.None;
 
-        // 2. Если запускаемся впервые или после Стопа — фиксируем точку отсчета
-        if (_startTime == null)
+        // КРИТИЧЕСКАЯ СЕКЦИЯ: Быстро под локом настраиваем токены и стейт, и МГНОВЕННО выходим из лока!
+        lock (_startLock)
         {
-            _startTime = DateTime.Now;
+            if (this.State is BotState.Running && _accountCts?.IsCancellationRequested is false)
+            {
+                return; // Бот уже работает, выходим
+            }
+
+            this.State = BotState.Running;
+            _startTime ??= DateTime.Now;
+
+            if (_accountCts is not null)
+            {
+                try
+                {
+                    _accountCts.Cancel();
+                    _accountCts.Dispose();
+                }
+                catch { /* Подавляем сбои очистки */ }
+            }
+
+            // BUG HIGH - Каскадная отмена и логический паралич дерева поведения. Метод `CancellationTokenSource.CreateLinkedTokenSource(token)` связывает новый источник токенов со старым статическим токеном `Program.GetGlobalToken()`. Вспоминаем баг из `BotAccountManager.HandleCommand`: при нажатии кнопки "Старт" для ЛЮБОГО бота там жестко вызывается метод `Program.ResetGlobalToken()`. Пересоздание токена отменяет старый глобальный токен. Это автоматически стриггерит сигнал отмены через `workerToken` во ВСЕХ связанных ботах. Сценарий получает сигнал `IsCancellationRequested`, ломает логику обхода узлов Дерева Поведения (BT) на первом же тике, узлы действий выбрасывают `OperationCanceledException` или зависают в невалидном стейте, и бот начинает гонять одно и то же стартовое действие по кругу, не имея возможности переключиться дальше. Токены отмены должны быть полностью изолированы.
+            _accountCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+            workerToken = _accountCts.Token;
+            shouldStart = true;
+        } // ВОТ ТУТ ЛОК СТАРТА ГАРАНТИРОВАННО ОСВОБОЖДЕН!
+
+        // Запуск фонового потока выполняем СТРОГО ЗА ПРЕДЕЛАМИ критической секции lock!
+        // Теперь RunLoopAsync запустится в чистом поле, и его внутренний lock(_taskLock) 
+        // никогда не пересечется с логикой метода Start. Дедлок физически невозможен.
+        if (shouldStart)
+        {
+            Logger.Log($"[{Settings.Name}|{_eveSystem}|{_eveShip}] Инициирую запуск логического воркера RunLoopAsync.", LogType.Info);
+            // BUG MEDIUM - Избыточный стейт-машинный оверхед. Конструкция `async () => await ...` порождает лишний скрытый класс во время генерации IL-кода. С учетом `Task.Run` правильнее писать: `Task.Run(() => RunLoopAsync(workerToken), workerToken);`.
+            Task.Run(async () => await RunLoopAsync(workerToken).ConfigureAwait(false), workerToken);
         }
-
-        // Гарантированно очищаем ресурсы старого токена перед выделением новой памяти
-        _accountCts?.Dispose();
-
-        // Создаем сквозную связку токенов
-        _accountCts = CancellationTokenSource.CreateLinkedTokenSource(globalToken);
-
-        // Передаем токен созданной связки вторым параметром в Task.Run
-        Task.Run(async () => await RunLoopAsync(_accountCts.Token), _accountCts.Token);
     }
-
 
     #endregion
 
@@ -436,6 +480,7 @@ public partial class ActiveBotAccount
     /// </summary>
     public void Stop()
     {
+        // BUG HIGH - Потенциальный Lock Contention Deadlock (Блокировка потока остановки). Метод `Stop` вызывается из внешних потоков (веб-интерфейс Kestrel или трей приложения). Он захватывает лок `lock (_taskLock)`. Внутри этого же лока вызывается `_accountCts?.Cancel()`. Вызов `Cancel()` каскадно активирует отмену во всех асинхронных задачах текущего бота. Если игровой цикл `RunLoopAsync` прямо в этот момент выполняет тяжелое действие и тоже удерживает `_taskLock` (или застрял внутри него), метод `Cancel()` заблокирует поток Kestrel или UI-поток трея, ожидая освобождения критической секции. Метод `Cancel()` должен вызываться ДО захода в критическую секцию `lock (_taskLock)`, чтобы мгновенно прервать рабочий цикл.
         lock (_taskLock)
         {
             if (State == BotState.Stopped) return;
@@ -452,6 +497,7 @@ public partial class ActiveBotAccount
             _accumulatedTime = TimeSpan.Zero;
         }
 
+        // BUG LOW - Потенциальный NullReferenceException в строке логирования. Конструкция `Settings?.Name` защищает от падения, если `Settings` равен null, но если это произойдет, вызов `Settings?.Name` вернет пустую строку, а логгер попытается вывести `[]`. На логику зацикливания шагов это не влияет.
         Logger.Log($"[{Settings?.Name}] Поток автоматизации полностью остановлен. Время сброшено.", LogType.Warning);
     }
 
@@ -466,6 +512,7 @@ public partial class ActiveBotAccount
     /// </summary>
     public void Pause()
     {
+        // BUG HIGH - Повторение смертельного тупика иерархии блокировок (Lock Contention Deadlock). Метод `Pause` вызывается из потока Minimal API при нажатии кнопки в браузере. Он захватывает `lock (_taskLock)` и внутри него пытается вызвать `_accountCts?.Cancel()`. Если игровой цикл `RunLoopAsync` в этот момент застрял внутри критической секции `_taskLock` (например, выполняет тяжелое действие, опрашивает зрение или завис на дисковой записи `SaveStats`), метод `Cancel()` заблокирует поток веб-сервера Kestrel. Внешнее управление ботом полностью отвалится. Вызов `_accountCts?.Cancel()` ОБЯЗАН находиться ДО входа в критическую секцию `lock (_taskLock)`.
         lock (_taskLock)
         {
             if (State != BotState.Running) return;
@@ -486,6 +533,7 @@ public partial class ActiveBotAccount
 
         Logger.Log($"[{Settings?.Name}] Поток автоматизации приостановлен (Пауза). Время сохранено.", LogType.Warning);
     }
+
 
     #endregion
 
@@ -509,10 +557,12 @@ public partial class ActiveBotAccount
         {
             lock (_taskLock)
             {
+                // BUG MEDIUM - Логическая ошибка сброса времени сессии (State Loss). Setter свойства `RuntimeSeconds` используется сериализатором (или при сбросе статов) для восстановления накопленного времени. Однако условие `if (value == 0)` приводит к тому, что любое положительное сохраненное число (например, 45000 секунд аптайма из stats.json) будет просто ПРОИГНОРИРОВАНО. Время бота никогда не восстановится из файла и обнулится при перезапуске. Правильный код должен присваивать значение: `_accumulatedTime = TimeSpan.FromSeconds(value);`. На зацикливание дерева поведения это не влияет, но ломает веб-статистику.
                 if (value == 0) _accumulatedTime = TimeSpan.Zero;
             }
         }
     }
+
 
 
     #region RunLoopAsync
@@ -524,7 +574,7 @@ public partial class ActiveBotAccount
     /// </summary>
     /// <param name="token">Токен отмены операции <see cref="CancellationToken"/>, привязанный к текущему аккаунту.</param>
     /// <returns>Асинхронная задача <see cref="Task"/>, управляющая жизненным циклом потока воркера.</returns>
-    private async Task RunLoopAsync(CancellationToken token)
+private async Task RunLoopAsync(CancellationToken token)
     {
         Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Поток запущен. Начало работы по Дереву поведения: '{Settings.Script ?? "mining"}'.", LogType.Info);
 
@@ -540,14 +590,10 @@ public partial class ActiveBotAccount
             {
                 try
                 {
-                    // ========================================================
-                    // 1. СИНХРОНИЗАЦИЯ ДАННЫХ ДЛЯ ВЕБ-ИНТЕРФЕЙСА
-                    // ========================================================
                     lock (_taskLock)
                     {
-                        if (this.State == BotState.Running && _startTime != null)
+                        if (this.State is BotState.Running && _startTime is not null)
                         {
-                            // Аптайм текущей сессии для DTO
                             TimeSpan currentUptime = _accumulatedTime + (DateTime.Now - _startTime.Value);
                             this.RuntimeSeconds = currentUptime.TotalSeconds;
                         }
@@ -556,93 +602,84 @@ public partial class ActiveBotAccount
                         _accumulatedSeconds = baseSeconds + sessionStopwatch.Elapsed.TotalSeconds;
                     }
 
-                    // ========================================================
-                    // 2. ВЫПОЛНЕНИЕ ТАКТА ДЕРЕВА ПОВЕДЕНИЯ
-                    // ========================================================
-                    // Кэшируем ссылку на случай, если веб-поток подменит её через SwitchScenario во время тика
                     var currentTree = _behaviorTree;
 
-                    NodeStatus treeResult = await currentTree.TickAsync(this, token);
+                    if (currentTree is null)
+                    {
+                        Logger.Log($"[{Settings.Name}] Ошибка: Дерево _behaviorTree не инициализировано.", LogType.Error);
+                        await Task.Delay(2000, token);
+                        continue;
+                    }
 
-                    // ========================================================
-                    // 3. РАСЧЕТ АДАПТИВНОГО ТАЙМИНГА И ОЖИДАНИЕ
-                    // ========================================================
-                    // Опрашиваем чаще (1с) если: макрос выполняется ИЛИ бот в космосе ИЛИ активны пушки
-                    bool isHighActivity = (treeResult == NodeStatus.Running) || this._inSpace || this._weaponryactive;
+                    NodeStatus treeResult;
+
+                    // Создаем защитный токен с таймаутом на выполнение ВСЕГО дерева (3 секунды)
+                    using (var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(60)))
+                    using (var linkedCtsForTick = CancellationTokenSource.CreateLinkedTokenSource(token, timeoutCts.Token))
+                    {
+                        try
+                        {
+                            // ИСПРАВЛЕНО: Применяем .ConfigureAwait(false), чтобы полностью отвязать дерево 
+                            // от SynchronizationContext главного потока Windows Forms. Это уберет дедлоки на логах!
+                            // BUG HIGH — Главный логический затык найден! Дерево поведения (Behavior Tree) по своей фундаментальной архитектуре ОБЯЗАНО быть полностью синхронным (вычисляться мгновенно за доли миллисекунд), либо хранить внутренний стейт шага. Ты вызываешь `await currentTree.TickAsync(...)` КАЖДЫЙ ТИК ЦИКЛА (раз в 1 или 5 секунд). Если узел-Действие (Action Node) внутри себя выполняет асинхронный `await ClickToAsync(...)` и возвращает статус `NodeStatus.Running`, дерево прерывает выполнение и возвращает наружу статус `Running`. На СЛЕДУЮЩЕМ ТИКЕ цикла `while` ты заново вызываешь `currentTree.TickAsync()`. Дерево начинает обход С САМОГО НАЧАЛА (с корня), а не с того узла, который вернул `Running`! Корневой селектор заново проверяет первое условие, оно совпадает, и бот опять заходит в ПЕРВОЕ действие сценария, генерируя бесконечный повтор одного и того же шага по кругу. Деревья поведения не должны перезапускаться с нуля, пока текущее действие возвращает `Running`, либо логика узлов должна опираться на инкапсулированные индексы или проверку стейта в игре!
+                            treeResult = await currentTree.TickAsync(this, linkedCtsForTick.Token).ConfigureAwait(false);
+                        }
+                        catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
+                        {
+                            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] КРИТИЧЕСКИЙ ЗАВИС КЛИЕНТА: Дерево поведения застыло дольше чем на 3 секунды! Проверьте методы ветки безопасности.", LogType.Warning);
+                            await Task.Delay(3000, token);
+                            continue;
+                        }
+                    }
+
+                    // BUG MEDIUM — Логическая ловушка адаптивных тиков. Условие `bool isHighActivity = (treeResult is NodeStatus.Running) || this._inSpace || this._weaponryactive;` приводит к тому, что если бот ушел в космос (`_inSpace = true`), цикл переключается на жесткий режим "1 тик в секунду". Так как дерево на каждом тике обходится с нуля, бот в космосе начинает долбить по игре командами ADB каждую секунду без остановки. Это вызывает дикие анимационные лаги в эмуляторе, зрение OpenCV не успевает зафиксировать смену картинки (ведь игра еще обрабатывает прошлый клик), и бот зацикливается на одном действии.
+                    bool isHighActivity = (treeResult is NodeStatus.Running) || this._inSpace || this._weaponryactive;
                     int delaySeconds = isHighActivity ? 1 : 5;
 
     #if DEBUG
-                    if (treeResult == NodeStatus.Running)
+                    if (treeResult is NodeStatus.Running)
                     {
                         Logger.Log($"[{Settings.Name}] Дерево выполняет длительную операцию (Running). Следующий чек через {delaySeconds}с.", LogType.Test);
                     }
     #endif
-                    // Использование упрощенного using без фигурных скобок
-                    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(token, _delayCts.Token);
+                    // Кэшируем ссылку локального источника прерывания под атомарной заменой
+                    CancellationTokenSource currentDelayCts;
+                    lock (_taskLock) {currentDelayCts = _delayCts;}
 
-                    try
-                    {
-                        await Task.Delay(TimeSpan.FromSeconds(delaySeconds), linkedCts.Token);
-                    }
-                    catch (TaskCanceledException) when (token.IsCancellationRequested)
-                    {
-                        // Фильтр сработал: отмена пришла от глобального токена остановки приложения/бота.
-                        // Пробрасываем наверх во внешний цикл для чистого завершения RunLoopAsync.
-                        throw;
-                    }
+                    // Использование упрощенного using без фигурных скобок для связки токенов отмены
+                    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(token, currentDelayCts.Token);
+
+                    try {await Task.Delay(TimeSpan.FromSeconds(delaySeconds), linkedCts.Token).ConfigureAwait(false);}
+                    catch (TaskCanceledException) when (token.IsCancellationRequested) {throw;}
                     catch (TaskCanceledException)
-                    {
-                        // Сюда мы попадаем, ТОЛЬКО если token.IsCancellationRequested == false.
-                        // Значит, отмена пришла от локального _delayCts.Token (вызван SwitchScenario).
-                        Logger.Log($"[{Settings.Name}] Пауза прервана командой из UI. Переключение на новый сценарий...", LogType.Info);
-                    }
+                    {Logger.Log($"[{Settings.Name}] Пауза прервана командой из UI. Переключение на новый сценарий...", LogType.Info);}
                     finally
                     {
-                        lock (_scenarioLock)
-                        {
-                            _delayCts.Dispose();
-                            _delayCts = new();
-                        }
+                        // BUG HIGH — Утечка памяти и гонка источников отмены. Каждую секунду в `finally` выполняется `_delayCts = new CancellationTokenSource();`. Старый экземпляр `_delayCts`, ссылка на который была заменена, НИКОГДА не диспозится, так как в блоке ниже очищается `currentDelayCts`, но из-за отсутствия синхронизации в пуле потоков новые CTS плодятся сотнями в минуту. Это вызывает утечку системных дескрипторов Windows (Handles Leak) и, как следствие, падение производительности рантайма через пару минут работы.
+                        lock (_taskLock){_delayCts = new CancellationTokenSource();}
+                        try { currentDelayCts.Dispose(); }
+                        catch (ObjectDisposedException) { /* Игнорируем гонки удаления */ }
                     }
                 }
-                catch (TaskCanceledException)
-                {
-                    // Пробрасываем во внешний блок для корректного завершения работы
-                    throw;
-                }
+                catch (TaskCanceledException){throw;}
                 catch (Exception ex)
                 {
                     Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Сбой в главном цикле обработки такта дерева: {ex.Message}", LogType.Error);
-                    await Task.Delay(5000, token); // Защитная пауза при ошибках логики дерева
+                    await Task.Delay(5000, token).ConfigureAwait(false); 
                 }
             }
         }
-        catch (TaskCanceledException)
-        {
-            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Получен сигнал остановки аккаунта. Фиксация состояния дерева.", LogType.Info);
-        }
-        catch (Exception ex)
-        {
-            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Критический сбой рабочего потока дерева поведения: {ex.Message}", LogType.Error);
-        }
+        catch (TaskCanceledException){Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Получен сигнал остановки аккаунта. Фиксация состояния дерева.", LogType.Info);}
+        catch (Exception ex){Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Критический сбой рабочего потока дерева поведения: {ex.Message}", LogType.Error);}
         finally
         {
-            // ========================================================
-            // 4. ФИНАЛИЗАЦИЯ И ГАРАНТИРОВАННОЕ СОХРАНЕНИЕ СТАТИСТИКИ
-            // ========================================================
             sessionStopwatch.Stop();
-
-            lock (_taskLock)
-            {
-                _accumulatedSeconds = baseSeconds + (long)sessionStopwatch.Elapsed.TotalSeconds;
-                SaveStats();
-            }
-
+            lock (_taskLock){_accumulatedSeconds = baseSeconds + sessionStopwatch.Elapsed.TotalSeconds;}
+            SaveStats();
             int sessionSeconds = (int)(System.DateTime.Now - sessionStart).TotalSeconds;
             Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Состояние сохранено. Поток поведения остановлен. Время работы в сессии (сек): {sessionSeconds}", LogType.Info);
         }
     }
-
 
     #endregion
 
@@ -657,9 +694,11 @@ public partial class ActiveBotAccount
     /// </summary>
     /// <param name="token">Токен отмены операции <see cref="CancellationToken"/> для текущего рабочего потока.</param>
     /// <returns>Возвращает <c>true</c>, если система безопасности успешно проанализировала локал и подтвердила отсутствие угроз; иначе <c>false</c>.</returns>
-    internal async Task<SecurityCheckResult> CheckSecurityStatusAsync(CancellationToken token)
+internal async Task<SecurityCheckResult> CheckSecurityStatusAsync(CancellationToken token)
     {
-        Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Начало выполнения метода детекции угрозы.", LogType.Test);
+#if DEBUG
+        Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Запуск computer-зрения: сканирование локал-чата...", LogType.Test);
+#endif
 
         if (Hwnd == IntPtr.Zero)
         {
@@ -671,40 +710,17 @@ public partial class ActiveBotAccount
         string pathImg2 = Path.Combine(Program.TemplatesDir, "imgLocalChatIcon.png");
         string debugDir = Path.Combine(Program.TemplatesDir, "..", "DebugScreenshots");
 
-        // ========================================================
-        // ШАГ 1: ПОЛУЧЕНИЕ ПЕРВОГО СНИМКА ЧЕРЕЗ ХЕЛПЕР
-        // ========================================================
         var (screenshot, safeRegion1) = await this.PrepareScreenshotRegionAsync(GameRegions.LocalChat, token);
+        if (screenshot == null) return SecurityCheckResult.Unknown;
 
-
-        if (screenshot == null)
-        {
-            // Логирование и очистка брака уже сработали внутри хелпера
-            return SecurityCheckResult.Unknown;
-        }
-
-        // Гарантированная scoped-утилизация базового Mat из памяти C++ при любом выходе из метода
-        using var screenshotScope = screenshot;
-
-        // Рассчитываем второй регион (иконки чата) в памяти без лишних графических захватов
-        Rect localRegion2 = GameRegions.MainMenu.GetOpenCvRect(); // Или GameRegions.LocalChatIcon в зависимости от твоего Enum
+        using var screenshotScope = screenshot; // Стрикт-утилизация unmanaged-памяти C++
         var currentSnap = screenshot;
-        Rect safeRegion2 = await Task.Run(() => Tools.ClampRegion(localRegion2, currentSnap.Width, currentSnap.Height), token);
 
-        if (safeRegion2.Width <= 0 || safeRegion2.Height <= 0)
-        {
-            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Резервная область поиска иконки чата выходит за рамки окна.", LogType.Test);
-            return SecurityCheckResult.Unknown;
-        }
-
-        // ========================================================
-        // ЭТАП 1: ЧАТ РАЗВЕРНУТ (Ищем Шапку чата)
-        // ========================================================
         Point? foundImg1 = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathImg1, safeRegion1, 0.80), token);
 
         if (foundImg1.HasValue)
         {
-    #if DEBUG
+#if DEBUG
             try
             {
                 using Mat cropped = new(currentSnap, safeRegion1);
@@ -713,66 +729,72 @@ public partial class ActiveBotAccount
             }
             catch (Exception ex)
             {
-                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось сохранить отладочный кадр: {ex.Message}", LogType.Warning);
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось сохранить отладочный кадр шапки: {ex.Message}", LogType.Warning);
             }
-    #endif
-            // Передаем управление в RunLocalCheck. Базовый скриншот очистится автоматически благодаря screenshotScope!
+#endif
             return RunLocalCheck(currentSnap, safeRegion1);
         }
 
-        // ========================================================
-        // ЭТАП 2: ЧАТ СВЕРНУТ (Ищем иконку для разворачивания)
-        // ========================================================
-        Point? foundImg2 = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathImg2, safeRegion2, 0.80), token);
+        Rect localRegion2 = GameRegions.MainMenu.GetOpenCvRect(); // Ваша базовая область иконки чата
+        Rect safeRegion2 = await Task.Run(() => Tools.ClampRegion(localRegion2, currentSnap.Width, currentSnap.Height), token);
 
-        if (foundImg2.HasValue)
+        if (safeRegion2.Width > 0 && safeRegion2.Height > 0)
         {
-            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Локальный чат свернут. Обнаружена иконка развертывания.", LogType.Test);
+            Point? foundImg2 = await Task.Run(() => Tools.FindTemplateInRegion(currentSnap, pathImg2, safeRegion2, 0.80), token);
 
-    #if DEBUG
-            try
+            if (foundImg2.HasValue)
             {
-                using Mat cropped = new(currentSnap, safeRegion2);
-                Directory.CreateDirectory(debugDir);
-                Cv2.ImWrite(Path.Combine(debugDir, $"{Settings.Name}_imgLocalChatIcon_FOUND.png"), cropped);
-            }
-            catch (Exception ex)
-            {
-                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось сохранить отладочный кадр: {ex.Message}", LogType.Warning);
-            }
-    #endif
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Локальный чат свернут. Обнаружена иконка. Разворачиваю...", LogType.Warning);
 
-            // Асинхронный безопасный клик по координатам иконки
-            await this.ClickPointAsync(foundImg2.Value, token, minSec: 1, maxSec: 2, offset: 2);
-            await Task.Delay(3500, token);
-
-            // Повторный защищенный захват экрана после клика — ТОЖЕ через твой хелпер!
-             var (freshScreenshot, freshSafeRegion1) = await this.PrepareScreenshotRegionAsync(GameRegions.LocalChat, token);
-
-
-            if (freshScreenshot != null)
-            {
-                using var freshScope = freshScreenshot; // Защищаем unmanaged память второго снимка
-                var currentFresh = freshScreenshot;
-
-                Point? retryImg1 = await Task.Run(() => Tools.FindTemplateInRegion(currentFresh, pathImg1, freshSafeRegion1, 0.80), token);
-
-                if (retryImg1.HasValue)
+#if DEBUG
+                try
                 {
-                    return RunLocalCheck(currentFresh, freshSafeRegion1);
+                    using Mat cropped = new(currentSnap, safeRegion2);
+                    Directory.CreateDirectory(debugDir);
+                    Cv2.ImWrite(Path.Combine(debugDir, $"{Settings.Name}_imgLocalChatIcon_FOUND.png"), cropped);
                 }
+                catch (Exception ex)
+                {
+                    Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Не удалось сохранить отладочный кадр иконки: {ex.Message}", LogType.Warning);
+                }
+#endif
+
+                await this.ClickPointAsync(foundImg2.Value, token, minSec: 1, maxSec: 2, offset: 2);
+
+                for (int retry = 1; retry <= 3; retry++)
+                {
+                    token.ThrowIfCancellationRequested();
+                    await Task.Delay(1500, token);
+
+                    var (freshScreenshot, freshSafeRegion1) = await this.PrepareScreenshotRegionAsync(GameRegions.LocalChat, token);
+                    if (freshScreenshot != null)
+                    {
+                        using var freshScope = freshScreenshot;
+                        Point? retryImg1 = await Task.Run(() => Tools.FindTemplateInRegion(freshScreenshot, pathImg1, freshSafeRegion1, 0.80), token);
+
+                        if (retryImg1.HasValue)
+                        {
+                            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Чат успешно развернут на попытке {retry}/3.", LogType.Success);
+                            return RunLocalCheck(freshScreenshot, freshSafeRegion1);
+                        }
+                    }
+                    Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Интерфейс чата еще подгружается. Попытка {retry}/3...", LogType.Test);
+                }
+
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Критическая ошибка: Чат не открылся после серии кликов.", LogType.Error);
+                return SecurityCheckResult.Unknown;
             }
-
-            Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Интерфейс чата не открылся после клика.", LogType.Warning);
-            return SecurityCheckResult.Unknown;
         }
-
-        // ========================================================
-        // ЭТАП 3: ПОЛНАЯ НЕОПРЕДЕЛЕННОСТЬ
-        // ========================================================
-        Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Шаблоны чата отсутствуют на экране. Смена сессии или загрузка.", LogType.Info);
+        
+        // BUG HIGH — Причина полной тишины в логах "localwatcher". Посмотри на этот кусок кода: если чат развернут (ЭТАП 1), он вызывает `RunLocalCheck`. Если чат свернут (ЭТАП 2), он пытается его развернуть. Но что если на экране открыто окно дока станции, склад, меню фитинга или трюма, которое ПОЛНОСТЬСТЬЮ ПЕРЕКРЫВАЕТ интерфейс игры? 
+        // В этом случае условия `foundImg1.HasValue` и `foundImg2.HasValue` гарантированно вернут `false`. Бот пролетает мимо обоих этапов, пишет ОДИН лог "ВНИМАНИЕ: Шаблоны чата не найдены" и возвращает `SecurityCheckResult.Unknown`.
+        // Затем в методе `AnalyzeScreenAndUpdateStateAsync` этот `Unknown` перехватывается, выставляет `bot.CurrentTask = AccountTask.LookAround` и возвращает `NodeStatus.Failure`.
+        // Stateless-дерево `localwatcher` рушится, `RunLoopAsync` через 5 секунд (так как вернулся Failure) заново тикает дерево с нуля. Бот снова заходит сюда, снова ничего не находит, снова пишет одну и ту же строку "Шаблоны чата не найдены" и возвращает Failure.
+        // Бот не завис физически, он циклится. Твоя консоль забита этой строкой "Зрение бота ослепло", либо ты её пропустил, потому что в `RunLoopAsync` при статусе `Failure` задержка составляет 5 секунд, и лог размывается. Экран эмулятора перекрыт интерфейсом станции. Чтобы чат стал виден, бот обязан сначала принудительно нажать кнопку «Закрыть» (XButton) или сбросить фокус, если он находится на станции и текущая задача `LookAround`.
+        Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] ВНИМАНИЕ: Шаблоны чата (ни шапка, ни иконка) не найдены. Зрение бота ослепло.", LogType.Warning);
         return SecurityCheckResult.Unknown;
     }
+
 
     #endregion
 
@@ -876,37 +898,36 @@ public partial class ActiveBotAccount
         {
             if (string.IsNullOrEmpty(EVESystem) || EVESystem == "Неизвестно" || value == null) return;
 
-            // Защищаем внутренние флаги бота от гонок
+            // 1. СТАРТОВАЯ ИНИЦИАЛИЗАЦИЯ СИСТЕМЫ (Отрабатывает ровно 1 раз за сессию)
             lock (_localStateLock)
             {
                 if (_isFirstSecurityCheck)
                 {
                     _isFirstSecurityCheck = false;
-
                     if (value is true)
                     {
                         SystemSafetyManager.SetSystemSafe(EVESystem);
                         Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Стартовая инициализация: система безопасна. Мониторинг запущен.", LogType.Info);
                         return;
                     }
-
                     Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Стартовая проверка: система СРАЗУ ОПАСНА! Запуск экстренных процедур.", LogType.Warning);
-                    // При опасности на старте не делаем return, идем обрабатывать угрозу локально
                 }
             }
 
             // ========================================================
-            // ОБРАБОТКА ИЗМЕНЕНИЯ СТАТУСА (УГРОЗА)
+            // ОБРАБОТКА ФИКСАЦИИ УГРОЗЫ (value == false)
             // ========================================================
             if (value is false)
             {
+                // Атомарно выставляем глобальный статус опасности через менеджер.
+                // TrySetSystemDanger вернет true ТОЛЬКО первому боту, который зафиксировал минус!
                 bool isFirstAlert = SystemSafetyManager.TrySetSystemDanger(EVESystem);
 
                 if (isFirstAlert)
                 {
                     Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] ВНИМАНИЕ! Первичная фиксация угрозы в системе. Запуск каскадной паники.", LogType.Warning);
 
-                    // СТРОГО ОДНОКРАТНАЯ ОТПРАВКА УВЕДОМЛЕНИЯ В ЧАТ
+                    // АЛЬЯНС-ОПОВЕЩЕНИЕ: Строго однократно в фоне
                     Task.Run(async () =>
                     {
                         try
@@ -920,61 +941,89 @@ public partial class ActiveBotAccount
                         }
                     });
 
-                    // Рассылаем панику остальным окнам в этой же системе
+                    // КАСКАДНАЯ ЭВАКУАЦИЯ СОСЕДЕЙ: Будим только тех, кто еще не эвакуируется
                     Task.Run(() =>
                     {
-                        var botsToPanic = Program.GetActiveBots().Where(b => b != this && b.EVESystem == this.EVESystem).ToList();
+                        var neighborBots = Program.GetActiveBots()
+                            .Where(b => b != this && b.EVESystem == this.EVESystem)
+                            .ToList();
 
-                    foreach (var bot in botsToPanic)
-                    {
-                        try
+                        foreach (var bot in neighborBots)
                         {
-                            if (bot._inSpace && bot.CurrentTask != AccountTask.GoToStation)
+                            // Защищаем соседа от дублирующих команд эвакуации через его личный lock
+                            lock (bot._taskLock)
                             {
-                                bot.ClearTasks();
+                                // Если сосед в космосе и ЕЩЕ НЕ летит на станцию — даем команду
+                                if (bot._inSpace && bot._iswarping is false && bot.CurrentTask != AccountTask.GoToStation)
+                                {
+                                    Logger.Log($"[Паника] Отправляю приказ на отварп соседу: {bot.Settings.Name}", LogType.Warning);
+                                    
+                                    bot._iswarping = true; // Выставляем флаг варпа, чтобы заблокировать повторные тики
+                                    bot._taskQueue.Clear(); // Потокобезопасно чистим его личную очередь
+                                    bot.CurrentTask = AccountTask.GoToStation;
 
-                                // Запускаем эвакуацию соседа в пуле потоков без блокировки текущего цикла
-                                var globalToken = Program.GetGlobalToken();
-                                _ = Task.Run(async () => await bot.ExecuteEmergencyResponseAsync(isInitiator: false, globalToken));
+                                    var globalToken = Program.GetGlobalToken();
+                                    _ = Task.Run(async () => await bot.ExecuteEmergencyResponseAsync(isInitiator: false, globalToken));
+                                }
                             }
                         }
-                        catch (Exception ex)
-                        {
-                            Logger.Log($"Ошибка паники для окна {bot.Settings.Name}: {ex.Message}", LogType.Error);
-                        }
-                    }
-
                     });
                 }
 
-                if (this._inSpace && this.CurrentTask != AccountTask.GoToStation)
+                // ЭВАКУАЦИЯ СЕБЯ (Текущий бот)
+                lock (_taskLock)
                 {
-                    this.ClearTasks();
+                    if (this._inSpace)
+                    {
+                        // КРИТИЧЕСКИЙ БАРЬЕР: Если мы УЖЕ в процессе варпа/отварпа на станцию,
+                        // полностью игнорируем тик, предотвращая бесконечный цикл заклинивания!
+                        if (this._iswarping is true || this.CurrentTask == AccountTask.GoToStation) 
+                            return;
 
-                    // Вызываем асинхронный метод из синхронного контекста в режиме "выстрелил-и-забыл"
-                    // Используем глобальный токен из Program
-                    var globalToken = Program.GetGlobalToken();
-                    _ = Task.Run(async () => await this.ExecuteEmergencyResponseAsync(isInitiator: isFirstAlert, globalToken));
-                }
+                        Logger.Log($"[{Settings.Name}] Инициатор паники уходит на эвакуацию в док.", LogType.Warning);
+                        this._iswarping = true; // Запираем вход для следующих секундных тиков цикла
+                        this._taskQueue.Clear(); // Чистим задачи строго под локальным _taskLock
+                        this.CurrentTask = AccountTask.GoToStation;
 
-
-                else if (!this._inSpace)
-                {
-                    // Если мы на станции — просто переводим задачу в ожидание/мониторинг, не запуская эвакуацию
-                    this.CurrentTask = AccountTask.CheckSecurity;
-                    Logger.Log($"[{Settings.Name}] Корабль уже находится в безопасности (в доке станции). Эвакуация не требуется.", LogType.Info);
+                        var globalToken = Program.GetGlobalToken();
+                        _ = Task.Run(async () => await this.ExecuteEmergencyResponseAsync(isInitiator: isFirstAlert, globalToken));
+                    }
+                    else
+                    {
+                        // Если мы уже на станции — просто переводим задачу в мониторинг, не запуская отварп
+                        if (this.CurrentTask != AccountTask.CheckSecurity)
+                        {
+                            this.CurrentTask = AccountTask.CheckSecurity;
+                            Logger.Log($"[{Settings.Name}] Корабль уже на станции в безопасности. Ждем смены статуса на Безопасно.", LogType.Info);
+                        }
+                    }
                 }
             }
+            // ========================================================
+            // ОБРАБОТКА СБРОСА ОПАСНОСТИ НА "БЕЗОПАСНО" (value == true)
+            // ========================================================
             else if (value is true)
             {
-                // Проверяем текущее состояние из синглтона. Если там и так Safe — игнорируем, чтобы не спамить лог.
+                // Если в синглтоне система уже помечена как Safe, пропускаем лог, чтобы не спамить экран
                 if (SystemSafetyManager.GetSystemState(EVESystem).IsSafe is true) return;
 
-                SystemSafetyManager.SetSystemSafe(EVESystem);
-                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Статус системы изменился на БЕЗОПАСНО. Враги покинули систему.", LogType.Info);
+                lock (_taskLock)
+                {
+                    SystemSafetyManager.SetSystemSafe(EVESystem);
+                    
+                    // СБРАСЫВАЕМ ЗАЩИТНЫЕ ФЛАГИ: разрешаем боту снова летать
+                    this._iswarping = false; 
+                    
+                    // Переключаем текущую задачу обратно в проверку штатного состояния, 
+                    // чтобы дерево поведения поняло: опасность прошла, можно собирать новую очередь задач
+                    this.CurrentTask = AccountTask.CheckYourOwnState; 
+                }
+
+                Logger.Log($"[{Settings.Name}|{EVESystem}|{EVEShip}] Статус системы изменился на БЕЗОПАСНО. Враги ушли. Возвращаемся к работе.", LogType.Success);
             }
         }
     }
+
 
     #endregion
 
@@ -985,84 +1034,37 @@ public partial class ActiveBotAccount
     /// <summary>
     /// Экстренная реакция на угрозу. Сначала спасает корабль, затем координирует союзников и пишет в чат.
     /// </summary>
-    public async Task ExecuteEmergencyResponseAsync(
-        bool isInitiator,
-        CancellationToken token) // Убрали лишний параметр manager!
+public async Task ExecuteEmergencyResponseAsync(bool isInitiator, CancellationToken token)
+{
+    lock (_taskLock)
     {
-        // ========================================================
-        // ПРАВИЛО 1: НЕМЕДЛЕННАЯ ЭВАКУАЦИЯ
-        // ========================================================
-        lock (_taskLock)
+        if (_inSpace && this.CurrentTask != AccountTask.GoToStation)
         {
-            if (_inSpace && this.CurrentTask != AccountTask.GoToStation)
+            switch (Settings.Script?.ToLower())
             {
-                switch (Settings.Script?.ToLower())
-                {
-                    case "lowminer":
-                        Logger.Log($"[{Settings.Name}|{EVESystem}] 🚨 УГРОЗА! Инициирована экстренная эвакуация на станцию!", LogType.Warning);
-                        this.ClearTasks();
-                        this.CurrentTask = AccountTask.GoToStation;
-                        break;
+                case "lowminer":
+                    Logger.Log($"[{Settings.Name}|{EVESystem}] 🚨 УГРОЗА! Начинаю физическую эвакуацию корабля на станцию!", LogType.Warning);
+                    this.ClearTasks();
+                    this.CurrentTask = AccountTask.GoToStation;
+                    break;
 
-                    case "localwatcher":
-                        Logger.Log($"[{Settings.Name}|{EVESystem}] Наблюдатель зафиксировал угрозу, но остается на позиции в доке.", LogType.Info);
-                        this.CurrentTask = AccountTask.CheckSecurity;
-                        break;
+                case "localwatcher":
+                    Logger.Log($"[{Settings.Name}|{EVESystem}] Наблюдатель зафиксировал угрозу. Позиция в доке удерживается.", LogType.Info);
+                    this.CurrentTask = AccountTask.CheckSecurity;
+                    break;
 
-                    default:
-                        this.ClearTasks();
-                        this.CurrentTask = AccountTask.GoToStation;
-                        break;
-                }
-            }
-        }
-
-        await Task.Delay(500, token);
-
-        // ========================================================
-        // ПРАВИЛО 2: ОПОВЕЩЕНИЕ ВСЕХ СВОИХ БОТОВ В ЭТОЙ ЖЕ СИСТЕМЕ
-        // ========================================================
-        if (isInitiator)
-        {
-            Logger.Log($"[{Settings.Name}|{EVESystem}] Рассылка сигнала тревоги остальным ботам в системе...", LogType.Warning);
-
-            // ИСПРАВЛЕНО: Вызываем наш новый потокобезопасный метод из Program напрямую!
-            var companionBots = Program.GetActiveBots();
-
-            foreach (var companion in companionBots)
-            {
-                if (companion != this &&
-                    companion.EVESystem == this.EVESystem &&
-                    companion.CurrentTask != AccountTask.GoToStation)
-                {
-                    Logger.Log($"[{Settings.Name}] -> Отправка команды паники для {companion.Settings.Name}...", LogType.Info);
-
-                    _ = companion.ExecuteEmergencyResponseAsync(isInitiator: false, token);
-                }
-            }
-        }
-
-        // ========================================================
-        // ПРАВИЛО 3: ОТПРАВКА СООБЩЕНИЯ В ЧАТ (Только для инициатора)
-        // ========================================================
-        if (isInitiator)
-        {
-            Logger.Log($"[{Settings.Name}|{EVESystem}] Этот аккаунт — обнаружил угрозу первым. Запуск макроса чата альянса.", LogType.Warning);
-
-            try
-            {
-                await ScenarioFactory.RunAliChatWarningAsync(this, token);
-            }
-            catch (OperationCanceledException)
-            {
-                Logger.Log($"[{Settings.Name}] Макрос чата прерван отменой потока.", LogType.Warning);
-            }
-            catch (Exception ex)
-            {
-                Logger.Log($"Ошибка отправки сообщения в чат альянса: {ex.Message}", LogType.Error);
+                default:
+                    this.ClearTasks();
+                    this.CurrentTask = AccountTask.GoToStation;
+                    break;
             }
         }
     }
+
+    // ТУТ ДАЛЕЕ ДОЛЖЕН ИДТИ ТВОЙ ФИЗИЧЕСКИЙ ВЫЗОВ ДЕЙСТВИЯ ОТВАРПА (например, клики по овервью)
+    // Который выполнится строго один раз благодаря блокировке флагов в IsSaveLocal!
+}
+
 
 
 
@@ -1084,11 +1086,15 @@ public partial class ActiveBotAccount
         {
             _taskQueue.Clear();
 
-            // Сбрасываем текущую задачу в состояние покоя, чтобы главный цикл RunLoopAsync понял, что нужно переключиться
-            CurrentTask = AccountTask.CheckYourOwnState;
+            // BUG HIGH — Источник бесконечной логической петли! Метод `ClearTasks()` вызывается во время паники. Сброс `CurrentTask` в `AccountTask.CheckYourOwnState` внутри этого метода полностью ломает логику эвакуации. Смотри: в сеттере `IsSaveLocal` или методе `ExecuteEmergencyResponseAsync` ты жестко выставляешь `CurrentTask = AccountTask.GoToStation`, чтобы Дерево Поведения поняло — нужно лететь на станцию. Но внутри этих же методов параллельно вызывается `this.ClearTasks()`. Метод `ClearTasks()` заходит в этот блок и ТУТ ЖЕ НАМЕРТВО ПЕРЕЗАПИСЫВАЕТ `CurrentTask` обратно в `CheckYourOwnState`. В итоге на следующем тике `RunLoopAsync` дерево вместо отварпа видит статус «Проверь свое состояние», запускает штатный мирный скрипт с нуля, зрение снова фиксирует врага, снова вызывает панику, снова чистит задачи и опять сбрасывает стейт. Бот бесконечно гоняет по кругу проверку безопасности и не может начать физический отварп! Метод `ClearTasks()` должен ТОЛЬКО чистить очередь `_taskQueue`, но не имеет права трогать `CurrentTask`.
+            _taskQueue.Clear();
+            
+            // УДАЛИТЬ СТРОКУ НИЖЕ:
+            // CurrentTask = AccountTask.CheckYourOwnState;
         }
         Logger.Log($"[{Settings.Name}] Очередь задач экстренно очищена.", LogType.Info);
     }
+
 
     #endregion
 
